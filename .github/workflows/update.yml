@@ -73,14 +73,26 @@ jobs:
         run: |
           git config user.name  "karta-bot"
           git config user.email "actions@github.com"
-          git add -f data/events.csv.gz data/risks.json data/vykluchennya.txt 2>/dev/null || true
-          git diff --quiet --cached || git commit -m "оновлення даних $(date +%Y-%m-%d)"
-          git push
+          for f in data/events.csv.gz data/risks.json data/vykluchennya.txt; do
+            [ -f "$f" ] && git add -f "$f" && echo "додано $f"
+          done
+          if git diff --quiet --cached; then
+            echo "змін немає"
+          else
+            git commit -m "оновлення даних $(date +%Y-%m-%d)"
+            git pull --rebase --autostash origin main || true
+            git push
+          fi
 
       - name: Підготувати сторінку
         run: |
+          if [ ! -f karta.html ]; then
+            echo "::error::karta.html не створено — дивіться кроки 2 і 3"
+            exit 1
+          fi
           mkdir -p _site
           cp karta.html _site/index.html
+          echo "розмір карти: $(du -h karta.html | cut -f1)"
           printf '%s' "$(date -u +'%Y-%m-%d %H:%M UTC')" > _site/updated.txt
 
       - uses: actions/upload-pages-artifact@v3

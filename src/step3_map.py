@@ -75,10 +75,10 @@ COURTS = {'Golosiivskyi':'Голосіївський','Darnytskyi':'Дарниц
  'Shevchenkivskyi':'Шевченківський'}
 
 def main():
-    if not os.path.exists(DB): print('спочатку кроки 1 і 2'); return
+    if not os.path.exists(DB): print('спочатку кроки 1 і 2'); sys.exit(1)
     c = sqlite3.connect(DB)
     if not c.execute("SELECT name FROM sqlite_master WHERE name='geo'").fetchone():
-        print('немає таблиці geo — запустіть крок 2'); return
+        print('немає таблиці geo — крок 2 не відпрацював'); sys.exit(1)
 
     extra = {}
     for fp in glob.glob(os.path.join(DATA, 'kyiv_*.csv')):
