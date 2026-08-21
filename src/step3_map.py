@@ -8,6 +8,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data'); DB = os.path.join(DATA, 'events.db')
 OUT  = os.path.join(ROOT, 'karta.html')
 RISKS = os.path.join(DATA, 'risks.json')
+NETW  = os.path.join(DATA, 'network.json')
 EXCL = os.path.join(DATA, 'vykluchennya.txt')
 REVIEW = os.path.join(DATA, 'top100_dlya_pereviryky.txt')
 
@@ -145,6 +146,15 @@ def main():
         np_ = sum(len(v['items']) for v in risks.get('points', {}).values())
         nl_ = sum(len(v['items']) for v in risks.get('lines', {}).values())
         print(f'шар ризиків: {np_:,} об\'єктів, {nl_:,} ділянок')
+    if os.path.exists(NETW):
+        nw = json.load(open(NETW, encoding='utf-8'))
+        it = nw.get('items', [])
+        if it:
+            mx = max(x[2] for x in it)
+            top = [x for x in it if x[2] >= mx * 0.35]
+            risks.setdefault('lines', {})['flow'] = {
+                'title': 'Висока модельована прохідність', 'items': [[x[0], x[1], x[2]] for x in top]}
+            print(f'шар прохідності: {len(top):,} відрізків з {len(it):,}')
     else:
         print('шар ризиків відсутній (запустіть 2b-RISKS) — карта буде без нього')
 
@@ -229,7 +239,7 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
 let layer=L.layerGroup().addTo(map),heat=null,heatOn=false;
 const rlayer=L.layerGroup().addTo(map);
 const RCOL={alcohol:'#f59e0b',shop24:'#fbbf24',transit:'#38bdf8',school:'#a3e635',
- abandon:'#a78bfa',no_walk:'#fb7185',no_light:'#facc15',no_cross:'#fb923c',maybe_walk:'#94a3b8'};
+ abandon:'#a78bfa',no_walk:'#fb7185',no_light:'#facc15',no_cross:'#fb923c',maybe_walk:'#94a3b8',flow:'#60a5fa'};
 {let hh='<div class="rh">Об\'єкти</div>';
  for(const k in R.points||{}) hh+=`<label><input type="checkbox" data-r="${k}">
   <span class="sw" style="background:${RCOL[k]}"></span><span>${R.points[k].title}</span>
@@ -250,7 +260,7 @@ function drawRisks(){
      .addTo(rlayer));
   if(R.lines&&R.lines[k]) R.lines[k].items.forEach(it=>
     L.polyline(it[0],{color:col,weight:4,opacity:.65})
-     .bindPopup(`<div class="lp"><b>${it[1]||'без назви'}</b><div class="tt">${R.lines[k].title} · ${it[2]} м</div></div>`)
+     .bindPopup(`<div class="lp"><b>${it[1]||'без назви'}</b><div class="tt">${R.lines[k].title} · ${k==='flow'?it[2]+' маршрутів':it[2]+' м'}</div></div>`)
      .addTo(rlayer));
  });
 }
