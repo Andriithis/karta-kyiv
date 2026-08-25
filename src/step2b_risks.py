@@ -17,20 +17,49 @@ AREA = 'area["boundary"="administrative"]["admin_level"="4"]["name"="Київ"]-
 
 # лёгкі шари - одним запитом; важкі - плитками
 LIGHT = {
+ # --- атрактори за літературою ---
  'alcohol': '(nwr["amenity"~"^(bar|pub|nightclub|biergarten)$"](area.k);'
             'nwr["shop"~"^(alcohol|wine|beverages)$"](area.k););out tags center;',
- 'shop24':  '(nwr["shop"="convenience"]["opening_hours"~"24/7"](area.k);'
-            'nwr["amenity"="fast_food"]["opening_hours"~"24/7"](area.k););out tags center;',
+ 'bar_on':  '(nwr["amenity"~"^(bar|pub|nightclub|biergarten)$"](area.k););out tags center;',
+ 'bar_off': '(nwr["shop"~"^(alcohol|wine|beverages)$"](area.k););out tags center;',
+ 'shop24':  '(nwr["shop"="convenience"](area.k);'
+            'nwr["amenity"="fast_food"](area.k););out tags center;',
+ 'finance': '(nwr["shop"~"^(pawnbroker|money_lender)$"](area.k);'
+            'nwr["amenity"~"^(bureau_de_change|money_transfer)$"](area.k);'
+            'nwr["amenity"="atm"](area.k);node["amenity"="atm"](area.k););out tags center;',
+ 'gambling':'(nwr["amenity"~"^(casino|gambling)$"](area.k);'
+            'nwr["shop"="bookmaker"](area.k);'
+            'nwr["leisure"="adult_gaming_centre"](area.k););out tags center;',
+ 'food':    '(nwr["amenity"~"^(restaurant|cafe)$"](area.k););out tags center;',
+ 'fuel':    '(nwr["amenity"="fuel"](area.k););out tags center;',
+ 'parking': '(nwr["amenity"="parking"](area.k););out tags center;',
+ # --- генератори ---
+ 'metro':   '(node["railway"="subway_entrance"](area.k);'
+            'nwr["railway"="station"](area.k););out tags center;',
+ 'busstop': '(node["highway"="bus_stop"](area.k);'
+            'node["public_transport"="platform"](area.k););out tags center;',
+ 'market':  '(nwr["amenity"="marketplace"](area.k);'
+            'nwr["shop"~"^(mall|department_store|supermarket)$"](area.k););out tags center;',
  'transit': '(node["railway"="subway_entrance"](area.k);'
             'nwr["amenity"="bus_station"](area.k);'
             'nwr["railway"="station"](area.k);'
             'nwr["amenity"="marketplace"](area.k););out tags center;',
  'school':  '(nwr["amenity"~"^(school|kindergarten)$"](area.k););out tags center;',
+ 'univer':  '(nwr["amenity"~"^(university|college)$"](area.k););out tags center;',
+ 'health':  '(nwr["amenity"~"^(hospital|clinic|pharmacy)$"](area.k););out tags center;',
+ # --- занедбаність ---
  'abandon': '(nwr["building"~"^(ruins|abandoned|construction)$"](area.k);'
             'nwr["abandoned"="yes"](area.k);nwr["ruins"="yes"](area.k);'
             'nwr["disused"="yes"](area.k););out tags center;',
+ # --- благоустрій, "очі на вулиці" ---
+  'play':    '(nwr["leisure"~"^(playground|fitness_station)$"](area.k););out tags center;',
+  # --- зелень: крони і трава ОКРЕМО (у літературі знаки різні) ---
+  'park':    '(nwr["leisure"~"^(park|garden)$"](area.k););out tags center;',
+  # --- інфраструктура руху ---
  'lamps':   '(node["highway"="street_lamp"](area.k););out skel;',
  'cross':   '(node["highway"="crossing"](area.k);node["crossing"~"."](area.k););out skel;',
+ 'calming': '(node["traffic_calming"~"."](area.k);'
+            'node["highway"="traffic_signals"](area.k););out skel;',
 }
 HEAVY = {
  'roads':  'way["highway"~"^(residential|tertiary|secondary|unclassified|living_street)$"]',
@@ -148,8 +177,15 @@ def main():
     print('\n2) обробка')
     out = {'points': {}, 'lines': {}}
 
-    NAMES = {'alcohol':'Алкоголь: бари, клуби, магазини','shop24':'Цілодобові магазини і фастфуд',
-             'transit':'Метро, вокзали, ринки','school':'Школи і садки','abandon':'Покинуті та недобудовані'}
+    NAMES = {'alcohol':'Алкоголь: бари, клуби, магазини','bar_on':'Заклади на місці (бари, клуби)',
+             'bar_off':'Алкоголь на винос','shop24':'Магазини біля дому і фастфуд',
+             'finance':'Ломбарди, обмінники, банкомати','gambling':'Гральні заклади',
+             'food':'Кафе і ресторани','fuel':'Автозаправки','parking':'Паркінги',
+             'metro':'Метро і вокзали','busstop':'Зупинки транспорту','market':'Ринки і ТЦ',
+             'transit':'Метро, вокзали, ринки','school':'Школи і садки','univer':'ВНЗ',
+             'health':'Лікарні й аптеки','abandon':'Покинуті та недобудовані',
+             'bench':'Лавки й урни','play':'Дитячі майданчики','cctv':'Камери спостереження',
+             'trees':'Дерева','park':'Парки і сквери','grass':'Трав\'яні ділянки'}
     for k, title in NAMES.items():
         pts = []
         for el in raw.get(k, []):
@@ -220,12 +256,9 @@ def main():
         if L > 300 and not any(cg.near(p['lat'], p['lon'], 170) for p in pts):
             no_cross.append([line, nm, int(L)])
 
-    out['lines'] = {
-      'no_walk':    {'title': 'Тротуару немає (прямо вказано в OSM)', 'items': no_walk},
-      'no_cross':   {'title': 'Розриви між переходами понад 300 м', 'items': no_cross},
-      'no_light':   {'title': 'Без освітлення (за даними OSM)', 'items': no_light},
-      'maybe_walk': {'title': 'Можливо без тротуару — ПЕРЕВІРИТИ', 'items': maybe_walk},
-    }
+    # шари відсутностей прибрано: дані OSM про ВІДСУТНІСТЬ ненадійні,
+    # двигун стабільно давав по них нуль
+    out['lines'] = {}
     for k, v in out['lines'].items(): print(f"   {v['title']}: {len(v['items']):,}")
 
     json.dump(out, open(OUT, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',',':'))
