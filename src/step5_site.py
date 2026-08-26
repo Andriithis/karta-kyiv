@@ -70,6 +70,9 @@ def build_index(per, mode):
         cards.append(f'<a class="card" href="{SLUG[d]}.html"><div class="nm">{d}</div>'
                      f'<div class="ev">{tot:,}</div><div class="evl">подій з адресою</div>'
                      f'<div class="bar">{bar}</div><div class="leg">{leg}</div></a>'.replace(',', ' '))
+    cards.append('<a class="card" href="kyiv.html"><div class="nm">Весь Київ</div>'
+                 '<div class="ev">&#8721;</div><div class="evl">одна карта на все місто</div>'
+                 '<div class="leg">без поділу на райони — щоб порівняти райони між собою</div></a>')
     note = ('<b>Як читати.</b> Кожна карта показує, де саме в районі концентруються правопорушення '
             'і які умови середовища з ними пов\'язані. ')
     if mode == 'full':
