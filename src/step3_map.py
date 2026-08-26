@@ -208,9 +208,12 @@ def main(district=None, mode='full', out=None):
         for i, k in enumerate(labels):
             if k[0] == t: groups_idx[i] = ti
     groups = []
+    gi_of_theme = {}       # код теми -> її індекс у meta['groups'] (для фільтрації карток)
     for t in L.ORDER:
         ids = [li[k] for k in labels if k[0] == t]
-        if ids: groups.append([L.THEMES[t], ids, sum(cnt[labels[i]] for i in ids)])
+        if ids:
+            gi_of_theme[t] = len(groups)
+            groups.append([L.THEMES[t], ids, sum(cnt[labels[i]] for i in ids)])
     meta = dict(courts=[COURTS.get(x, x) for x in ck], cats=[k[1] for k in labels],
                 counts=[cnt[k] for k in labels], groups=groups, years=ykeys)
 
@@ -222,15 +225,20 @@ def main(district=None, mode='full', out=None):
         FLOWS = [('flow_school', 3, 'Потік до шкіл і садків', '07:30–08:30, 12:00–14:00'),
                  ('flow_transit', 4, 'Потік до транспорту', 'години пік'),
                  ('flow_shop', 5, 'Потік до торгівлі', 'день, рівномірно')]
+        # На РАЙОННІЙ карті показуємо ВСІ ненульові потоки — інакше тихі квартали
+        # виглядають порожніми, хоча потік там є (перевірено на вул. Кадетський Гай:
+        # потік до торгівлі 202, але 3287-е місце по місту -> не потрапляв у топ).
+        # На єдиній міській карті ліміт лишається, бо інакше вона нечитабельна.
+        FLOW_CAP = None if district else 2500
         for key, idx, title, when in FLOWS:
             vals = [x for x in it if len(x) > idx and x[idx] > 0]
             if not vals: continue
             vals.sort(key=lambda x: -x[idx])
-            top = vals[:1600]      # п.7.9: було 900, підняли ліміт
+            top = vals if FLOW_CAP is None else vals[:FLOW_CAP]
             risks.setdefault('lines', {})[key] = {
                 'title': title, 'when': when,
                 'items': [[x[0], x[1], int(x[idx])] for x in top]}
-            print(f'   {title}: {len(top):,} відрізків')
+            print(f'   {title}: {len(top):,} відрізків з {len(vals):,}')
     else:
         print('шар потоків відсутній (запустіть 2c-NETWORK) — карта буде без нього')
 
@@ -278,6 +286,18 @@ def main(district=None, mode='full', out=None):
         dg = RK.get('danger', [])
         if dg:
             print(f'небезпечні підходи до шкіл: {len(dg)}')
+
+    # Панель «Прогноз ризику» має перелічувати ТІ САМІ теми, що й «Правопорушення».
+    # Для тем, де подій замало на навчання (поріг MIN_EV у кроці 4 — 250 подій
+    # навчального року), модель не будується. Раніше такі теми просто зникали з
+    # панелі, і виглядало це як розсинхрон назв. Тепер показуємо їх окремим рядком.
+    for _i, _th in enumerate(L.ORDER):
+        if _th == 'ДОМ': continue                       # домашнє насильство на карту не йде
+        if ('risk_' + _th) in risks.get('lines', {}): continue
+        if not any(k[0] == _th for k in labels): continue
+        risks.setdefault('lines', {})['risk_' + _th] = {
+            'title': L.THEMES.get(_th, _th), 'hit': 0, 'theme': _i,
+            'why': '', 'factors': [], 'method': '', 'items': [], 'nodata': True}
 
     def pred_theme(th, la, lo, rad=180.0):
         g = theme_rgrid.get(th)
@@ -372,6 +392,7 @@ def main(district=None, mode='full', out=None):
                              factors=[[n_, round(float(w), 3)] for n_, w in d.get('фактори', []) if w > 0][:8],
                              train=d.get('навчання', 0), test=d.get('перевірка', 0))
         probs_by_pi[c['pi']].append(dict(
+            thi=gi_of_theme.get(th, -1),   # індекс теми — щоб картка ховалась разом із фільтром
             sim=c['sim'], theme=L.THEMES.get(th, th), mech=L.GROUPNAME.get(c['sim'], c['sim']),
             n=c['n'], core_n=c['core_n'], years=c['years'], arts=c['arts'],
             analysis=analysis))
@@ -399,7 +420,7 @@ def main(district=None, mode='full', out=None):
             for k, v in list(risks.get('lines', {}).items()):
                 v['items'] = [x for x in v['items']
                               if any(in_ring(q[0], q[1], ring) for q in x[0])]
-                if not v['items']: risks['lines'].pop(k, None)
+                if not v['items'] and not v.get('nodata'): risks['lines'].pop(k, None)
             POP = [x for x in POP if in_ring(x[0], x[1], ring)]
             la_ = [q[0] for q in ring]; lo_ = [q[1] for q in ring]
             meta['bounds'] = [[min(la_), min(lo_)], [max(la_), max(lo_)]]
@@ -501,6 +522,7 @@ button:hover{background:#28303f}button.act{background:#e0533d;border-color:#e053
 #frisk .nm{flex:1;font-size:12.5px;line-height:1.2}
 #frisk .acc{font-size:10px;color:#7c8698;padding:1px 5px;border:1px solid #333c4d;border-radius:99px}
 #frisk .why{font-size:10.5px;color:#6d7789;margin:3px 0 0 22px;line-height:1.35}
+#frisk .rw.nod{opacity:.5}#frisk .rw.nod .rl{cursor:default}
 .lgd{display:flex;align-items:center;gap:6px;font-size:10px;color:#5f6878;margin-top:8px}
 .lgd i{height:3px;flex:1;border-radius:2px;background:linear-gradient(90deg,#5f6878 0%,currentColor 100%)}
 .leaflet-popup-content-wrapper{background:#161922;color:#e8eaf0;border-radius:8px}
@@ -510,7 +532,9 @@ button:hover{background:#28303f}button.act{background:#e0533d;border-color:#e053
 .leaflet-tooltip.rt:before{display:none}
 .leaflet-tooltip.rt b{display:block;margin-bottom:2px}
 .leaflet-tooltip.rt span{color:#8b95a8;font-size:11px}
-.lp{font-size:12.5px;max-height:420px;overflow-y:auto}.lp b{display:block;margin-bottom:5px;font-size:13px}
+/* висота в частках екрана, інакше висока картка вилазить за верх вікна */
+.lp{font-size:12.5px;max-height:min(420px,58vh);overflow-y:auto;overscroll-behavior:contain}
+.lp b{display:block;margin-bottom:5px;font-size:13px}
 .lp a{color:#c94a34;text-decoration:none}.lp a:hover{text-decoration:underline}
 .lp li{margin-bottom:4px;font-size:11.5px}.lp ul{padding-left:15px;margin:3px 0}
 .lp .tt{color:#79839a;font-size:11.5px;margin-bottom:7px}
@@ -603,6 +627,15 @@ function $ify(sel,html){const el=document.querySelector(sel);if(el)el.innerHTML=
  const rkeys=Object.keys(R.lines||{}).filter(k=>k.startsWith('risk_'))
    .sort((a,b)=>R.lines[b].hit-R.lines[a].hit);
  rkeys.forEach(k=>{const v=R.lines[k],c=RCOL[k];
+  if(v.nodata){
+   // тема є в списку правопорушень, але подій замало на навчання моделі
+   rh+=`<div class="rw nod" style="border-left-color:#3a4256">
+    <label class="rl"><input type="checkbox" disabled>
+     <span class="sw" style="background:#3a4256"></span>
+     <span class="nm">${v.title}</span>
+     <span class="acc">—</span></label>
+    <div class="why">замало подій для навчання моделі</div></div>`;
+   return}
   rh+=`<div class="rw" style="border-left-color:${c}">
    <label class="rl"><input type="checkbox" data-r="${k}">
     <span class="sw" style="background:${c}"></span>
@@ -748,6 +781,9 @@ window.__downloadPassport=downloadPassport;
 function draw(){
  syncThemes();
  const C=sel('c'),A=sel('a'),Y=sel('y');
+ // які теми зараз видимі за фільтром статей — картки проблем ховаються разом з ними,
+ // інакше при фільтрі «Насильство» знизу висіла картка про ДТП
+ const GVIS=new Set();M.groups.forEach((g,gi)=>{if(g[1].some(i=>A.has(i)))GVIS.add(gi)});
  const CF=+(cb_.querySelector('.on')||{dataset:{c:-1}}).dataset.c;
  const H=new Set();
  hb.querySelectorAll('.on').forEach(x=>PERIODS[+x.dataset.p][2].forEach(h=>H.add(h)));
@@ -791,7 +827,12 @@ function draw(){
    const hint = nk>=8 ? `<div class="hn">${Math.round(100*night/nk)}% подій припадає на 20:00–04:00</div>` : '';
    // ---- КАРТКИ ПРОБЛЕМ (п.7.4): по одній на кожен відібраний напрямок адреси ----
    let pblock='';
-   const probs=p[7]||[];
+   const allp=p[7]||[];
+   const probs=allp.filter(pr=>pr.thi===undefined||pr.thi<0||GVIS.has(pr.thi));
+   const hidden=allp.length-probs.length;
+   if(!STUDENT&&!probs.length&&hidden)
+    pblock=`<div class="hn">Ця адреса — у списку проблем, але за іншим напрямком `+
+     `(${allp.map(x=>x.theme).join(', ')}). Увімкніть відповідні правопорушення, щоб побачити картку.</div>`;
    if(!STUDENT&&probs.length){
     pblock=probs.map((pr,pi)=>{
      let h=`<div class="pcard"><div class="ph">Проблема · ${pr.theme}</div>`;
@@ -813,7 +854,7 @@ function draw(){
     if(probs.length>1) pblock+='<div class="hn" style="margin-top:4px">Кілька напрямків на адресі — кілька окремих проблем із різними причинами.</div>';
    }
    const ex=p[5].filter(e=>A.has(e[0])).slice(0,4);
-   const cinf=p[6]===2?CATNAME[2]:null;
+   const cinf=(p[6]===2&&probs.length)?CATNAME[2]:null;
    const html=`<div class="lp">
    ${cinf?`<span class="cbadge" style="background:${cinf[1]}22;color:${cinf[1]}">${cinf[0]}</span>`:''}
    <b>${p[2]||'адреса не визначена'}</b>
@@ -826,7 +867,7 @@ function draw(){
    '</ul></div>';
    const wrap=document.createElement('div');wrap.innerHTML=html;
    wrap.querySelectorAll('[data-pp]').forEach(b=>b.onclick=()=>downloadPassport(p,probs[+b.dataset.pp]));
-   return wrap},{maxWidth:360}).addTo(layer)}
+   return wrap},{maxWidth:360,autoPanPaddingTopLeft:[14,14],autoPanPaddingBottomRight:[14,14]}).addTo(layer)}
 }
 $('#heat').onclick=e=>{heatOn=!heatOn;e.target.classList.toggle('act');e.target.textContent=heatOn?'Показати точки':'Теплова карта';draw()};
 $('#reset').onclick=()=>{document.querySelectorAll('#side input:not([data-r])').forEach(x=>x.checked=true);
