@@ -17,11 +17,16 @@ OUT  = os.path.join(DATA, 'network.json')
 SNAP   = 5
 MAX_M  = int(os.environ.get('MAXWALK', '1200'))   # межа пішої ходьби
 NEAR_N = 2                                        # скільки найближчих цілей на будинок
-# ваги: скільки «людей» дає один будинок у кожному потоці
+# Цілі потоків — категорії з osm_risks_raw.json (крок 2b).
+# ВИПРАВЛЕНО 2026-08: категорія 'transit' містить лише метро, вокзали й
+# автостанції, тому кінцеві тролейбусів і звичайні зупинки давали НУЛЬ потоку
+# (перевірено на вул. Кадетський Гай: потік до транспорту = 0 при наявній
+# кінцевій). Так само 'shop24' — це магазини біля дому й фастфуд, без
+# супермаркетів і ТЦ, тож великі об'єкти торгівлі не притягували маршрутів.
 FLOWS = {
-    'school':  ('school',),                  # школи й садки
-    'transit': ('transit',),                 # метро, вокзали, ринки
-    'shop':    ('alcohol', 'shop24'),        # торгівля
+    'school':  ('school',),                       # школи й садки
+    'transit': ('transit', 'busstop'),            # метро, вокзали + зупинки наземного транспорту
+    'shop':    ('alcohol', 'shop24', 'market'),   # магазини біля дому, супермаркети, ТЦ, ринки
 }
 
 def mdeg(lat): return 111320.0, 111320.0 * math.cos(math.radians(lat))
@@ -316,7 +321,10 @@ def main():
             trn = flow_w.get('transit', {}).get(wid, [0, ''])[0]
             shp = flow_w.get('shop', {}).get(wid, [0, ''])[0]
             items.append([geo[wid], nm, c, sch, trn, shp])
-    # ---- ГЕОМЕТРІЯ МЕРЕЖІ (Johnson & Bowers 2010): проникність, перехрестя, звивистість ----
+    # ---- ГЕОМЕТРІЯ МЕРЕЖІ: проникність, перехрестя, звивистість ----
+    # Johnson & Bowers (2014), "Examining the Relationship Between Road Structure and
+    # Burglary Risk Via Quantitative Network Analysis", J. of Quantitative Criminology
+    # 30(2). (У попередній редакції коду рік було вказано помилково — 2010.)
     print('5) геометрія мережі...')
     deg = collections.Counter()
     for u in adj: deg[u] = len(set(v for v, _ in adj[u]))
