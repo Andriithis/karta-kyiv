@@ -79,11 +79,21 @@ jobs:
       - name: Крок 2d — межі районів
         run: python src/step2d_borders.py || echo "межі районів пропущено (файл уже є або OSM недоступний)"
 
-      - name: Крок 4 — перенавчання моделі ризику
-        if: ${{ github.event.inputs.retrain_risk == 'true' }}
+      - name: Крок 4 — модель ризику
         run: |
-          pip install --quiet numpy scikit-learn
-          python src/step4_engine.py
+          RETRAIN="${{ github.event.inputs.retrain_risk }}"
+          # автоматично раз на місяць — у перший понеділок; решту тижнів
+          # модель лишається тією, що вже натренована (це економить ~20 хв на запуск)
+          if [ "$RETRAIN" != "true" ] && [ "$(date +%d)" -le 07 ]; then
+            RETRAIN=true
+            echo "перший тиждень місяця — перенавчаю модель автоматично"
+          fi
+          if [ "$RETRAIN" = "true" ]; then
+            pip install --quiet numpy scikit-learn
+            python src/step4_engine.py
+          else
+            echo "модель ризику цього запуску не перенавчається"
+          fi
 
       - name: Крок 3 — збірка карти
         run: python src/step3_map.py
@@ -106,51 +116,36 @@ jobs:
             git push
           fi
 
-      - name: Підготувати сторінку
+      - name: Підготувати публічну сторінку (лише версія для слухачів)
         run: |
-          if [ ! -f karta.html ]; then
-            echo "::error::karta.html не створено — дивіться кроки 2 і 3"
-            exit 1
-          fi
-          if [ ! -d site/vykladach ] || [ ! -d site/slukhach ]; then
+          if [ ! -d site/slukhach ] || [ ! -d site/vykladach ]; then
             echo "::error::site/ не зібрано — дивіться крок 5"
             exit 1
           fi
-          mkdir -p _site
-          cp -r site/vykladach _site/vykladach
-          cp -r site/slukhach  _site/slukhach
-          cp karta.html _site/karta.html
-          cat > _site/index.html << 'HTMLEOF'
-          <!DOCTYPE html><html lang="uk"><head><meta charset="utf-8">
-          <meta name="viewport" content="width=device-width,initial-scale=1">
-          <title>Карта правопорушень Києва</title><style>
-          *{box-sizing:border-box}body{margin:0;background:#0f1117;color:#e8eaf0;
-           font:15px/1.5 system-ui,sans-serif;padding:60px 22px}
-          .wrap{max-width:640px;margin:0 auto}
-          h1{font-size:25px;margin:0 0 8px;letter-spacing:-.02em}
-          .sub{color:#79839a;font-size:14px;margin-bottom:30px}
-          a.card{display:block;text-decoration:none;color:inherit;background:#171a23;
-           border:1px solid #252a37;border-radius:11px;padding:18px 20px;margin-bottom:12px;transition:.14s}
-          a.card:hover{background:#1c2030;border-color:#3a4256;transform:translateY(-2px)}
-          .nm{font-size:16.5px;font-weight:600;margin-bottom:5px}
-          .ds{color:#8b95a8;font-size:13px}
-          </style></head><body><div class="wrap">
-          <h1>Карта правопорушень Києва</h1>
-          <div class="sub">Аналіз за даними ЄДРСР. Академія патрульної поліції, Київ.</div>
-          <a class="card" href="vykladach/index.html"><div class="nm">Повна версія (викладач)</div>
-          <div class="ds">10 районних карт з поділом на проблеми, аномалії, інциденти та повною методологією</div></a>
-          <a class="card" href="slukhach/index.html"><div class="nm">Версія для слухачів</div>
-          <div class="ds">ті самі 10 районних карт без готових висновків — для самостійного аналізу</div></a>
-          <a class="card" href="karta.html"><div class="nm">Єдина карта міста</div>
-          <div class="ds">весь Київ на одній карті, без поділу на райони</div></a>
-          </div></body></html>
-          HTMLEOF
-          echo "розмір карти: $(du -h karta.html | cut -f1)"
+          rm -rf _site && mkdir -p _site
+          cp -r site/slukhach/. _site/
           printf '%s' "$(date -u +'%Y-%m-%d %H:%M UTC')" > _site/updated.txt
+          echo "публікується файлів: $(ls _site | wc -l)  розмір: $(du -sh _site | cut -f1)"
 
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+
+      # Викладацька версія НЕ публікується на Pages: сайт відкритий, і слухачі
+      # інакше бачили б готові висновки. Вона збирається в архів, який завантажує
+      # викладач зі сторінки запуску в Actions.
+      - name: Викладацька версія в архів
+        run: |
+          rm -rf _teacher && mkdir -p _teacher
+          cp -r site/vykladach/. _teacher/
+          if [ -f karta.html ]; then cp karta.html _teacher/karta-misto.html; fi
+          echo "викладацька версія: $(du -sh _teacher | cut -f1)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: karta-vykladach
+          path: _teacher
+          retention-days: 60
 
   deploy:
     needs: build
