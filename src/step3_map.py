@@ -18,6 +18,7 @@ RISKS = os.path.join(DATA, 'risks.json')
 NETW  = os.path.join(DATA, 'network.json')
 RISKF = os.path.join(DATA, 'risk.json')
 BORD  = os.path.join(DATA, 'borders.json')
+FACTF = os.path.join(DATA, 'factors.json')             # шар чинників середовища (крок 2e)
 EXCL = os.path.join(DATA, 'vykluchennya.txt')          # формується автоматично
 MANUAL = os.path.join(DATA, 'vykluchennya_moyi.txt')    # ваш список, ніколи не перезаписується
 REVIEW = os.path.join(DATA, 'top100_dlya_pereviryky.txt')
@@ -299,6 +300,24 @@ def main(district=None, mode='full', out=None):
             'title': L.THEMES.get(_th, _th), 'hit': 0, 'theme': _i,
             'why': '', 'factors': [], 'method': '', 'items': [], 'nodata': True}
 
+    # ---- ШАР ЧИННИКІВ СЕРЕДОВИЩА (крок 2e) ----
+    # Якщо файл ще не побудований, будуємо його тут-таки з osm_risks_raw.json.
+    # Так карта збереться навіть без окремого кроку 2e у workflow; у межах одного
+    # запуску step5_site викликає main() 22 рази — файл будується лише вперше.
+    FACT = {}
+    _rawp = os.path.join(DATA, 'osm_risks_raw.json')
+    if not os.path.exists(FACTF) and os.path.exists(_rawp):
+        try:
+            import step2e_factors
+            step2e_factors.main()
+        except SystemExit:
+            pass
+        except Exception as _e:
+            print('шар чинників не побудовано:', _e)
+    if os.path.exists(FACTF):
+        FACT = json.load(open(FACTF, encoding='utf-8'))
+        print(f"чинники середовища: {sum(len(c['pts']) for c in FACT.get('cats', [])):,} об'єктів")
+
     def pred_theme(th, la, lo, rad=180.0):
         g = theme_rgrid.get(th)
         if not g: return 0
@@ -422,6 +441,8 @@ def main(district=None, mode='full', out=None):
                               if any(in_ring(q[0], q[1], ring) for q in x[0])]
                 if not v['items'] and not v.get('nodata'): risks['lines'].pop(k, None)
             POP = [x for x in POP if in_ring(x[0], x[1], ring)]
+            for _c in FACT.get('cats', []):
+                _c['pts'] = [q for q in _c['pts'] if in_ring(q[0], q[1], ring)]
             la_ = [q[0] for q in ring]; lo_ = [q[1] for q in ring]
             meta['bounds'] = [[min(la_), min(lo_)], [max(la_), max(lo_)]]
             meta['border'] = ring
@@ -448,6 +469,7 @@ def main(district=None, mode='full', out=None):
             if len(p) > 7: p[7] = []         # і розбір причини — теж (розд.6 передачі)
         meta['skew'] = ''
     html = TPL.replace('__POP__', json.dumps(POP, separators=(',', ':'))) \
+              .replace('__FACTS__', json.dumps(FACT, ensure_ascii=False, separators=(',', ':'))) \
               .replace('__RISKS__', json.dumps(risks, ensure_ascii=False, separators=(',', ':'))) \
               .replace('__META__', json.dumps(meta, ensure_ascii=False)) \
               .replace('__PTS__', json.dumps(P, ensure_ascii=False, separators=(',', ':')))
@@ -555,6 +577,14 @@ button:hover{background:#28303f}button.act{background:#e0533d;border-color:#e053
 .pbtn{width:100%;padding:7px;background:#e0533d;color:#fff;border:0;border-radius:6px;
  font:inherit;font-size:12px;cursor:pointer;margin-top:7px}
 .pbtn:hover{background:#c94a34}
+/* ---- шар чинників середовища ---- */
+.fgh{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#8b95a8;margin:9px 0 2px}
+#ffact label{font-size:12px}
+#ffact .n{color:#5f6878;font-size:10.5px;margin-left:auto;flex:0 0 auto}
+#ffact .sw{width:9px;height:9px;border-radius:99px;flex:0 0 auto;margin-top:3px}
+.pbtn2{width:100%;padding:6px;background:#2b3243;color:#e8eaf0;border:1px solid #3a4256;
+ border-radius:6px;font:inherit;font-size:11.5px;cursor:pointer;margin-top:5px}
+.pbtn2:hover{background:#343d52}
 .ex{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#5f6878;margin-top:6px}
 .rpop b{display:block;margin-bottom:4px;font-size:13px}
 .rpop .rmeth{font-size:11px;color:#8b95a8;margin:6px 0;line-height:1.4}
@@ -578,6 +608,10 @@ button:hover{background:#28303f}button.act{background:#e0533d;border-color:#e053
 <fieldset><legend>Прогноз ризику</legend><div id="frisk"></div>
 <div class="hint">Модель оцінює <b>кожну вулицю</b> за умовами середовища, незалежно від того, чи були там події. Клікніть на вулицю — розбір чинників і методики відкриється в спливному вікні. У кружечку — влучність: яка частка подій наступних років припала на верхні 10% відібраних вулиць.</div>
 </fieldset>
+<fieldset><legend>Середовище</legend><div id="ffact"></div>
+<div class="hint" id="fzoom"></div>
+<button id="fclear">Прибрати підсвітку</button>
+<div class="hint" id="fhint"></div></fieldset>
 <fieldset><legend>Контекст</legend><div id="fctx"></div>
 <div class="hint">Населення — фон під картою, за даними Kontur (комірки 400 м). Потоки — модельовані пішохідні маршрути від житла до цілей, з урахуванням населення. Товщина = кількість людей.</div></fieldset>
 <fieldset><legend>Рік</legend><div id="fy"></div></fieldset>
@@ -588,7 +622,7 @@ button:hover{background:#28303f}button.act{background:#e0533d;border-color:#e053
 const M=__META__, P=__PTS__;
 const PALA=['#e0533d','#e8a33d','#8b5cf6','#ef4444','#3b82f6','#22c55e','#14b8a6'];
 const CATTH={};M.groups.forEach((g,gi)=>g[1].forEach(i=>CATTH[i]=gi));
-const R=__RISKS__, POP=__POP__;
+const R=__RISKS__, POP=__POP__, F=__FACTS__;
 const map=L.map('map',{preferCanvas:true}).setView(M.center||[50.45,30.52],M.only?13:11);
 map.createPane('popPane'); map.getPane('popPane').style.zIndex=350;
 map.createPane('maskPane'); map.getPane('maskPane').style.zIndex=345;
@@ -615,6 +649,10 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
 let layer=L.layerGroup().addTo(map),heat=null,heatOn=false;
 const rlayer=L.layerGroup().addTo(map);
 const poplayer=L.layerGroup();          // фон під усім іншим
+const flayer=L.layerGroup().addTo(map); // чинники середовища за чекбоксами
+const hlayer=L.layerGroup().addTo(map); // підсвітка «чинники поруч» для конкретного місця
+const FCOL=['#f59e0b','#38bdf8','#a3a3a3'];   // притягують / збирають людей / стан
+const FZOOM=14;                               // ближче за цей масштаб — показуємо позначки
 const RCOL={metro:'#38bdf8',busstop:'#7dd3fc',
  flow_school:'#fbbf24',flow_transit:'#38bdf8',flow_shop:'#f472b6'};
 // ризик успадковує колір своєї теми — той самий, що в подіях
@@ -655,6 +693,69 @@ function $ify(sel,html){const el=document.querySelector(sel);if(el)el.innerHTML=
    <span class="sw" style="background:${RCOL[k]}"></span><span>${v.title}</span>
    <span class="n">${v.items.length.toLocaleString('uk')}</span></label>`});
  $ify('#fctx',ch);
+
+ // --- середовище: чинники, згруповані за роллю ---
+ let ff='';
+ (F.cats||[]).forEach((c,ci)=>c._i=ci);
+ (F.groups||[]).forEach((gn,gi)=>{
+  const inG=(F.cats||[]).filter(c=>c.g===gi&&c.pts.length);
+  if(!inG.length) return;
+  ff+=`<div class="fgh">${gn}</div>`;
+  inG.forEach(c=>{ff+=`<label><input type="checkbox" data-f="${c._i}">
+    <span class="sw" style="background:${FCOL[gi]}"></span><span>${c.n}</span>
+    <span class="n">${c.pts.length.toLocaleString('uk')}</span></label>`});
+ });
+ $ify('#ffact',ff||'<div class="sub">шар чинників недоступний</div>');
+ $ify('#fhint','Об’єкти, які модель рахує як чинники ризику. З’являються від масштабу '+
+   FZOOM+' — інакше карта нечитабельна.'+
+   (M.mode==='student'?'':' У картці проблеми та у вікні ризикованої вулиці є кнопка '+
+    '«Показати чинники поруч» — вона підсвічує саме ті об’єкти, що дали цьому місцю ризик.'));
+}
+// підсвічує об'єкти, які модель порахувала для конкретної точки, з колами радіусів
+function showNear(la,lo,factors){
+ hlayer.clearLayers();
+ if(!(F.cats||[]).length||!factors||!factors.length) return 0;
+ const need={};
+ factors.forEach(f=>String(f[0]).split(' × ').forEach(part=>{
+  const m=part.match(/^(.+)_(\d+)м$/);
+  if(m) need[m[1]]=Math.max(need[m[1]]||0,+m[2]);
+ }));
+ const my=111320, mx=111320*Math.cos(la*Math.PI/180);
+ const rads=new Set(); let shown=0;
+ Object.keys(need).forEach(base=>{
+  const c=F.cats.find(x=>x.b===base); if(!c) return;
+  const rad=need[base]; rads.add(rad);
+  c.pts.forEach(p=>{
+   const d=Math.hypot((p[0]-la)*my,(p[1]-lo)*mx);
+   if(d>rad) return;
+   shown++;
+   L.circleMarker(p,{radius:6,weight:2,color:'#fbbf24',
+     fillColor:FCOL[c.g],fillOpacity:.95})
+    .bindTooltip(`${c.n} — ${Math.round(d)} м`,{className:'rt'}).addTo(hlayer)});
+ });
+ rads.forEach(r=>L.circle([la,lo],{radius:r,color:'#fbbf24',weight:1,opacity:.45,
+   fill:false,dashArray:'4,4',interactive:false}).addTo(hlayer));
+ L.circleMarker([la,lo],{radius:5,weight:2,color:'#fbbf24',
+   fillColor:'#fbbf24',fillOpacity:1,interactive:false}).addTo(hlayer);
+ return shown;
+}
+function drawFacts(){
+ flayer.clearLayers();
+ const zo=map.getZoom()<FZOOM;
+ const el=document.querySelector('#fzoom');
+ const on=[...document.querySelectorAll('[data-f]')].some(x=>x.checked);
+ if(el) el.textContent = (zo&&on) ? 'Наблизьте карту, щоб побачити позначки' : '';
+ if(zo) return;
+ const b=map.getBounds();
+ document.querySelectorAll('[data-f]').forEach(cb=>{
+  if(!cb.checked) return;
+  const c=F.cats[+cb.dataset.f]; if(!c) return;
+  const col=FCOL[c.g];
+  c.pts.forEach(p=>{
+   if(!b.contains(p)) return;
+   L.circleMarker(p,{radius:4,weight:1,color:'#0f1117',fillColor:col,fillOpacity:.9})
+    .bindTooltip(c.n,{className:'rt'}).addTo(flayer)});
+ });
 }
 function riskPopup(k,it){
  const v=R.lines[k];
@@ -695,8 +796,16 @@ function drawRisks(){
        opacity:Math.max(.35,.85*it[2]/100)})
       .bindTooltip(`<b>${it[1]}</b><span>${v.title} — верхні ${101-it[2]}% за ризиком, клікніть для деталей</span>`,
         {className:'rt',sticky:true})
-      .on('click',ev=>{L.popup({maxWidth:320}).setLatLng(ev.latlng)
-        .setContent(riskPopup(k,it)).openOn(map)})
+      .on('click',ev=>{
+        const w=document.createElement('div'); w.innerHTML=riskPopup(k,it);
+        if(v.factors&&v.factors.length&&(F.cats||[]).length){
+         const bt=document.createElement('button'); bt.className='pbtn2';
+         bt.textContent='Показати чинники поруч';
+         bt.onclick=()=>{const q=showNear(ev.latlng.lat,ev.latlng.lng,v.factors);
+           bt.textContent=q?`Підсвічено об’єктів: ${q}`:'Поруч нічого з чинників немає'};
+         w.appendChild(bt);
+        }
+        L.popup({maxWidth:320}).setLatLng(ev.latlng).setContent(w).openOn(map)})
       .addTo(rlayer));
   } else {
    const mxf=Math.max(...v.items.map(x=>x[2]))||1;
@@ -851,6 +960,8 @@ function draw(){
      } else {
       h+=`<div class="why"><b>Аналіз:</b> модель не пояснює — причина встановлюється на місці.</div>`;
      }
+     if(pr.analysis&&pr.analysis.factors&&pr.analysis.factors.length&&(F.cats||[]).length)
+      h+=`<button class="pbtn2" data-nf="${pi}">Показати чинники поруч</button>`;
      h+=`<button class="pbtn" data-pp="${pi}">Взяти в роботу — паспорт SARA</button></div>`;
      return h;
     }).join('');
@@ -870,16 +981,22 @@ function draw(){
    '</ul></div>';
    const wrap=document.createElement('div');wrap.innerHTML=html;
    wrap.querySelectorAll('[data-pp]').forEach(b=>b.onclick=()=>downloadPassport(p,probs[+b.dataset.pp]));
+   wrap.querySelectorAll('[data-nf]').forEach(b=>b.onclick=()=>{
+    const q=showNear(p[0],p[1],probs[+b.dataset.nf].analysis.factors);
+    b.textContent=q?`Підсвічено об’єктів: ${q}`:'Поруч нічого з чинників немає'});
    return wrap},{maxWidth:360,autoPanPaddingTopLeft:[14,14],autoPanPaddingBottomRight:[14,14]}).addTo(layer)}
 }
 $('#heat').onclick=e=>{heatOn=!heatOn;e.target.classList.toggle('act');e.target.textContent=heatOn?'Показати точки':'Теплова карта';draw()};
-$('#reset').onclick=()=>{document.querySelectorAll('#side input:not([data-r])').forEach(x=>x.checked=true);
+$('#reset').onclick=()=>{document.querySelectorAll('#side input:not([data-r]):not([data-f])').forEach(x=>x.checked=true);
  hb.querySelectorAll('.on').forEach(x=>x.classList.remove('on'));draw()};
 $('#none').onclick=()=>{document.querySelectorAll('[data-a]').forEach(x=>x.checked=false);draw()};
 $('#all').onclick=()=>{document.querySelectorAll('[data-a]').forEach(x=>x.checked=true);draw()};
-document.querySelectorAll('#side input:not([data-r])').forEach(x=>x.addEventListener('change',draw));
+document.querySelectorAll('#side input:not([data-r]):not([data-f])').forEach(x=>x.addEventListener('change',draw));
 document.querySelectorAll('[data-r]').forEach(x=>x.addEventListener('change',drawRisks));
-draw();drawRisks();
+document.querySelectorAll('[data-f]').forEach(x=>x.addEventListener('change',drawFacts));
+map.on('zoomend moveend',drawFacts);
+{const fc=$('#fclear'); if(fc) fc.onclick=()=>hlayer.clearLayers();}
+draw();drawRisks();drawFacts();
 </script></body></html>"""
 
 if __name__ == '__main__':
