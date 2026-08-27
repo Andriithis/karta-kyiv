@@ -320,7 +320,9 @@ def main():
             sch = flow_w.get('school', {}).get(wid, [0, ''])[0]
             trn = flow_w.get('transit', {}).get(wid, [0, ''])[0]
             shp = flow_w.get('shop', {}).get(wid, [0, ''])[0]
-            items.append([geo[wid], nm, c, sch, trn, shp])
+            # 7-й елемент — id відрізка OSM. Потрібен кроку 4, щоб брати потік
+            # ПО ВІДРІЗКУ, а не максимум по назві вулиці (див. коментар там).
+            items.append([geo[wid], nm, c, sch, trn, shp, wid])
     # ---- ГЕОМЕТРІЯ МЕРЕЖІ: проникність, перехрестя, звивистість ----
     # Johnson & Bowers (2014), "Examining the Relationship Between Road Structure and
     # Burglary Risk Via Quantitative Network Analysis", J. of Quantitative Criminology
