@@ -794,7 +794,10 @@ function draw(){
   for(const e of p[4]) if(C.has(e[0])&&A.has(e[1])&&Y.has(e[2])&&(!H.size||H.has(e[3]))){n++;if(th===null)th=CATTH[e[1]]}
   if(n){tot+=n;vis.push([p,n,th])}}
  vis.sort((a,b)=>b[1]-a[1]);
- const rank=vis.filter(v=>v[0][3]&&v[0][6]===2);
+ // у версії для слухачів категорія прихована (p[6]=-1), тому фільтр по ===2 давав
+ // порожній список і «Топ адрес» завжди показував «нема даних». Слухачам перелік
+ // найгарячіших адрес потрібен саме для самостійного пошуку скупчень.
+ const rank=vis.filter(v=>v[0][3]&&(STUDENT||v[0][6]===2));
  $('#cnt').textContent=tot.toLocaleString('uk');
  $('#cntl').textContent=`подій на ${vis.length.toLocaleString('uk')} адресах`;
  {let q=0;P.forEach(p=>{if(p[6]===2)q++});
