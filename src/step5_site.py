@@ -4,6 +4,7 @@ import os, sys, json, sqlite3, collections, shutil
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import labels as L
 import step3_map as M3
+import step6_docs as D6
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
@@ -15,7 +16,7 @@ SLUG = {'Голосіївський':'golosiiv','Дарницький':'darnytsi
         'Шевченківський':'shevchenkivsk'}
 
 def stats():
-    """скільки проблем/аномалій/інцидентів і який профіль у кожного району"""
+    """скᄐльки проблем/аномалій/інцидентів і який профіль у кожного району"""
     conn = sqlite3.connect(os.path.join(DATA, 'events.db'))
     rows = conn.execute("""SELECT e.court, e.cat FROM events e
                            JOIN geo g ON g.doc_id=e.doc_id WHERE g.precision='house'""").fetchall()
@@ -70,6 +71,18 @@ def build_index(per, mode):
         cards.append(f'<a class="card" href="{SLUG[d]}.html"><div class="nm">{d}</div>'
                      f'<div class="ev">{tot:,}</div><div class="evl">подій з адресою</div>'
                      f'<div class="bar">{bar}</div><div class="leg">{leg}</div></a>'.replace(',', ' '))
+    doc = ('<a class="card" href="doslidzhennya.html"><div class="nm">Дослідження ризиків</div>'
+           '<div class="ev">&#9998;</div><div class="evl">методика, джерела, перевірка</div>'
+           '<div class="leg">на чому побудована модель і наскільки вона справджується</div></a>'
+           '<a class="card" href="rezyume.html"><div class="nm">Резюме</div>'
+           '<div class="ev">&#8801;</div><div class="evl">одна сторінка</div>'
+           '<div class="leg">коротко: що зроблено, що вийшло, чого не можна робити</div></a>')
+    if mode == 'full':
+        doc += ('<a class="card" href="analiz.html"><div class="nm">Аналіз стану</div>'
+                '<div class="ev">&#9776;</div><div class="evl">що показують дані</div>'
+                '<div class="leg">концентрація, райони, час, виявлені проблеми '
+                'та можливі причини</div></a>')
+    cards.append(doc)
     cards.append('<a class="card" href="kyiv.html"><div class="nm">Весь Київ</div>'
                  '<div class="ev">&#8721;</div><div class="evl">одна карта на все місто</div>'
                  '<div class="leg">без поділу на райони — щоб порівняти райони між собою</div></a>')
@@ -78,7 +91,7 @@ def build_index(per, mode):
     if mode == 'full':
         note += ('Скупчення поділено на <b>проблеми</b> — ті, що пояснюються умовами середовища, '
                  'і <b>аномалії</b> — ті, де причина є, але її немає в даних; такі місця треба '
-                 'перевіряти на місці. Поодинокі події позначені як <b>інциденти</b>.')
+                 'перевᄐряти на місці. Поодинокі події позначені як <b>інциденти</b>.')
     else:
         note += ('Ваше завдання — знайти скупчення, висунути гіпотезу про причину '
                  'і перевірити її на місці.')
@@ -99,6 +112,13 @@ def main():
             if d not in per: continue
             M3.main(district=d, mode=mode, out=os.path.join(out, f'{sl}.html'))
         M3.main(district=None, mode=mode, out=os.path.join(out, 'kyiv.html'))
+        # крок 6 — після карт: step3_map дорогою будує data/factors.json,
+        # без якого в документах не було б розділу «що поруч»
+        try:
+            made = D6.build(out, mode)
+            print('   документи: ' + ', '.join(made))
+        except Exception as e:
+            print('   документи не зібрано:', e)
     print(f'\n=== ГОТОВО === сайт у папці site/')
     print('   site/vykladach/index.html — повна версія')
     print('   site/slukhach/index.html  — версія для слухачів')
