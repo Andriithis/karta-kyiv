@@ -133,7 +133,6 @@ def main():
     feats['клас_дороги'] = {s: HW.get(RD.get(s, {}).get('highway', ''), 2) for s in sids}
     feats['смуг'] = {s: float(RD.get(s, {}).get('lanes', 2) or 2)
                      if str(RD.get(s, {}).get('lanes', '2')).isdigit() else 2 for s in sids}
-    # прохідність
     # мережева геометрія
     ngp = os.path.join(DATA, 'netgeo.json')
     if os.path.exists(ngp):
@@ -153,16 +152,31 @@ def main():
             for r in (250, 500):
                 feats[f'населення_{r}м'] = {s: pg2.count(*mid[s], r) for s in sids}
 
+    # ---- ПІШОХІДНІ ПОТОКИ ЯК ОЗНАКА (Davies & Bishop 2014) ----
+    # ВИПРАВЛЕНО 2026-08. Стара редакція брала МАКСИМУМ потоку по НАЗВІ вулиці
+    # й приписувала його всім її відрізкам. На вул. Стеценка (54 відрізки) потік
+    # коливається від 73 до 2 893 — тобто вся внутрішньовулична варіація, заради
+    # якої одиницею аналізу й обрано відрізок, знищувалася. Наслідок: ознака
+    # «прохідність» жодного разу не потрапила в топ-20 чинників жодної теми.
+    # Тепер беремо потік по id відрізка й додаємо три цільові потоки окремо.
     npth = os.path.join(DATA, 'network.json')
     if os.path.exists(npth):
         N = json.load(open(npth, encoding='utf-8'))
-        fl, fs = {}, {}
+        byid = {}
         byname = collections.defaultdict(int)
         for it in N.get('items', []):
+            if len(it) > 6 and it[6] is not None:
+                byid[it[6]] = (it[2], it[3], it[4], it[5])
             if it[1]: byname[it[1]] = max(byname[it[1]], it[2])
-        for s in sids:
-            fl[s] = byname.get(names[s], 0)
-        feats['прохідність'] = fl
+        if byid:
+            for j, ua in ((0, 'прохідність'), (1, 'потік_школи'),
+                          (2, 'потік_транспорт'), (3, 'потік_торгівля')):
+                feats[ua] = {s: float(byid.get(s, (0, 0, 0, 0))[j]) for s in sids}
+            print(f'   потоки по відрізках: {len(byid):,} з {len(sids):,}')
+        else:
+            # запасний варіант для старого network.json без id відрізка
+            feats['прохідність'] = {s: float(byname.get(names[s], 0)) for s in sids}
+            print('   потоки лише по назві вулиці (старий формат network.json)')
     print(f'   ознак: {len(feats)}')
 
     # ---- 3. події -> відрізки ----
