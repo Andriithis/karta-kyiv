@@ -708,8 +708,12 @@ function $ify(sel,html){const el=document.querySelector(sel);if(el)el.innerHTML=
  $ify('#ffact',ff||'<div class="sub">шар чинників недоступний</div>');
  $ify('#fhint','Об’єкти, які модель рахує як чинники ризику. З’являються від масштабу '+
    FZOOM+' — інакше карта нечитабельна.'+
-   (M.mode==='student'?'':' У картці проблеми та у вікні ризикованої вулиці є кнопка '+
-    '«Показати чинники поруч» — вона підсвічує саме ті об’єкти, що дали цьому місцю ризик.'));
+   (M.mode==='student'
+     ? ' У вікні будь-якої адреси та ризикованої вулиці є кнопка «Що поруч» — '+
+       'вона підсвічує все, що є в радіусі 250 м, із відстанню до кожного об’єкта. '+
+       'Які з них справді пояснюють скупчення — визначаєте ви.'
+     : ' У картці проблеми та у вікні ризикованої вулиці є кнопка '+
+       '«Показати чинники поруч» — вона підсвічує саме ті об’єкти, що дали цьому місцю ризик.'));
 }
 // підсвічує об'єкти, які модель порахувала для конкретної точки, з колами радіусів
 function showNear(la,lo,factors){
@@ -735,6 +739,27 @@ function showNear(la,lo,factors){
  });
  rads.forEach(r=>L.circle([la,lo],{radius:r,color:'#fbbf24',weight:1,opacity:.45,
    fill:false,dashArray:'4,4',interactive:false}).addTo(hlayer));
+ L.circleMarker([la,lo],{radius:5,weight:2,color:'#fbbf24',
+   fillColor:'#fbbf24',fillOpacity:1,interactive:false}).addTo(hlayer);
+ return shown;
+}
+// те саме, але БЕЗ підказки моделі: просто все, що є довкола в заданому радіусі.
+// Для слухачів — це спостереження, а не готова відповідь: які саме з цих об'єктів
+// пояснюють скупчення, вони мають визначити самі.
+function showAllNear(la,lo,rad){
+ hlayer.clearLayers();
+ if(!(F.cats||[]).length) return 0;
+ const my=111320, mx=111320*Math.cos(la*Math.PI/180);
+ let shown=0;
+ F.cats.forEach(c=>c.pts.forEach(p=>{
+  const d=Math.hypot((p[0]-la)*my,(p[1]-lo)*mx);
+  if(d>rad) return;
+  shown++;
+  L.circleMarker(p,{radius:6,weight:2,color:'#fbbf24',
+    fillColor:FCOL[c.g],fillOpacity:.95})
+   .bindTooltip(`${c.n} — ${Math.round(d)} м`,{className:'rt'}).addTo(hlayer)}));
+ L.circle([la,lo],{radius:rad,color:'#fbbf24',weight:1,opacity:.45,
+   fill:false,dashArray:'4,4',interactive:false}).addTo(hlayer);
  L.circleMarker([la,lo],{radius:5,weight:2,color:'#fbbf24',
    fillColor:'#fbbf24',fillOpacity:1,interactive:false}).addTo(hlayer);
  return shown;
@@ -803,6 +828,13 @@ function drawRisks(){
          bt.textContent='Показати чинники поруч';
          bt.onclick=()=>{const q=showNear(ev.latlng.lat,ev.latlng.lng,v.factors);
            bt.textContent=q?`Підсвічено об’єктів: ${q}`:'Поруч нічого з чинників немає'};
+         w.appendChild(bt);
+        } else if(STUDENT&&(F.cats||[]).length){
+         // слухачам — те саме вікно, але без підказки моделі: просто околиці
+         const bt=document.createElement('button'); bt.className='pbtn2';
+         bt.textContent='Що поруч (250 м)';
+         bt.onclick=()=>{const q=showAllNear(ev.latlng.lat,ev.latlng.lng,250);
+           bt.textContent=q?`Показано об’єктів: ${q}`:'Поруч нічого не знайдено'};
          w.appendChild(bt);
         }
         L.popup({maxWidth:320}).setLatLng(ev.latlng).setContent(w).openOn(map)})
@@ -967,6 +999,10 @@ function draw(){
     }).join('');
     if(probs.length>1) pblock+='<div class="hn" style="margin-top:4px">Кілька напрямків на адресі — кілька окремих проблем із різними причинами.</div>';
    }
+   // слухачам кнопка потрібна в КОЖНІЙ адресі — це їхній основний хід:
+   // побачив скупчення -> подивився, що довкола -> висунув гіпотезу
+   if(STUDENT&&(F.cats||[]).length)
+    pblock+='<button class="pbtn2" data-na="1">Що поруч (250 м)</button>';
    const ex=p[5].filter(e=>A.has(e[0])).slice(0,4);
    const cinf=(p[6]===2&&probs.length)?CATNAME[2]:null;
    const html=`<div class="lp">
@@ -984,6 +1020,9 @@ function draw(){
    wrap.querySelectorAll('[data-nf]').forEach(b=>b.onclick=()=>{
     const q=showNear(p[0],p[1],probs[+b.dataset.nf].analysis.factors);
     b.textContent=q?`Підсвічено об’єктів: ${q}`:'Поруч нічого з чинників немає'});
+   wrap.querySelectorAll('[data-na]').forEach(b=>b.onclick=()=>{
+    const q=showAllNear(p[0],p[1],250);
+    b.textContent=q?`Показано об’єктів: ${q}`:'Поруч нічого не знайдено'});
    return wrap},{maxWidth:360,autoPanPaddingTopLeft:[14,14],autoPanPaddingBottomRight:[14,14]}).addTo(layer)}
 }
 $('#heat').onclick=e=>{heatOn=!heatOn;e.target.classList.toggle('act');e.target.textContent=heatOn?'Показати точки':'Теплова карта';draw()};
