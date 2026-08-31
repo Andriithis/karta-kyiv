@@ -10,6 +10,7 @@
 import os, sys, csv, json, glob, math, sqlite3, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import labels as L
+import mech as M
 # HTML-шаблон винесено в окремий файл: разом із ним модуль важив 67 КБ,
 # а це один файл на дві дуже різні речі — логіку відбору й розмітку.
 from step3_tpl import TPL
@@ -110,11 +111,11 @@ COURTS = {'Golosiivskyi':'Голосіївський','Darnytskyi':'Дарниц
  'Podilskyi':'Подільський','Sviatoshynskyi':'Святошинський','Solomianskyi':"Солом'янський",
  'Shevchenkivskyi':'Шевченківський'}
 
-# латинські ярлики тем — для якорів у doslidzhennya.html (крок 6).
+# латинські ярлики — для якорів у doslidzhennya.html (крок 6).
 # Кирилиця у фрагменті URL працює, але ламається при копіюванні посилання,
-# тому анкори латинські. Має збігатися з THSLUG у step6_base.py.
-THSLUG = {'ГП': 'gp', 'АЛК': 'alk', 'НАР': 'nar', 'НАС': 'nas',
-          'МАЙ': 'may', 'ДОР': 'dor', 'СЕР': 'ser', 'ДОМ': 'dom'}
+# тому анкори латинські. ЄДИНЕ ДЖЕРЕЛО — mech.py: раніше цей словник жив
+# у трьох файлах і вони встигли розійтися.
+THSLUG = M.THSLUG
 
 def in_ring(la, lo, ring):
     """чи точка всередині багатокутника (промінь праворуч)"""
@@ -141,7 +142,7 @@ def why_text(facs):
     return ', '.join(out)
 
 # invariant-genitive описувачі теми для заголовка перекосу (п.7.3). Свідомо не
-# відмінюємо за числівником (1/2-4/5+) — ризик граматичної помилки вищий за
+# відмінюємо за числᑖвником (1/2-4/5+) — ризик граматичної помилки вищий за
 # користь; читається нормально для будь-якої кількості.
 THEME_SKEW = {
  'ГП': 'громадського порядку', 'АЛК': "пов'язаних з алкоголем", 'НАР': 'наркотичних',
@@ -190,10 +191,10 @@ def main(district=None, mode='full', out=None):
     print('роки:', ', '.join(ykeys))
     print(f'статей після злиття: {len(labels)} (було би {len({r[2] for r in rows})} за кодами)')
 
-    # група подібності (п.7.2) для кожного індексу в `labels`
+    # група подібності (п.7.2) для кожного індекса в `labels`
     LBL2SIM = {}
     for _code, (_th, _lbl) in L.CODE.items():
-        LBL2SIM[(_th, _lbl)] = L.SIMGROUP.get(_code, f'{_th}_{_code}')
+        LBL2SIM[(_th, _lbl)] = M.simgroup(_code) or f'{_th}_{_code}'
     sim_of = [LBL2SIM.get(k, f'{k[0]}_i{i}') for i, k in enumerate(labels)]
 
     agg = collections.defaultdict(list)
@@ -268,7 +269,10 @@ def main(district=None, mode='full', out=None):
             if not it: continue
             top = it[:600]
             n = len(top)
-            gi = [i for i, t in enumerate(L.ORDER) if t == th]
+            # `th` тепер — або тема ('ДОР'), або механізм ('ДОР_ДТП').
+            # Тема, під якою рядок стоїть у панелі, лежить у самому шарі.
+            parent = v.get('theme') or M.simtheme(th)
+            gi = [i for i, t in enumerate(L.ORDER) if t == parent]
             grid = collections.defaultdict(list)
             items_out = []
             for i, x in enumerate(top):
@@ -287,8 +291,10 @@ def main(district=None, mode='full', out=None):
                           f"{100*d.get('hit_середовище', 0):.0f}% подій наступних років "
                           f"(у {d.get('PAI_середовище', 0)} рази краще за випадковий відбір).").replace(',', ' ')
             risks.setdefault('lines', {})['risk_' + th] = {
-                'title': L.THEMES.get(th, th),
-                'slug': THSLUG.get(th, th),
+                'title': v.get('name') or L.THEMES.get(th, th),
+                'slug': v.get('slug') or M.anchor(th),
+                'kind': v.get('kind', 'theme'),
+                'group': L.THEMES.get(parent, parent),
                 'hit': int(100 * v['hit']),
                 'theme': gi[0] if gi else 0,
                 'why': why_text(ER.get(th, {}).get('фактори', [])),
@@ -308,7 +314,8 @@ def main(district=None, mode='full', out=None):
         if ('risk_' + _th) in risks.get('lines', {}): continue
         if not any(k[0] == _th for k in labels): continue
         risks.setdefault('lines', {})['risk_' + _th] = {
-            'title': L.THEMES.get(_th, _th), 'slug': THSLUG.get(_th, _th),
+            'title': L.THEMES.get(_th, _th), 'slug': M.anchor(_th),
+            'kind': 'theme', 'group': L.THEMES.get(_th, _th),
             'hit': 0, 'theme': _i,
             'why': '', 'factors': [], 'method': '', 'items': [], 'nodata': True}
 
@@ -415,8 +422,11 @@ def main(district=None, mode='full', out=None):
     probs_by_pi = collections.defaultdict(list)
     for c in problems:
         th = c['th']
-        risk_pc = pred_theme(th, P[c['pi']][0], P[c['pi']][1])
-        d = ER.get(th, {})
+        # Спершу питаємо модель ВЛАСНОГО механізму цієї проблеми, і лише якщо
+        # для нього моделі немає — загальну модель теми.
+        rkey = c['sim'] if c['sim'] in theme_rgrid else th
+        risk_pc = pred_theme(rkey, P[c['pi']][0], P[c['pi']][1])
+        d = ER.get(rkey, {})
         analysis = None
         if risk_pc > 0 and d:
             analysis = dict(pc=risk_pc, hit=round(100*d.get('hit_середовище', 0)),
@@ -424,7 +434,7 @@ def main(district=None, mode='full', out=None):
                              train=d.get('навчання', 0), test=d.get('перевірка', 0))
         probs_by_pi[c['pi']].append(dict(
             thi=gi_of_theme.get(th, -1),   # індекс теми — щоб картка ховалась разом із фільтром
-            sim=c['sim'], theme=L.THEMES.get(th, th), mech=L.GROUPNAME.get(c['sim'], c['sim']),
+            sim=c['sim'], theme=L.THEMES.get(th, th), mech=M.simname(c['sim']),
             n=c['n'], core_n=c['core_n'], years=c['years'], arts=c['arts'],
             analysis=analysis))
 
@@ -489,6 +499,3 @@ def main(district=None, mode='full', out=None):
     os.makedirs(os.path.dirname(dst) or '.', exist_ok=True)
     open(dst, 'w', encoding='utf-8').write(html)
     print(f'готово: {os.path.basename(dst)} ({os.path.getsize(dst)/1048576:.1f} МБ)')
-
-if __name__ == '__main__':
-    main()
