@@ -142,7 +142,7 @@ def why_text(facs):
     return ', '.join(out)
 
 # invariant-genitive описувачі теми для заголовка перекосу (п.7.3). Свідомо не
-# відмінюємо за числᑖвником (1/2-4/5+) — ризик граматичної помилки вищий за
+# відмінюємо за кількістю (1/2-4/5+) — ризик граматичної помилки вищий за
 # користь; читається нормально для будь-якої кількості.
 THEME_SKEW = {
  'ГП': 'громадського порядку', 'АЛК': "пов'язаних з алкоголем", 'НАР': 'наркотичних',
@@ -191,7 +191,7 @@ def main(district=None, mode='full', out=None):
     print('роки:', ', '.join(ykeys))
     print(f'статей після злиття: {len(labels)} (було би {len({r[2] for r in rows})} за кодами)')
 
-    # група подібності (п.7.2) для кожного індекса в `labels`
+    # група подібності (п.7.2) для кожного індексу в `labels`
     LBL2SIM = {}
     for _code, (_th, _lbl) in L.CODE.items():
         LBL2SIM[(_th, _lbl)] = M.simgroup(_code) or f'{_th}_{_code}'
@@ -499,3 +499,6 @@ def main(district=None, mode='full', out=None):
     os.makedirs(os.path.dirname(dst) or '.', exist_ok=True)
     open(dst, 'w', encoding='utf-8').write(html)
     print(f'готово: {os.path.basename(dst)} ({os.path.getsize(dst)/1048576:.1f} МБ)')
+
+if __name__ == '__main__':
+    main()
