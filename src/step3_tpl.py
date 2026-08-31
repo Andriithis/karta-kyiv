@@ -72,6 +72,15 @@ button:hover{background:#28303f}button.act{background:#e0533d;border-color:#e053
 #frisk .acc{font-size:10px;color:#7c8698;padding:1px 5px;border:1px solid #333c4d;border-radius:99px}
 #frisk .why{font-size:10.5px;color:#6d7789;margin:3px 0 0 22px;line-height:1.35}
 #frisk .rw.nod{opacity:.5}#frisk .rw.nod .rl{cursor:default}
+#frisk .rg{margin-bottom:6px;border-radius:6px;background:#151a24;border:1px solid #222836}
+#frisk .rg>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:7px;
+ padding:6px 9px;font-size:12px;color:#c4cbd8;user-select:none}
+#frisk .rg>summary::-webkit-details-marker{display:none}
+#frisk .rg>summary::before{content:'\25B8';color:#5f6878;font-size:9px;transition:.15s}
+#frisk .rg[open]>summary::before{transform:rotate(90deg)}
+#frisk .rg>summary .gn{flex:1;font-weight:500}
+#frisk .rg>summary .gc{font-size:10px;color:#6d7789;padding:1px 6px;border:1px solid #2b3242;border-radius:99px}
+#frisk .rg .rw{margin:0 6px 5px}#frisk .rg .rw:first-of-type{margin-top:2px}
 .lgd{display:flex;align-items:center;gap:6px;font-size:10px;color:#5f6878;margin-top:8px}
 .lgd i{height:3px;flex:1;border-radius:2px;background:linear-gradient(90deg,#5f6878 0%,currentColor 100%)}
 .leaflet-popup-content-wrapper{background:#161922;color:#e8eaf0;border-radius:8px}
@@ -197,22 +206,34 @@ function $ify(sel,html){const el=document.querySelector(sel);if(el)el.innerHTML=
  let rh='';
  const rkeys=Object.keys(R.lines||{}).filter(k=>k.startsWith('risk_'))
    .sort((a,b)=>R.lines[b].hit-R.lines[a].hit);
- rkeys.forEach(k=>{const v=R.lines[k],c=RCOL[k];
+ // Один рядок панелі. Ключ — тема ('risk_ДОР') або механізм ('risk_ДОР_ДТП').
+ const rrow=k=>{const v=R.lines[k],c=RCOL[k];
   if(v.nodata){
    // тема є в списку правопорушень, але подій замало на навчання моделі
-   rh+=`<div class="rw nod" style="border-left-color:#3a4256">
+   return `<div class="rw nod" style="border-left-color:#3a4256">
     <label class="rl"><input type="checkbox" disabled>
      <span class="sw" style="background:#3a4256"></span>
      <span class="nm">${v.title}</span>
      <span class="acc">—</span></label>
-    <div class="why">замало подій для навчання моделі</div></div>`;
-   return}
-  rh+=`<div class="rw" style="border-left-color:${c}">
+    <div class="why">замало подій для навчання моделі</div></div>`}
+  return `<div class="rw" style="border-left-color:${c}">
    <label class="rl"><input type="checkbox" data-r="${k}">
     <span class="sw" style="background:${c}"></span>
     <span class="nm">${v.title}</span>
     <span class="acc">${v.hit}%</span></label>
-   ${v.why?`<div class="why">${v.why}</div>`:''}</div>`});
+   ${v.why?`<div class="why">${v.why}</div>`:''}</div>`};
+ // Механізмів більше, ніж тем, тож панель згорнута: тема -> її механізми.
+ const grp={};
+ rkeys.forEach(k=>{const g=R.lines[k].group||R.lines[k].title;(grp[g]=grp[g]||[]).push(k)});
+ Object.keys(grp).sort((a,b)=>
+   Math.min(...grp[a].map(k=>R.lines[k].theme|0))-Math.min(...grp[b].map(k=>R.lines[k].theme|0))
+ ).forEach(g=>{
+  const ks=grp[g].sort((a,b)=>
+    ((R.lines[a].kind==='theme')?0:1)-((R.lines[b].kind==='theme')?0:1)
+    ||R.lines[b].hit-R.lines[a].hit);
+  if(ks.length<2){rh+=rrow(ks[0]);return}
+  rh+=`<details class="rg"><summary><span class="gn">${g}</span>
+   <span class="gc">${ks.length}</span></summary>${ks.map(rrow).join('')}</details>`});
  if(rkeys.length) rh+=`<div class="lgd" style="color:${RCOL[rkeys[0]]}"><span>менший</span><i></i><span>більший</span></div>`;
  $ify('#frisk',rh);
 
@@ -328,7 +349,7 @@ function riskPopup(k,it){
  const an=v.slug?('#t-'+v.slug):'';
  h+=STUDENT
    ? `<a class="rdoc" href="doslidzhennya.html${an}" target="_blank" rel="noopener">Як рахується цей ризик ↗</a>`
-   : `<a class="rdoc" href="doslidzhennya.html${(it[1]&&it[1]!=='без назви')?('?st='+encodeURIComponent(it[1])):''}${an}" target="_blank" rel="noopener">Розбір цієї вулиці в дослідженні ↗</a>`;
+   : `<a class="rdoc" href="doslidzhennya.html${(it[1]&&it[1]!=='без назви')?('?st='+encodeURIComponent(it[1])):''}${an}" target="_blank" rel="noopener">Розбір вулиці в дослідженні ↗</a>`;
  h+='</div>';
  return h;
 }
@@ -483,7 +504,7 @@ function draw(){
  vis.sort((a,b)=>b[1]-a[1]);
  // у версії для слухачів категорія прихована (p[6]=-1), тому фільтр по ===2 давав
  // порожній список і «Топ адрес» завжди показував «нема даних». Слухачам перелік
- // найгарячіших адрес потрібен саме для самостійного пошуку скупчень.
+ // найгарячіших адрес потрібний саме для самостійного пошуку скупчень.
  const rank=vis.filter(v=>v[0][3]&&(STUDENT||v[0][6]===2));
  $('#cnt').textContent=tot.toLocaleString('uk');
  $('#cntl').textContent=`подій на ${vis.length.toLocaleString('uk')} адресах`;
