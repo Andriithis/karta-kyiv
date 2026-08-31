@@ -14,7 +14,7 @@ TYPES = [
  (r'мікрорайон|м-н', 'мкр.'),
 ]
 TYPE_RE = '(?:' + '|'.join(t for t,_ in TYPES) + ')'
-NAME = r"[А-ЯІЇЄҐ][А-Яа-яІіЇїЄєҐґ'`\u2019\-\s\.]{1,40}?"
+NAME = r"[А-ЯІЇЄҐ][А-Яа-яІіЇїЄєҐґ'`’\-\s\.]{1,40}?"
 HOUSE = r"(\d{1,4}\s*(?:[-/]\s*\d{1,3})?\s*(?:[А-ЯA-Za-zа-я])?)"
 
 # variant A: type before name   "вул. Лугова, 16"
@@ -29,7 +29,7 @@ NOISE = re.compile(r"(суд|прокурат|поліці|управлінн|в
 STOP = {'києва','київ','києві','україни','район','районного','районний','місто','міста'}
 
 def norm_street(t, n):
-    n = re.sub(r'\s+', ' ', n).strip(" ,.-'`\u2019")
+    n = re.sub(r'\s+', ' ', n).strip(" ,.-'`’")
     n = re.sub(r'\s*(м\.?\s*Києв\w*|міста Києва|Київ\w*)\s*$', '', n, flags=re.I).strip()
     for pat, canon in TYPES:
         if re.fullmatch(pat, t, re.U): t = canon; break
@@ -62,23 +62,50 @@ def find_all(text):
         out.append((t, full, norm_house(m.group(3)), m.start()))
     return out
 
-def context_ok(text, pos, win=170):
-    seg = text[max(0,pos-win):pos]
+def context_ok(text, pos, win=170, floor=0):
+    """чи немає перед адресою слів, що виказують адресу установи.
+    `floor` не дає вікну зазирнути в шапку: слова «суд», «прокуратура»
+    там стоять завжди й не стосуються адреси, названої вже у фабулі."""
+    seg = text[max(floor, pos-win):pos]
     return not NOISE.search(seg)
+
+# Фабула починається після слова ВСТАНОВИВ. Усе, що ДО нього, — шапка:
+# назва суду, склад суду й АДРЕСА ПРИМІЩЕННЯ СУДУ. Саме звідти бралася
+# адреса у 63% кримінальних справ (у КУпАП — лише 3,5%, бо там місце
+# вчинення названо в самому протоколі).
+BODY = re.compile(r'(?:в|у)\s*с\s*т\s*а\s*н\s*о\s*в\s*и\s*(?:в|л[аио])\s*[:,\.]?', re.I|re.U)
+
+def body_start(text):
+    """позиція, з якої починається опис події; 0 — якщо маркера немає"""
+    best = None
+    for m in BODY.finditer(text):
+        # маркер-заголовок: з нового рядка або з двокрапкою після
+        head = (m.start() == 0 or text[m.start()-1] in '\n\r\t ')
+        colon = m.group(0).rstrip().endswith(':')
+        if head and colon: return m.end()
+        if best is None: best = m.end()
+    return best or 0
 
 def extract(text):
     """best (street, house, time) for the offence event"""
     cands = find_all(text)
+    bs = body_start(text)
+    # 1) чисті кандидати з ОПИСУ ПОДІЇ (після ВСТАНОВИВ) — найнадійніші
+    inb = [c for c in cands if c[3] >= bs and context_ok(text, c[3], floor=bs)]
+    # 2) якщо опису немає або в ньому адреси немає — чисті з усього тексту
     good = [c for c in cands if context_ok(text, c[3])]
-    pool = good if good else cands
+    pool = inb or good
     if not pool:
-        m = PS.search(text)
+        # Свідомо НЕ повертаємось до відкинутих кандидатів. Раніше тут стояло
+        # `pool = good if good else cands`, і коли чистих не було, функція
+        # віддавала адресу суду з позначкою level='house' — тобто вигадувала
+        # місце події. Краще чесне «адреси немає», ніж хибна точність.
+        m = PS.search(text[bs:] or text)
         if m:
             t, n = norm_street(m.group(1), m.group(2))
-            if n and n.lower() not in STOP and len(n) >= 3:
+            if n and n.lower() not in STOP and len(n) >= 3 and context_ok(text, bs + m.start(), floor=bs):
                 return dict(street=f"{t} {n}", house=None, level='street', time=find_time(text))
         return dict(street=None, house=None, level='none', time=None)
-    # prefer earliest good candidate (fabula sits near the top)
     t, n, h, p = pool[0]
     return dict(street=f"{t} {n}", house=h, level='house' if h else 'street',
                 time=find_time(text, p))
