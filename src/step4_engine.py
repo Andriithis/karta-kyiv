@@ -2,7 +2,9 @@
 """Крок 4. Аналітичний двигун: які умови середовища пов'язані з правопорушеннями.
 
 Одиниця аналізу — ВІДРІЗОК ВУЛИЦІ, а не квадрат сітки.
-Так робили Davies & Bishop (2014); події концентруються, дані перестають бути
+Так робили Davies & Bishop (2013, Crime Science 2(1):10); Rosser та ін. (2017,
+JQC 33(3):569-594) показали, що мережа знаходить приблизно на 20% більше подій
+за того самого покриття, ніж сітка. Події концентруються, дані перестають бути
 розрідженими. Сітка 250 м давала 46 тисяч комірок на 2-3 тисячі подій.
 
 Захист від хибних знахідок: навчання на 2024, перевірка на 2025-2026.
@@ -10,6 +12,7 @@
 import os, sys, json, math, sqlite3, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import labels as L
+import mech as M
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
@@ -152,9 +155,9 @@ def main():
             for r in (250, 500):
                 feats[f'населення_{r}м'] = {s: pg2.count(*mid[s], r) for s in sids}
 
-    # ---- ПІШОХІДНІ ПОТОКИ ЯК ОЗНАКА (Davies & Bishop 2014) ----
-    # ВИПРАВЛЕНО 2026-08. Стара редакція брала МАКСИМУМ потоку по НАЗВІ вулиці
-    # й приписувала його всім її відрізкам. На вул. Стеценка (54 відрізки) потік
+    # ---- ПІШОХІДНІ ПОТОКИ ЯК ОЗНАКА (Davies & Bishop 2013) ----
+    # ВИПРАВЛЕНО 2026-08. Стара редакція брала МАКСИМУМ потоку по НАЗВІ
+    # вулиці й приписувала його всім її відрізкам. На вул. Стеценка (54 відрізки) потік
     # коливається від 73 до 2 893 — тобто вся внутрішньовулична варіація, заради
     # якої одиницею аналізу й обрано відрізок, знищувалася. Наслідок: ознака
     # «прохідність» жодного разу не потрапила в топ-20 чинників жодної теми.
@@ -200,8 +203,14 @@ def main():
             if ((r[4] + ', ' + r[5]) if (r[4] and r[5]) else (r[4] or '')).lower() not in excl]
     if before != len(rows):
         print(f'   вилучено подій на адресах установ: {before - len(rows):,}')
+    # ОДИНИЦЯ МОДЕЛІ — МЕХАНІЗМ, не тема (рішення 31.08.2026).
+    # tr/te рахуємо по механізму, trT/teT — по темі. Теми лишаються, щоб було
+    # з чим порівняти: механізм іде на карту лише тоді, коли на власних подіях
+    # він вгадує краще, ніж спільна модель теми.
     tr = collections.defaultdict(collections.Counter)
     te = collections.defaultdict(collections.Counter)
+    trT = collections.defaultdict(collections.Counter)
+    teT = collections.defaultdict(collections.Counter)
     cache = {}; hit = 0
     for cat, date, la, lo, _st, _hs in rows:
         ck = (round(la, 5), round(lo, 5))
@@ -210,11 +219,13 @@ def main():
         if s is None: continue
         lb = L.CODE.get(cat)
         if not lb: continue
+        sim = M.simgroup(cat)
         hit += 1
         y = date[:4]
-        if y in TRAIN_Y: tr[lb[0]][s] += 1
-        elif y in TEST_Y: te[lb[0]][s] += 1
+        if y in TRAIN_Y: tr[sim][s] += 1; trT[lb[0]][s] += 1
+        elif y in TEST_Y: te[sim][s] += 1; teT[lb[0]][s] += 1
     print(f'   подій прив\'язано: {hit:,} з {len(rows):,}')
+    print(f'   механізмів: {len(tr)}, тем: {len(trT)}')
 
     fnames = sorted(feats)
     X0 = np.array([[feats[f][s] for f in fnames] for s in sids], dtype=np.float64)
@@ -226,7 +237,7 @@ def main():
     # ---- парні взаємодії найсильніших ознак ----
     base_n = list(fnames)
     TOPK = int(os.environ.get('TOPK', '14'))
-    inter_idx = None   # визначається окремо для кожної теми
+    inter_idx = None   # визначається окремо для кожного механізму
     print(f'   одиничних ознак: {len(fnames)}')
 
     def hit_rate(score, actual, pct):
@@ -235,16 +246,22 @@ def main():
         top = np.argsort(-score)[:k]
         return float(actual[top].sum() / max(actual.sum(), 1))
 
-    report = {}
-    risk_layers = {}
-    for th in sorted(tr, key=lambda x: -sum(tr[x].values())):
-        n_tr = sum(tr[th].values())
-        if n_tr < MIN_EV: continue
-        y = np.array([tr[th].get(s, 0) for s in sids], dtype=np.float64)
-        yt = np.array([te[th].get(s, 0) for s in sids], dtype=np.float64)
-        if yt.sum() < 50: continue
+    base = 0.10   # випадковий рівень: 10% вулиць -> 10% подій
+    lons = np.array([mid[s][1] for s in sids])
+    wmask, emask = lons <= np.median(lons), lons > np.median(lons)
 
-        # --- взаємодії будуються з топ-K ознак, найсильніших САМЕ для цієї теми ---
+    def fit_one(key, cnt_tr, cnt_te, alphas, rival=None):
+        """Навчає модель для однієї одиниці — теми або механізму.
+        `rival` — прогноз моделі теми. Його міряємо на ПОДІЯХ ЦЬОГО МЕХАНІЗМУ:
+        це і є чесне питання «чи власна модель механізму краща за спільну».
+        Повертає (запис звіту, шар ризику, прогноз) або None, якщо подій замало."""
+        n_tr = sum(cnt_tr.values())
+        if n_tr < MIN_EV: return None
+        y = np.array([cnt_tr.get(s, 0) for s in sids], dtype=np.float64)
+        yt = np.array([cnt_te.get(s, 0) for s in sids], dtype=np.float64)
+        if yt.sum() < 50: return None
+
+        # --- взаємодії будуються з топ-K ознак, найсильніших САМЕ для цієї одиниці ---
         with np.errstate(invalid='ignore', divide='ignore'):
             cc = np.array([abs(np.corrcoef(X0[:, i], y)[0, 1]) if X0[:, i].std() > 0 else 0
                            for i in range(X0.shape[1])])
@@ -257,7 +274,7 @@ def main():
                 icols.append(X0[:, i] * X0[:, j])
                 inames.append(f'{base_n[i]} × {base_n[j]}')
         Xf = np.hstack([X0, np.array(icols).T]) if icols else X0
-        fnames = base_n + inames
+        fn = base_n + inames
 
         Xs = StandardScaler().fit_transform(Xf)
         Xh = np.hstack([Xs, StandardScaler().fit_transform(np.log1p(y).reshape(-1, 1))])
@@ -265,7 +282,7 @@ def main():
         rate = y / expo                      # події на одиницю довжини
         def fit_best(XX):
             bb = None
-            for a in (0.3, 1.0, 3.0, 10.0):
+            for a in alphas:
                 m = PoissonRegressor(alpha=a, max_iter=700).fit(XX, rate, sample_weight=expo)
                 p = m.predict(XX) * expo     # назад в абсолютні числа
                 h = hit_rate(p, yt, 0.10)
@@ -276,48 +293,105 @@ def main():
         hA = hit_rate(y, yt, 0.10)
         hB, mB, pB = fit_best(Xs)
         hC, mC, pC = fit_best(Xh)
-        base = 0.10   # випадковий рівень: 10% вулиць -> 10% подій
 
         # ГЕОГРАФІЧНА ПЕРЕВІРКА: вчимось на західній половині, міряємо на східній
-        lons = np.array([mid[s][1] for s in sids])
-        cut = np.median(lons)
-        wmask, emask = lons <= cut, lons > cut
         hGeo = float('nan')
         if y[wmask].sum() > 60 and yt[emask].sum() > 30:
-            mg = PoissonRegressor(alpha=1.0, max_iter=700).fit(
+            mg = PoissonRegressor(alpha=alphas[-1], max_iter=700).fit(
                 Xs[wmask], rate[wmask], sample_weight=expo[wmask])
             pg_ = mg.predict(Xs[emask]) * expo[emask]
             hGeo = hit_rate(pg_, yt[emask], 0.10)
 
         r = float(np.corrcoef(pB, yt)[0, 1]) if yt.std() > 0 else 0.0
-        co = sorted(zip(fnames, mB.coef_), key=lambda x: -abs(x[1]))
-        # --- КАРТА РИЗИКУ: прогноз для кожної вулиці, у частках від максимуму ---
+        co = sorted(zip(fn, mB.coef_), key=lambda x: -abs(x[1]))
         rk = pB / (pB.max() or 1)
-        risk_layers[th] = {
-            'title': 'Ризик: ' + L.THEMES.get(th, th),
+        layer = {
             'hit': round(hB, 3),
             'items': [[segs[sids[i]][::max(1, len(segs[sids[i]])//8)],
                        names[sids[i]], round(float(rk[i]), 3), int(y[i])]
-                      for i in np.argsort(-rk)[:1200]]
-        }
-
-        report[th] = {
-            'тема': L.THEMES.get(th, th), 'навчання': n_tr, 'перевірка': int(yt.sum()),
-            'r': round(r, 3),
-            'hit_історія': round(hA, 3), 'hit_середовище': round(hB, 3), 'hit_разом': round(hC, 3),
+                      for i in np.argsort(-rk)[:1200]]}
+        entry = {
+            'навчання': n_tr, 'перевірка': int(yt.sum()), 'r': round(r, 3),
+            'hit_історія': round(hA, 3), 'hit_середовище': round(hB, 3),
+            'hit_разом': round(hC, 3),
             'hit_інший_район': None if hGeo != hGeo else round(hGeo, 3),
             'PAI_середовище': round(hB / base, 2), 'PAI_історія': round(hA / base, 2),
             'фактори': [[n, round(float(c), 3)] for n, c in co if abs(c) > 0.02][:20]}
-        print(f'\n--- {L.THEMES.get(th, th)} ---')
-        print(f'   у верхніх 10% вулиць опиняється подій наступних років:')
-        print(f'      історія подій:   {100*hA:5.1f}%   (у {hA/base:.1f} рази краще за випадок)')
-        print(f'      середовище:      {100*hB:5.1f}%   (у {hB/base:.1f} рази)')
-        print(f'      разом:           {100*hC:5.1f}%   (у {hC/base:.1f} рази)')
-        if hGeo == hGeo:
-            print(f'      ІНША ПОЛОВИНА МІСТА: {100*hGeo:5.1f}%   (у {hGeo/base:.1f} рази)')
-        for n, c in co[:8]:
-            if abs(c) < 0.02: break
+        if rival is not None:
+            entry['hit_моделлю_теми'] = round(hit_rate(rival, yt, 0.10), 3)
+        return entry, layer, pB
+
+    def show(title, e):
+        print(f'\n--- {title} ---')
+        print(f"   навчання {e['навчання']:,} / перевірка {e['перевірка']:,}".replace(',', ' '))
+        print(f"   у верхніх 10% вулиць опиняється подій наступних років:")
+        print(f"      історія подій:   {100*e['hit_історія']:5.1f}%   (у {e['PAI_історія']:.1f} рази краще за випадок)")
+        print(f"      середовище:      {100*e['hit_середовище']:5.1f}%   (у {e['PAI_середовище']:.1f} рази)")
+        print(f"      разом:           {100*e['hit_разом']:5.1f}%")
+        if e['hit_інший_район'] is not None:
+            print(f"      ІНША ПОЛОВИНА МІСТА: {100*e['hit_інший_район']:5.1f}%")
+        for n, c in e['фактори'][:6]:
             print(f'      {c:+.3f}  {n}')
+
+    # альфа-сітка: у механізмів вона коротша, бо їх утричі більше
+    ALPHA_T = (0.3, 1.0, 3.0, 10.0)
+    ALPHA_M = tuple(float(a) for a in os.environ.get('ALPHA_M', '1,3').split(','))
+
+    report, risk_layers = {}, {}
+    theme_pred = {}
+
+    # ---- А. ТЕМИ: лишаються як загальний шар і як планка для механізмів ----
+    print('\n' + '=' * 60)
+    print('ТЕМИ (загальний шар і планка порівняння)')
+    print('=' * 60)
+    for th in sorted(trT, key=lambda x: -sum(trT[x].values())):
+        got = fit_one(th, trT[th], teT[th], ALPHA_T)
+        if not got: continue
+        e, lay, pB = got
+        e.update(вид='тема', тема=L.THEMES.get(th, th), назва=L.THEMES.get(th, th))
+        lay.update(kind='theme', theme=th, name=L.THEMES.get(th, th),
+                   title='Ризик: ' + L.THEMES.get(th, th), slug=M.anchor(th))
+        report[th] = e; risk_layers[th] = lay; theme_pred[th] = pB
+        show(L.THEMES.get(th, th), e)
+
+    # ---- Б. МЕХАНІЗМИ: те, що сталося насправді ----
+    print('\n' + '=' * 60)
+    print('МЕХАНІЗМИ')
+    print('=' * 60)
+    weaker = []
+    for sim in sorted(tr, key=lambda x: -sum(tr[x].values())):
+        th = M.simtheme(sim)
+        got = fit_one(sim, tr[sim], te[sim], ALPHA_M, rival=theme_pred.get(th))
+        if not got: continue
+        e, lay, _p = got
+        nm = M.simname(sim)
+        # Чесна перевірка: беремо ПОДІЇ ЦЬОГО МЕХАНІЗМУ за наступні роки й
+        # питаємо, хто краще вгадав, де вони будуть, — спільна модель теми
+        # чи власна модель механізму. Порівнюються два прогнози на одній і тій
+        # самій мішені, тож числа співмірні. Програв — на карту не йде.
+        rh = e.get('hit_моделлю_теми')
+        better = rh is None or e['hit_середовище'] >= rh
+        e.update(вид='механізм', тема=L.THEMES.get(th, th), назва=nm,
+                 тема_код=th, краще_за_тему=better)
+        report[sim] = e
+        if better:
+            lay.update(kind='mech', theme=th, name=nm,
+                       title='Ризик: ' + nm, slug=M.anchor(sim))
+            risk_layers[sim] = lay
+        else:
+            weaker.append((sim, nm, e['hit_середовище'], rh))
+        tag = '' if better else '  — модель теми вгадує краще, на карту не йде'
+        show(f'{nm}  [{L.THEMES.get(th, th)}]{tag}', e)
+        if rh is not None:
+            print(f"      на цих самих подіях модель теми дає {100*rh:.1f}%")
+
+    if weaker:
+        print('\n=== механізми, де спільна модель теми виявилася кращою ===')
+        for sim, nm, h, rh in weaker:
+            print(f'   {nm}: власна {100*h:.0f}% проти {100*rh:.0f}% у теми')
+    print(f'\nшарів ризику на карті: {len(risk_layers)} '
+          f'({sum(1 for v in risk_layers.values() if v["kind"] == "mech")} механізмів '
+          f'+ {sum(1 for v in risk_layers.values() if v["kind"] == "theme")} тем)')
 
     # ---- НЕБЕЗПЕЧНІ ПІДХОДИ ДО ШКІЛ: потік дітей + немає тротуару ----
     danger = []
@@ -356,15 +430,40 @@ def main():
         f.write('> Головна метрика — **влучність**: яка частка подій 2025–2026 припала\n')
         f.write('> на верхні 10% вулиць, відібраних моделлю за 2024 рік.\n')
         f.write('> Випадковий відбір дав би 10%. Коефіцієнт PAI показує, у скільки разів краще.\n\n')
-        f.write('| Тема | Історія | Середовище | Разом | Інша половина міста | Подій |\n|---|---|---|---|---|---|\n')
+        f.write('Одиниця моделі — **механізм** (те, що сталося), а не тема (папка\n')
+        f.write('в законі). Теми лишено для порівняння: механізм потрапляє на карту\n')
+        f.write('лише тоді, коли він точніший за власну тему.\n\n')
+
+        def _tbl(items, head):
+            f.write(head)
+            f.write('|---|---|---|---|---|---|\n')
+            for _k, d in items:
+                g = d.get('hit_інший_район')
+                gs = f"{100*g:.0f}%" if g is not None else "—"
+                f.write(f"| {d['назва']} | {100*d['hit_історія']:.0f}% "
+                        f"| **{100*d['hit_середовище']:.0f}%** "
+                        f"| {100*d['hit_разом']:.0f}% | {gs} | {d['навчання']:,} |\n")
+            f.write('\n')
+
+        themes = sorted([kv for kv in report.items() if kv[1]['вид'] == 'тема'],
+                        key=lambda x: -x[1]['hit_середовище'])
+        mechs = sorted([kv for kv in report.items() if kv[1]['вид'] == 'механізм'],
+                       key=lambda x: -x[1]['hit_середовище'])
+        f.write('## Механізми\n\n')
+        _tbl(mechs, '| Механізм | Історія | Середовище | Разом | Інша половина міста | Подій |\n')
+        drop = [kv for kv in mechs if not kv[1].get('краще_за_тему')]
+        if drop:
+            f.write('Не показані на карті: на подіях цих механізмів спільна модель\n')
+            f.write('теми вгадала краще, ніж власна модель механізму — ')
+            f.write(', '.join(f"{d['назва']} ({100*d['hit_середовище']:.0f}% проти "
+                              f"{100*d['hit_моделлю_теми']:.0f}%)" for _k, d in drop))
+            f.write('.\n\n')
+        f.write('## Теми (для порівняння)\n\n')
+        _tbl(themes, '| Тема | Історія | Середовище | Разом | Інша половина міста | Подій |\n')
+
         for th, d in sorted(report.items(), key=lambda x: -x[1]['hit_середовище']):
-            g = d.get('hit_інший_район')
-            gs = f"{100*g:.0f}%" if g is not None else "—"
-            f.write(f"| {d['тема']} | {100*d['hit_історія']:.0f}% | **{100*d['hit_середовище']:.0f}%** "
-                    f"| {100*d['hit_разом']:.0f}% | {gs} | {d['навчання']:,} |\n")
-        f.write('\n')
-        for th, d in sorted(report.items(), key=lambda x: -x[1]['hit_середовище']):
-            f.write(f"## {d['тема']}\n\n")
+            f.write(f"### {d['назва']}"
+                    + ('' if d['вид'] == 'тема' else f" · {d['тема']}") + "\n\n")
             f.write(f"Подій {d['навчання']:,} / {d['перевірка']:,}. ")
             f.write(f"Влучність середовища **{100*d['hit_середовище']:.0f}%** ")
             f.write(f"(PAI {d['PAI_середовище']}), історії {100*d['hit_історія']:.0f}%, ")
