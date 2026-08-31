@@ -9,7 +9,7 @@ JQC 33(3):569-594) показали, що мережа знаходить при
 
 Захист від хибних знахідок: навчання на 2024, перевірка на 2025-2026.
 """
-import os, sys, json, math, sqlite3, collections
+import os, sys, csv, glob, json, math, sqlite3, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import labels as L
 import mech as M
@@ -27,6 +27,13 @@ RADII   = [100, 250, 500]
 MIN_EV  = 250
 TRAIN_Y = {'2024'}
 TEST_Y  = {'2025', '2026'}
+# ЗАПАСНЕ ВІКНО для рідкісних механізмів (рішення 31.08.2026).
+# ДТП з потерпілими дають близько 150 подій на рік — порога 250 за один
+# 2024 рік не досягають. На двох роках навчання досягають (~300), і при
+# цьому перевірка лишається чесною: вчимося на минулому, міряємо на 2026.
+TRAIN2  = {'2024', '2025'}
+TEST2   = {'2026'}
+WINDOWS = (('2024', TRAIN_Y, TEST_Y), ('2024-2025', TRAIN2, TEST2))
 
 def mdeg(lat): return 111320.0, 111320.0 * math.cos(math.radians(lat))
 
@@ -195,24 +202,56 @@ def main():
             if ln: excl.add(ln.lower())
         print(f'   виключених адрес установ: {len(excl)}')
     conn = sqlite3.connect(DB)
-    rows = conn.execute("""SELECT e.cat, e.date, g.lat, g.lon, e.street, e.house FROM events e
-                           JOIN geo g ON g.doc_id=e.doc_id
+    rows = conn.execute("""SELECT e.cat, e.date, g.lat, g.lon, e.street, e.house, e.doc_id
+                           FROM events e JOIN geo g ON g.doc_id=e.doc_id
                            WHERE g.precision='house'""").fetchall()
     before = len(rows)
     rows = [r for r in rows
             if ((r[4] + ', ' + r[5]) if (r[4] and r[5]) else (r[4] or '')).lower() not in excl]
     if before != len(rows):
         print(f'   вилучено подій на адресах установ: {before - len(rows):,}')
+
+    # ---- ОДНА СПРАВА = ОДНА ПОДІЯ ----
+    # Перевірено 31.08.2026 на ст.286 КК: 3 560 документів — це 1 409 аварій,
+    # по 2,5 папери на кожну (обвинувальний акт, призначення розгляду,
+    # експертиза, вирок). Раніше кожен папір рахувався окремою подією, тож
+    # одна аварія важила стільки ж, скільки дві-три різні. Для адміністративних
+    # справ це нічого не змінює: там один протокол — одна справа.
+    cause = {}
+    for fp in sorted(glob.glob(os.path.join(DATA, 'kyiv_*.csv'))):
+        with open(fp, encoding='utf-8-sig') as fh:
+            for r in csv.DictReader(fh, delimiter='\t'):
+                if r.get('cause_num'): cause[r['doc_id']] = r['cause_num']
+    if cause:
+        groups = collections.defaultdict(list)
+        for r in rows:
+            cn = cause.get(r[6])
+            groups[(cn, r[0]) if cn else ('#' + str(r[6]), r[0])].append(r)
+        keep = []
+        for _k, g in groups.items():
+            if len(g) == 1: keep.append(g[0]); continue
+            # серед документів однієї справи беремо найчастішу адресу,
+            # за рівності — найранішу подію
+            addr_n = collections.Counter(
+                ((x[4] or '') + ', ' + (x[5] or '')) for x in g)
+            top = addr_n.most_common(1)[0][0]
+            same = [x for x in g if ((x[4] or '') + ', ' + (x[5] or '')) == top]
+            keep.append(sorted(same, key=lambda x: x[1] or '')[0])
+        print(f'   одна справа = одна подія: {len(rows):,} -> {len(keep):,}')
+        rows = keep
+    else:
+        print('   dedup пропущено: немає data/kyiv_*.csv із номерами справ')
     # ОДИНИЦЯ МОДЕЛІ — МЕХАНІЗМ, не тема (рішення 31.08.2026).
     # tr/te рахуємо по механізму, trT/teT — по темі. Теми лишаються, щоб було
     # з чим порівняти: механізм іде на карту лише тоді, коли на власних подіях
     # він вгадує краще, ніж спільна модель теми.
-    tr = collections.defaultdict(collections.Counter)
-    te = collections.defaultdict(collections.Counter)
-    trT = collections.defaultdict(collections.Counter)
-    teT = collections.defaultdict(collections.Counter)
+    # рахуємо одразу для обох вікон навчання (основного й запасного)
+    TR = [collections.defaultdict(collections.Counter) for _ in WINDOWS]
+    TE = [collections.defaultdict(collections.Counter) for _ in WINDOWS]
+    TRT = [collections.defaultdict(collections.Counter) for _ in WINDOWS]
+    TET = [collections.defaultdict(collections.Counter) for _ in WINDOWS]
     cache = {}; hit = 0
-    for cat, date, la, lo, _st, _hs in rows:
+    for cat, date, la, lo, _st, _hs, _doc in rows:
         ck = (round(la, 5), round(lo, 5))
         if ck in cache: s = cache[ck]
         else: s = cache[ck] = sg.nearest(la, lo, SNAP_M)
@@ -221,9 +260,11 @@ def main():
         if not lb: continue
         sim = M.simgroup(cat)
         hit += 1
-        y = date[:4]
-        if y in TRAIN_Y: tr[sim][s] += 1; trT[lb[0]][s] += 1
-        elif y in TEST_Y: te[sim][s] += 1; teT[lb[0]][s] += 1
+        y = (date or '')[:4]
+        for w, (_nm, try_, tey_) in enumerate(WINDOWS):
+            if y in try_: TR[w][sim][s] += 1; TRT[w][lb[0]][s] += 1
+            elif y in tey_: TE[w][sim][s] += 1; TET[w][lb[0]][s] += 1
+    tr, te, trT, teT = TR[0], TE[0], TRT[0], TET[0]
     print(f'   подій прив\'язано: {hit:,} з {len(rows):,}')
     print(f'   механізмів: {len(tr)}, тем: {len(trT)}')
 
@@ -321,6 +362,22 @@ def main():
             entry['hit_моделлю_теми'] = round(hit_rate(rival, yt, 0.10), 3)
         return entry, layer, pB
 
+    WTXT = {'2024': ('2024 року', '2025-2026'),
+            '2024-2025': ('2024-2025 років', '2026')}
+
+    def method_text(e, wname):
+        """речення для картки на карті. Роки беремо з ВІКНА цієї моделі:
+        частина механізмів навчена на двох роках, і писати їм «2024» — брехня."""
+        tr_y, te_y = WTXT.get(wname, (wname, '-'))
+        # пробіл як роздільник тисяч — але тільки в числах, а не в усьому реченні
+        n1 = f"{e['навчання']:,}".replace(',', ' ')
+        n2 = f"{e['перевірка']:,}".replace(',', ' ')
+        return (f"Модель навчена на {n1} подіях зі справ, розглянутих "
+                f"{tr_y}, і перевірена на {n2} подіях зі справ {te_y}. "
+                f"У верхніх 10% вулиць за прогнозом опиняється "
+                f"{100*e['hit_середовище']:.0f}% подій наступних років "
+                f"(у {e['PAI_середовище']} рази краще за випадковий відбір).")
+
     def show(title, e):
         print(f'\n--- {title} ---')
         print(f"   навчання {e['навчання']:,} / перевірка {e['перевірка']:,}".replace(',', ' '))
@@ -348,9 +405,12 @@ def main():
         got = fit_one(th, trT[th], teT[th], ALPHA_T)
         if not got: continue
         e, lay, pB = got
-        e.update(вид='тема', тема=L.THEMES.get(th, th), назва=L.THEMES.get(th, th))
+        e.update(вид='тема', тема=L.THEMES.get(th, th), назва=L.THEMES.get(th, th),
+                 вікно=WINDOWS[0][0])
+        e['метод'] = method_text(e, WINDOWS[0][0])
         lay.update(kind='theme', theme=th, name=L.THEMES.get(th, th),
-                   title='Ризик: ' + L.THEMES.get(th, th), slug=M.anchor(th))
+                   title='Ризик: ' + L.THEMES.get(th, th), slug=M.anchor(th),
+                   window=WINDOWS[0][0])
         report[th] = e; risk_layers[th] = lay; theme_pred[th] = pB
         show(L.THEMES.get(th, th), e)
 
@@ -358,13 +418,29 @@ def main():
     print('\n' + '=' * 60)
     print('МЕХАНІЗМИ')
     print('=' * 60)
+    # Тема у ЗАПАСНОМУ вікні — рахується лише тоді, коли знадобилась,
+    # щоб було з чим чесно порівняти механізм, навчений на двох роках.
+    theme_pred2 = {}
+    def theme_rival(w, th):
+        if w == 0: return theme_pred.get(th)
+        if th not in theme_pred2:
+            g = fit_one(th, TRT[w][th], TET[w][th], ALPHA_T)
+            theme_pred2[th] = g[2] if g else None
+        return theme_pred2[th]
+
     weaker = []
-    for sim in sorted(tr, key=lambda x: -sum(tr[x].values())):
+    all_sims = sorted(set(tr) | set(TR[1]),
+                      key=lambda x: -sum(tr[x].values() if x in tr else TR[1][x].values()))
+    for sim in all_sims:
         th = M.simtheme(sim)
-        got = fit_one(sim, tr[sim], te[sim], ALPHA_M, rival=theme_pred.get(th))
+        got, w = None, 0
+        for w in range(len(WINDOWS)):
+            got = fit_one(sim, TR[w][sim], TE[w][sim], ALPHA_M, rival=theme_rival(w, th))
+            if got: break
         if not got: continue
         e, lay, _p = got
         nm = M.simname(sim)
+        wname = WINDOWS[w][0]
         # Чесна перевірка: беремо ПОДІЇ ЦЬОГО МЕХАНІЗМУ за наступні роки й
         # питаємо, хто краще вгадав, де вони будуть, — спільна модель теми
         # чи власна модель механізму. Порівнюються два прогнози на одній і тій
@@ -372,16 +448,18 @@ def main():
         rh = e.get('hit_моделлю_теми')
         better = rh is None or e['hit_середовище'] >= rh
         e.update(вид='механізм', тема=L.THEMES.get(th, th), назва=nm,
-                 тема_код=th, краще_за_тему=better)
+                 тема_код=th, краще_за_тему=better, вікно=wname)
+        e['метод'] = method_text(e, wname)
         report[sim] = e
         if better:
             lay.update(kind='mech', theme=th, name=nm,
-                       title='Ризик: ' + nm, slug=M.anchor(sim))
+                       title='Ризик: ' + nm, slug=M.anchor(sim), window=wname)
             risk_layers[sim] = lay
         else:
             weaker.append((sim, nm, e['hit_середовище'], rh))
         tag = '' if better else '  — модель теми вгадує краще, на карту не йде'
-        show(f'{nm}  [{L.THEMES.get(th, th)}]{tag}', e)
+        wtag = '' if w == 0 else f'  (навчання {wname})'
+        show(f'{nm}  [{L.THEMES.get(th, th)}]{wtag}{tag}', e)
         if rh is not None:
             print(f"      на цих самих подіях модель теми дає {100*rh:.1f}%")
 
@@ -426,7 +504,9 @@ def main():
     with open(TXT, 'w', encoding='utf-8') as f:
         f.write('# Звіт аналітичного двигуна\n\n')
         f.write(f'Одиниця аналізу — відрізок вулиці ({len(segs):,} шт.), ознак {len(feats)}.\n')
-        f.write('Навчання 2024, перевірка 2025–2026.\n\n')
+        f.write('Основне вікно: навчання 2024, перевірка 2025–2026.\n')
+        f.write('Механізми, яким подій за один рік замало, вчаться на 2024–2025\n')
+        f.write('і перевіряються на 2026 — у таблиці це видно в колонці «Навчання».\n\n')
         f.write('> Головна метрика — **влучність**: яка частка подій 2025–2026 припала\n')
         f.write('> на верхні 10% вулиць, відібраних моделлю за 2024 рік.\n')
         f.write('> Випадковий відбір дав би 10%. Коефіцієнт PAI показує, у скільки разів краще.\n\n')
@@ -436,11 +516,12 @@ def main():
 
         def _tbl(items, head):
             f.write(head)
-            f.write('|---|---|---|---|---|---|\n')
+            f.write('|---|---|---|---|---|---|---|\n')
             for _k, d in items:
                 g = d.get('hit_інший_район')
                 gs = f"{100*g:.0f}%" if g is not None else "—"
-                f.write(f"| {d['назва']} | {100*d['hit_історія']:.0f}% "
+                f.write(f"| {d['назва']} | {d.get('вікно', '2024')} "
+                        f"| {100*d['hit_історія']:.0f}% "
                         f"| **{100*d['hit_середовище']:.0f}%** "
                         f"| {100*d['hit_разом']:.0f}% | {gs} | {d['навчання']:,} |\n")
             f.write('\n')
@@ -450,7 +531,7 @@ def main():
         mechs = sorted([kv for kv in report.items() if kv[1]['вид'] == 'механізм'],
                        key=lambda x: -x[1]['hit_середовище'])
         f.write('## Механізми\n\n')
-        _tbl(mechs, '| Механізм | Історія | Середовище | Разом | Інша половина міста | Подій |\n')
+        _tbl(mechs, '| Механізм | Навчання | Історія | Середовище | Разом | Інша половина міста | Подій |\n')
         drop = [kv for kv in mechs if not kv[1].get('краще_за_тему')]
         if drop:
             f.write('Не показані на карті: на подіях цих механізмів спільна модель\n')
@@ -459,7 +540,7 @@ def main():
                               f"{100*d['hit_моделлю_теми']:.0f}%)" for _k, d in drop))
             f.write('.\n\n')
         f.write('## Теми (для порівняння)\n\n')
-        _tbl(themes, '| Тема | Історія | Середовище | Разом | Інша половина міста | Подій |\n')
+        _tbl(themes, '| Тема | Навчання | Історія | Середовище | Разом | Інша половина міста | Подій |\n')
 
         for th, d in sorted(report.items(), key=lambda x: -x[1]['hit_середовище']):
             f.write(f"### {d['назва']}"
