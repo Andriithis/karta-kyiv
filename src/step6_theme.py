@@ -6,6 +6,7 @@
 поіменних переліків немає — лише чинники.
 """
 import labels as L
+import mech as M
 from step6_base import (esc, num, page, stamp, bar, fac_human,
                         parse_factor, THSLUG, TRAIN_Y, TEST_Y)
 
@@ -14,10 +15,10 @@ def theme_block(th, i, A, D, mode='full'):
     rows = A['streets'].get(th, [])
     sl = THSLUG.get(th, th)
     # Прогноз рахується по МЕХАНІЗМАХ, а розділ документа поки один на тему.
-    # Щоб посилання з картки ризику («Розбір цієї вулиці в дослідженні»)
+    # Щоб посилання з картки ризику («Розбір цᑖєї вулиці в дослідженні»)
     # не вело в нікуди, кожен механізм теми отримує власний якір тут-таки.
-    mech = sorted({m for m in L.SIMGROUP.values() if L.simtheme(m) == th})
-    anch = ''.join(f'<span id="t-{L.anchor(m)}"></span>' for m in mech)
+    mech = [m for m in M.all_groups() if M.simtheme(m) == th]
+    anch = ''.join(f'<span id="t-{M.anchor(m)}"></span>' for m in mech)
     b = [anch + f'<h3 id="t-{sl}">6.{i+1}. {esc(d.get("тема", L.THEMES.get(th, th)))}</h3>']
     g = d.get('hit_інший_район')
     b.append('<div class="cards">'
