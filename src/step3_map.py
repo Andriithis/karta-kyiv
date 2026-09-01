@@ -282,8 +282,10 @@ def main(district=None, mode='full', out=None):
                     grid[(int(pnt[0]/RC), int(pnt[1]/RC))].append((pnt[0], pnt[1], pc))
             theme_rgrid[th] = grid
             d = ER.get(th, {})
-            method = ''
-            if d:
+            # Двигун сам пише речення про роки: частина механізмів навчена
+            # на двох роках, і зашитий тут «2024» був би неправдою.
+            method = d.get('метод', '')
+            if d and not method:
                 method = (f"Модель навчена на {d.get('навчання', 0):,} подіях зі справ, "
                           f"розглянутих 2024 року, і перевірена на "
                           f"{d.get('перевірка', 0):,} подіях зі справ 2025–2026. "
