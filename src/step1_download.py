@@ -81,11 +81,61 @@ def load_tasks(done):
     rows.sort(key=lambda r: (order.get(r['group'], 99), r['date']), reverse=False)
     return rows
 
+# Маркер одноразового перерахунку адрес. Зберігається як рядок у базі,
+# тож потрапляє у знімок і переживає перезапуски. Геокоду в нього немає,
+# тож ні на карті, ні в моделі він не з'являється.
+SENTINEL = '__vypravlennia_adres_2026_09__'
+
+def recheck_addresses(conn):
+    """Одноразово прибирає записи, де старий витягувач підставив АДРЕСУ СУДУ
+    замість місця події (див. addr.py: раніше при відсутності чистого
+    кандидата функція повертала відкинутий — тобто шапку вироку).
+    Видалені підуть на повторне завантаження вже з виправленим кодом.
+
+    ВАЖЛИВО: чіпаємо лише ті документи, які є в наявних kyiv_*.csv.
+    Інакше на сервері, де крок 0 качає тільки поточний рік, записи 2024
+    року було б видалено й ніколи не відновлено.
+    """
+    if conn.execute('SELECT 1 FROM events WHERE doc_id=?', (SENTINEL,)).fetchone():
+        return 0
+    excl = set()
+    for f in ('vykluchennya.txt', 'vykluchennya_moyi.txt'):
+        p = os.path.join(DATA, f)
+        if not os.path.exists(p): continue
+        for ln in open(p, encoding='utf-8'):
+            ln = ln.split('#')[0].strip()
+            if ln: excl.add(ln.lower())
+    if not excl:
+        return 0            # без списку установ вирішувати немає чим — не чіпаємо
+    have = set()
+    for fp in sorted(glob.glob(os.path.join(DATA, 'kyiv_*.csv'))):
+        with open(fp, encoding='utf-8-sig') as fh:
+            for r in csv.DictReader(fh, delimiter='\t'):
+                have.add(r['doc_id'])
+    if not have:
+        return 0
+    bad = []
+    for doc, st, hs in conn.execute(
+            "SELECT doc_id, street, house FROM events WHERE level='house'"):
+        if doc not in have: continue
+        a = ((st + ', ' + hs) if (st and hs) else (st or '')).lower()
+        if a in excl: bad.append((doc,))
+    if bad:
+        conn.executemany('DELETE FROM events WHERE doc_id=?', bad)
+    conn.execute('INSERT OR REPLACE INTO events VALUES(?,?,?,?,?,?,?,?,?,?)',
+                 (SENTINEL, '', '', '', '', None, None, 'marker', None,
+                  'адреси перераховано після виправлення addr.py'))
+    conn.commit()
+    return len(bad)
+
 def main():
     conn = init_db()
     if not conn.execute('SELECT 1 FROM events LIMIT 1').fetchone():
         k = snapshot_load(conn)
         if k: print(f'відновлено зі знімка: {k:,}')
+    n = recheck_addresses(conn)
+    if n:
+        print(f'на повторне завантаження (була адреса установи): {n:,}')
     done = {r[0] for r in conn.execute('SELECT doc_id FROM events')}
     print(f'вже оброблено: {len(done):,}')
     tasks = load_tasks(done)
