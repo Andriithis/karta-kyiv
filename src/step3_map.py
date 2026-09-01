@@ -206,13 +206,32 @@ def main(district=None, mode='full', out=None):
              1 if prec == 'house' else 0, date, street or '', house or '',
              *extra.get(doc, ('', ''))))
 
+    # ---- ЧЕСНА НАЗВА ТОЧКИ (виправлено 01.09.2026) ----
+    # Крок 2 має два режими прив'язки. Коли будинок є в OpenStreetMap, подія
+    # стає на свою адресу. Коли будинку немає — подія стає в ЦЕНТР ВУЛИЦІ,
+    # і туди ж стають усі інші події цієї вулиці без знайденого будинку.
+    # Раніше така купа підписувалася номером першої-ліпшої події: «вул.
+    # Міхновського, 42 — 96 подій», хоча на самому будинку 42 сталася одна.
+    # Це не установа й не помилка адреси — це загальний осередок вулиці,
+    # і називати його треба саме так.
     P = []
+    n_street = 0
     for (la, lo), evs in agg.items():
-        a = next((f"{e[6]}, {e[7]}" if e[7] else e[6] for e in evs if e[6]), '')
-        P.append([la, lo, a, evs[0][4],
-                  [[e[0], e[1], e[2], e[3]] for e in evs],
-                  [[e[1], e[5], e[3], e[8], e[9]] for e in sorted(evs, key=lambda x: x[5], reverse=True)[:6]]])
-    print(f'унікальних адрес: {len(P):,}')
+        hs = [e for e in evs if e[4] and e[6]]
+        if hs:
+            e = hs[0]
+            a = f"{e[6]}, {e[7]}" if e[7] else e[6]
+            prec = 1
+        else:
+            e = next((e for e in evs if e[6]), None)
+            a = (e[6] + ' · вся вулиця') if e else ''
+            prec = 0
+            n_street += 1
+        P.append([la, lo, a, prec,
+                  [[e_[0], e_[1], e_[2], e_[3]] for e_ in evs],
+                  [[e_[1], e_[5], e_[3], e_[8], e_[9]] for e_ in sorted(evs, key=lambda x: x[5], reverse=True)[:6]]])
+    print(f'унікальних адрес: {len(P):,} '
+          f'(з них {n_street:,} — центри вулиць, точного будинку немає)')
 
     groups_idx = {}
     for ti, t in enumerate(L.ORDER):
@@ -372,7 +391,15 @@ def main(district=None, mode='full', out=None):
         return None
 
     candidates = []
+    skipped_street = 0
     for pi, p in enumerate(P):
+        # Проблема — це МІСЦЕ, куди можна приїхати. Центр вулиці місцем не є:
+        # там зібрані події з усієї вулиці лише тому, що будинків не знайшлося
+        # в OpenStreetMap. Такі точки в кандидати не беремо — інакше кожна
+        # довга вулиця автоматично ставала б «проблемою» з великим числом.
+        if not p[3]:
+            skipped_street += 1
+            continue
         by_sim = collections.defaultdict(lambda: [0, set(), collections.Counter()])
         core_n = 0
         for e in p[4]:
@@ -424,6 +451,8 @@ def main(district=None, mode='full', out=None):
         parts = [f"{n} {THEME_SKEW.get(t, L.THEMES.get(t, t))}" for t, n in skew.most_common()]
         skew_txt = f"З {len(problems)} відібраних проблем: " + ', '.join(parts) + '.'
     print(f'   відібрано проблем: {len(problems)} з {len(candidates)} кандидатів (поріг {MIN_EPISODES} епізодів)')
+    if skipped_street:
+        print(f'   не розглядали {skipped_street:,} центрів вулиць — це не місця, а вулиці загалом')
     if skew_txt: print('   ' + skew_txt)
 
     probs_by_pi = collections.defaultdict(list)
