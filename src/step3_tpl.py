@@ -83,6 +83,11 @@ button:hover{background:#28303f}button.act{background:#e0533d;border-color:#e053
 #frisk .rg .rw{margin:0 6px 5px}#frisk .rg .rw:first-of-type{margin-top:2px}
 .lgd{display:flex;align-items:center;gap:6px;font-size:10px;color:#5f6878;margin-top:8px}
 .lgd i{height:3px;flex:1;border-radius:2px;background:linear-gradient(90deg,#5f6878 0%,currentColor 100%)}
+/* Підкладка — звичайні плитки OpenStreetMap, темними їх робить цей фільтр.
+   CARTO з 2026 року вимагає ключ і малює поверх карти напис API KEY REQUIRED,
+   а ключ означав би реєстрацію, ліміти й ще одну залежність. Фільтр
+   накладається ЛИШЕ на шар плиток, тож точки й лінії лишаються своїх кольорів. */
+.leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.93) contrast(.92) saturate(.65)}
 .leaflet-popup-content-wrapper{background:#161922;color:#e8eaf0;border-radius:8px}
 .leaflet-popup-tip{background:#161922}
 .leaflet-tooltip.rt{background:#161922;border:1px solid #2c3444;color:#e8eaf0;
@@ -186,8 +191,8 @@ if(M.border){
  L.polygon(M.border,{color:'#6b7890',weight:1.8,opacity:.9,
    fill:false,dashArray:'6,5',interactive:false}).addTo(map);
 }
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-{attribution:'&copy; OpenStreetMap, CARTO',maxZoom:19}).addTo(map);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+{attribution:'&copy; OpenStreetMap',maxZoom:19}).addTo(map);
 let layer=L.layerGroup().addTo(map),heat=null,heatOn=false;
 const rlayer=L.layerGroup().addTo(map);
 const poplayer=L.layerGroup();          // фон під усім іншим
@@ -602,5 +607,10 @@ document.querySelectorAll('[data-r]').forEach(x=>x.addEventListener('change',dra
 document.querySelectorAll('[data-f]').forEach(x=>x.addEventListener('change',drawFacts));
 map.on('zoomend moveend',drawFacts);
 {const fc=$('#fclear'); if(fc) fc.onclick=()=>hlayer.clearLayers();}
+// Підсвітка «Що поруч» знімається кліком по вільному місцю карти.
+// Ловимо саме popupclose, а не click: клік по позначці в Leaflet теж
+// доходить до карти, і по кліку підсвітка гасла б одразу після появи.
+// Закриття вікна — це і є «користувач пішов з цього місця».
+map.on('popupclose',()=>hlayer.clearLayers());
 draw();drawRisks();drawFacts();
 </script></body></html>"""
