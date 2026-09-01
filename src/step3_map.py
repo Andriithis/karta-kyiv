@@ -33,7 +33,7 @@ ABS_LIMIT   = 90       # або перевищує цю кількість по�
 # ---- ВІДБІР ПРОБЛЕМ (п.7.3) ----
 MIN_EPISODES = 15   # мінімум однорідних епізодів (за групою подібності, п.7.2) на адресу
 GUARANTEE    = 2    # обов'язкових проблем з кожного району
-CITYWIDE     = 30   # + найгостріших по місту понад гарантовані районні
+CITYWIDE     = 30   # + найгостріших по місту понад гарантовані
 
 # Квота за напрямком (теми). На реальних даних дорожній рух — 85% усіх кандидатів
 # (утричі більше подій за наступну тему), тож без обмежень він займав 48 з 50 місць,
@@ -265,19 +265,24 @@ def main(district=None, mode='full', out=None):
     if os.path.exists(RISKF):
         RK = json.load(open(RISKF, encoding='utf-8'))
         for th, v in RK.get('layers', {}).items():
+            # На карту йде короткий перелік (`items`), у пам'ять для питання
+            # «чи адреса на ризикованій вулиці» — довший хвіст (`grid`).
+            # Старі risk.json хвоста не мають, тоді беремо те саме, що й на карту.
             it = sorted(v['items'], key=lambda x: -x[2])
             if not it: continue
-            top = it[:600]
-            n = len(top)
+            gr = sorted(v.get('grid') or it, key=lambda x: -x[2])
+            n = len(it)
+            ng = len(gr)
             # `th` тепер — або тема ('ДОР'), або механізм ('ДОР_ДТП').
             # Тема, під якою рядок стоїть у панелі, лежить у самому шарі.
             parent = v.get('theme') or M.simtheme(th)
             gi = [i for i, t in enumerate(L.ORDER) if t == parent]
             grid = collections.defaultdict(list)
             items_out = []
-            for i, x in enumerate(top):
-                pc = int(100 * (n - i) / n)
-                items_out.append([x[0], x[1] or 'без назви', pc])
+            for i, x in enumerate(it):
+                items_out.append([x[0], x[1] or 'без назви', int(100 * (n - i) / n)])
+            for i, x in enumerate(gr):
+                pc = int(100 * (ng - i) / ng)
                 for pnt in x[0]:
                     grid[(int(pnt[0]/RC), int(pnt[1]/RC))].append((pnt[0], pnt[1], pc))
             theme_rgrid[th] = grid
