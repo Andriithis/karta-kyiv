@@ -5,6 +5,7 @@ data/_dump_*.zip
 data/osm_kyiv_city.json
 data/osm_risks_raw.json
 data/top100_dlya_pereviryky.txt
+data/_check_last.json
 karta.html
 _site/
 __pycache__/
