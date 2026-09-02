@@ -113,6 +113,10 @@ button:hover{background:#28303f}button.act{background:#e0533d;border-color:#e053
 .pcard .pt{font-size:13px;font-weight:600;margin-bottom:5px;line-height:1.25}
 .pcard .pm{font-size:11.5px;color:#c4cbd8;margin-bottom:2px}
 .pcard .pm b{color:#e8eaf0}
+.pcard .art{margin:3px 0 5px}
+.pcard .art li{list-style:none;margin-bottom:4px}
+.pcard .art .sh{font-size:11.5px;color:#e8eaf0}
+.pcard .art .ln{display:block;font-size:10.5px;color:#8b95a8;line-height:1.35;margin-top:1px}
 .pcard .pf{font-size:10.5px;color:#6d7789;margin-top:4px;line-height:1.4}
 .pcard .why{font-size:11px;color:#c4cbd8;background:#161c28;border-radius:4px;padding:6px 8px;margin-top:5px}
 .pbtn{width:100%;padding:7px;background:#e0533d;color:#fff;border:0;border-radius:6px;
@@ -146,7 +150,7 @@ button:hover{background:#28303f}button.act{background:#e0533d;border-color:#e053
 <fieldset><legend>Що показувати</legend><div id="fcat"></div>
 <div class="hint" id="cathint"></div></fieldset>
 <fieldset><legend>Топ адрес за фільтром</legend><div id="top"></div></fieldset>
-<fieldset><legend>Район</legend><div id="fc"></div></fieldset>
+<fieldset id="fcw"><legend>Район</legend><div id="fc"></div></fieldset>
 <fieldset><legend>Правопорушення</legend>
 <div style="display:flex;gap:6px"><button id="none" style="margin:0 0 8px">Зняти всі</button>
 <button id="all" style="margin:0 0 8px">Обрати всі</button></div><div id="fa"></div></fieldset>
@@ -169,6 +173,9 @@ button:hover{background:#28303f}button.act{background:#e0533d;border-color:#e053
 const M=__META__, P=__PTS__;
 const PALA=['#e0533d','#e8a33d','#8b5cf6','#ef4444','#3b82f6','#22c55e','#14b8a6'];
 const CATTH={};M.groups.forEach((g,gi)=>g[1].forEach(i=>CATTH[i]=gi));
+// Повна назва статті з кодексу за коротким підписом (src/pravo.py).
+// Порожньо, якщо назви немає: приблизна назва в листі гірша за її відсутність.
+const LAW=s=>(M.law&&M.law[s])||'';
 const R=__RISKS__, POP=__POP__, F=__FACTS__;
 const map=L.map('map',{preferCanvas:true}).setView(M.center||[50.45,30.52],M.only?13:11);
 map.createPane('popPane'); map.getPane('popPane').style.zIndex=350;
@@ -419,6 +426,9 @@ const $=s=>document.querySelector(s);
 if(M.only){$('#subt').textContent=M.only+' район · за даними ЄДРСР';
  $('#backl').innerHTML='<a href="index.html" style="color:#e0533d;font-size:12px;text-decoration:none">← всі райони</a>';}
 $('#fc').innerHTML=M.courts.map((n,i)=>`<label><input type="checkbox" data-c="${i}" checked>${n}</label>`).join('');
+// На карті одного району перелік з усіх десяти районів безглуздий. Ховаємо
+// саму рамку, а прапорці лишаємо в розмітці — на них спирається фільтр draw().
+if(M.only){const w_=$('#fcw'); if(w_) w_.style.display='none';}
 $('#fy').innerHTML=M.years.map((n,i)=>`<label><input type="checkbox" data-y="${i}" checked>${n}</label>`).join('');
 const fmt=n=>n.toLocaleString('uk');
 $('#fa').innerHTML=M.groups.map((g,gi)=>`<div class="gr" data-g="${gi}">
@@ -466,7 +476,8 @@ function buildPassport(p,pr){
  t+=`## Scanning\n\n`;
  t+=`- Подій за напрямком: **${pr.n}** (усього на адресі — ${pr.core_n})\n`;
  t+=`- Роки повторення: ${pr.years.join(', ')}\n`;
- t+=`- Склад: `+pr.arts.map(a=>`${a[0]} — ${a[1]}`).join('; ')+`\n\n`;
+ t+=`- Склад:\n`+pr.arts.map(a=>{const ln=LAW(a[0]);
+   return `    - ${a[0]} — ${a[1]}`+(ln?`\n      ${ln}`:'')}).join('\n')+`\n\n`;
  t+=`## Analysis\n\n`;
  if(pr.analysis){
   t+=`Адреса потрапляє у верхні ${100-pr.analysis.pc}% вулиць за прогнозом моделі для цієї теми `+
@@ -553,7 +564,12 @@ function draw(){
     pblock=probs.map((pr,pi)=>{
      let h=`<div class="pcard"><div class="ph">Проблема · ${pr.theme}</div>`;
      h+=`<div class="pt">${pr.mech}</div>`;
-     h+=`<div class="pm"><b>Правопорушення:</b> `+pr.arts.map(a=>`${a[0]} — ${a[1]}`).join('; ')+`</div>`;
+     // Статті названо і коротко, і юридично точно: лист балансоутримувачу
+     // пишеться повною назвою з кодексу, інакше він не має ваги.
+     h+=`<div class="pm"><b>Правопорушення:</b></div><ul class="art">`+
+        pr.arts.map(a=>{const ln=LAW(a[0]);
+         return `<li><span class="sh">${a[0]} — <b>${a[1]}</b></span>`+
+                (ln?`<span class="ln">${ln}</span>`:'')+`</li>`}).join('')+`</ul>`;
      h+=`<div class="pm"><b>Чому проблема:</b> ${pr.n} однорідних подій за ${pr.years.length} `+
         `${pr.years.length===1?'рік':'роки'} (${pr.years.join(', ')}), `+
         `${Math.round(100*pr.n/Math.max(pr.core_n,1))}% усіх подій адреси цього роду.</div>`;
@@ -582,7 +598,7 @@ function draw(){
    <b>${p[2]||'адреса не визначена'}</b>
    <div class="tt">${n} ${n%10===1&&n%100!==11?'подія':'подій'} за поточним фільтром</div>
    <table class="bd">`+rows.map(([i,c])=>
-     `<tr><td>${M.cats[i]}</td><td><b>${c}</b></td></tr>`).join('')+`</table>
+     `<tr><td title="${LAW(M.cats[i])}">${M.cats[i]}</td><td><b>${c}</b></td></tr>`).join('')+`</table>
    ${bars}${hint}${pblock}
    <div class="ex">Приклади рішень:</div><ul>`+
    ex.map(e=>`<li><span style="color:#79839a">${e[1]}${e[2]>=0?', '+String(e[2]).padStart(2,'0')+':00':''} · ${e[3]}</span> <a href="${e[4]}" target="_blank">відкрити</a></li>`).join('')+
