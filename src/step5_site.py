@@ -102,16 +102,23 @@ def build_index(per, mode):
 def main():
     if not os.path.exists(os.path.join(DATA, 'events.db')):
         print('немає data/events.db'); sys.exit(1)
-    per = stats()
+    by_court = stats()          # які райони взагалі є в базі
     for mode, sub in (('full', 'vykladach'), ('student', 'slukhach')):
         out = os.path.join(SITE, sub)
         os.makedirs(out, exist_ok=True)
         print(f'\n=== версія: {sub} ===')
-        open(os.path.join(out, 'index.html'), 'w', encoding='utf-8').write(build_index(per, mode))
+        # Спершу карти, потім оглядова сторінка. Плитка на ній раніше рахувала
+        # події за судом, а карта району — за географією меж, і числа не
+        # збігалися (Деснянський: 2 319 на плитці проти 3 839 на карті).
+        # Тепер плитка бере число з тієї самої карти, на яку веде.
+        per = {}
         for d, sl in SLUG.items():
-            if d not in per: continue
-            M3.main(district=d, mode=mode, out=os.path.join(out, f'{sl}.html'))
+            if d not in by_court: continue
+            c = M3.main(district=d, mode=mode, out=os.path.join(out, f'{sl}.html'))
+            per[d] = c if c else by_court[d]
         M3.main(district=None, mode=mode, out=os.path.join(out, 'kyiv.html'))
+        open(os.path.join(out, 'index.html'), 'w', encoding='utf-8').write(
+            build_index(per or by_court, mode))
         # крок 6 — після карт: step3_map дорогою будує data/factors.json,
         # без якого в документах не було б розділу «що поруч»
         try:
