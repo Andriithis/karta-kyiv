@@ -11,6 +11,7 @@ import os, sys, csv, json, glob, math, sqlite3, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import labels as L
 import mech as M
+import pravo as PR          # офіційні назви статей для картки і листа
 # HTML-шаблон винесено в окремий файл: разом із ним модуль важив 67 КБ,
 # а це один файл на дві дуже різні речі — логіку відбору й розмітку.
 from step3_tpl import TPL
@@ -244,8 +245,14 @@ def main(district=None, mode='full', out=None):
         if ids:
             gi_of_theme[t] = len(groups)
             groups.append([L.THEMES[t], ids, sum(cnt[labels[i]] for i in ids)])
+    # law: короткий підпис -> повна назва статті з кодексу. Коротким підписом
+    # карта користується в списках, повним — картка проблеми й паспорт SARA,
+    # бо лист балансоутримувачу має називати статтю так, як її названо в законі.
+    law = {k[1]: PR.nazva(k[1]) for k in labels if PR.nazva(k[1])}
+    _no = [k[1] for k in labels if not PR.nazva(k[1])]
+    if _no: print(f'   без офіційної назви статті: {len(_no)} — {"; ".join(_no[:3])}')
     meta = dict(courts=[COURTS.get(x, x) for x in ck], cats=[k[1] for k in labels],
-                counts=[cnt[k] for k in labels], groups=groups, years=ykeys)
+                counts=[cnt[k] for k in labels], groups=groups, years=ykeys, law=law)
 
     # ---- шари контексту: ризик, потоки ----
     risks = {'lines': {}}
@@ -515,6 +522,25 @@ def main(district=None, mode='full', out=None):
         if P and 'bounds' not in meta:
             meta['center'] = [round(sum(x[0] for x in P)/len(P), 5),
                               round(sum(x[1] for x in P)/len(P), 5)]
+
+        # Лічильники бічної панелі рахувалися ДО обрізання району, тому на
+        # районній карті стояли міські числа: у Деснянському було написано
+        # «Дорожній рух 47 981» — це весь Київ. Перераховуємо по тому, що
+        # справді лишилося на карті.
+        cnt2 = collections.Counter()
+        for p in P:
+            for e in p[4]: cnt2[e[1]] += 1
+        meta['counts'] = [cnt2.get(i, 0) for i in range(len(labels))]
+        for g in meta['groups']:
+            g[2] = sum(meta['counts'][i] for i in g[1])
+
+    # Скільки подій лишилося на цій карті, за темами. Крок 5 будує з цього
+    # плитки оглядової сторінки, щоб її числа збігалися з числами карти:
+    # раніше плитка рахувала за судом, а карта — за географією району.
+    theme_cnt = collections.Counter()
+    for p in P:
+        for e in p[4]: theme_cnt[labels[e[1]][0]] += 1
+
     meta['mode'] = mode
     if mode == 'student':
         for k in list(risks.get('lines', {})):
@@ -535,6 +561,7 @@ def main(district=None, mode='full', out=None):
     os.makedirs(os.path.dirname(dst) or '.', exist_ok=True)
     open(dst, 'w', encoding='utf-8').write(html)
     print(f'готово: {os.path.basename(dst)} ({os.path.getsize(dst)/1048576:.1f} МБ)')
+    return theme_cnt
 
 if __name__ == '__main__':
     main()
