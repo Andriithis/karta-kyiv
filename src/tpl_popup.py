@@ -42,7 +42,7 @@ $ify('#docs',
  (STUDENT?'':'<a href="analiz.html" target="_blank" rel="noopener">Аналіз поточного стану ↗</a>'));
 // п.7.7: замість чотирьох кнопок категорій — лише "Усі" й "Тільки проблеми"
 const CATS=STUDENT?[['Усі','подій ≥1','cA',-1]]
- :[['Усі','подій ≥1','cA',-1],['Тільки проблеми','з відібраних 50','c2',2]];
+ :[['Усі','подій ≥1','cA',-1],['Тільки проблеми',`з відібраних ${M.n_problems||50}`,'c2',2]];
 const cb_=$('#fcat');
 CATS.forEach((c,i)=>{const sp=document.createElement('span');
  sp.className=c[2]+(i===0?' on':'');sp.innerHTML=`${c[0]}<i>${c[1]}</i>`;sp.dataset.c=c[3];cb_.appendChild(sp)});
@@ -54,6 +54,44 @@ PERIODS.forEach((p,i)=>{const s=document.createElement('span');
  s.innerHTML=`${p[0]}<i>${p[1]}</i>`;s.dataset.p=i;hb.appendChild(s)});
 hb.onclick=e=>{const t=e.target.closest('[data-p]');if(t){t.classList.toggle('on');draw()}};
 const sel=a=>new Set([...document.querySelectorAll(`[data-${a}]`)].filter(x=>x.checked).map(x=>+x.dataset[a]));
+// Що доречно для поточного вигляду. У місті — міський перелік проблем,
+// у районі — перелік цього району. Район точки порахований у Python (p[8]),
+// тому перемикання коштує одного порівняння чисел, а не геометрії.
+const probsOf=p=>{const a=p[7]||[];
+ return CURD<0?a.filter(q=>q.city):a.filter(q=>q.d===CURD&&q.loc)};
+const inScope=p=>CURD<0||p[8]===CURD;
+// Лічильники бічної панелі рахуються з того, що справді видно: у районі
+// стояли б міські числа, а це та сама помилка, що вже виправлялася раніше.
+function recount(){
+ const c=new Array(M.cats.length).fill(0);
+ for(const p of P){if(!inScope(p))continue;for(const e of p[4])c[e[1]]++}
+ return c;
+}
+function onScopeChange(){
+ if(M.only){draw();return}                    // окремий файл району — перемикати нічого
+ const c=recount();
+ document.querySelectorAll('[data-a]').forEach(inp=>{
+  const n=inp.parentElement.querySelector('.n'); if(n)n.textContent=fmt(c[+inp.dataset.a])});
+ document.querySelectorAll('.gt').forEach(inp=>{
+  const g=M.groups[+inp.dataset.gt], n=inp.parentElement.querySelector('.n');
+  if(n)n.textContent=fmt(g[1].reduce((a,i)=>a+c[i],0))});
+ // Перелік районів за судом усередині району зайвий — як і в окремих файлах.
+ {const w=$('#fcw'); if(w) w.style.display=CURD<0?'':'none';}
+ if(CURD<0){
+  $('#subt').textContent='за даними ЄДРСР · місто Київ';
+  $('#backl').innerHTML='';
+  $ify('#skew',M.skew?`<div class="skew">${M.skew}</div>`:'');
+ }else{
+  $('#subt').textContent=DN[CURD]+' район';
+  $('#backl').innerHTML='<a href="#" class="upl">← усе місто</a>';
+  $('#backl').querySelector('.upl').onclick=e=>{e.preventDefault();exitDistrict()};
+  $ify('#skew',(M.dskew||[])[CURD]?`<div class="skew">${M.dskew[CURD]}</div>`:'');
+ }
+ const c2=cb_.querySelector('.c2');
+ if(c2)c2.querySelector('i').textContent=CURD<0
+   ?`з відібраних ${M.n_problems}`:`${(M.dprob||[])[CURD]||0} у цьому районі`;
+ draw();
+}
 function buildPassport(p,pr){
  const today=new Date().toISOString().slice(0,10);
  let t=`# Паспорт проблеми (SARA)\n\n`;
@@ -99,7 +137,8 @@ function draw(){
  hb.querySelectorAll('.on').forEach(x=>PERIODS[+x.dataset.p][2].forEach(h=>H.add(h)));
  let tot=0;const vis=[];
  for(const p of P){
-  if(CF>=0&&p[6]!==CF) continue;
+  if(!inScope(p)) continue;
+  if(CF>=0&&!probsOf(p).length) continue;
   let n=0,th=null;
   for(const e of p[4]) if(C.has(e[0])&&A.has(e[1])&&Y.has(e[2])&&(!H.size||H.has(e[3]))){n++;if(th===null)th=CATTH[e[1]]}
   if(n){tot+=n;vis.push([p,n,th])}}
@@ -107,10 +146,10 @@ function draw(){
  // у версії для слухачів категорія прихована (p[6]=-1), тому фільтр по ===2 давав
  // порожній список і «Топ адрес» завжди показував «нема даних». Слухачам перелік
  // найгарячіших адрес потрібний саме для самостійного пошуку скупчень.
- const rank=vis.filter(v=>v[0][3]&&(STUDENT||v[0][6]===2));
+ const rank=vis.filter(v=>v[0][3]&&(STUDENT||probsOf(v[0]).length));
  $('#cnt').textContent=tot.toLocaleString('uk');
  $('#cntl').textContent=`подій на ${vis.length.toLocaleString('uk')} адресах`;
- {let q=0;P.forEach(p=>{if(p[6]===2)q++});
+ {let q=0;P.forEach(p=>{if(inScope(p)&&probsOf(p).length)q++});
   $('#cathint').innerHTML=q?`У поточних межах: <b style="color:#f87171">${q.toLocaleString('uk')}</b> проблем.`:'';}
  $('#top').innerHTML=rank.slice(0,15).map((v,i)=>
   `<div data-i="${i}"><span>${v[0][2]}</span><b>${v[1]}</b></div>`).join('')||'<div class="sub">нема даних</div>';
@@ -140,7 +179,7 @@ function draw(){
    const hint = nk>=8 ? `<div class="hn">${Math.round(100*night/nk)}% подій припадає на 20:00–04:00</div>` : '';
    // ---- КАРТКИ ПРОБЛЕМ (п.7.4): по одній на кожен відібраний напрямок адреси ----
    let pblock='';
-   const allp=p[7]||[];
+   const allp=probsOf(p);
    const probs=allp.filter(pr=>pr.thi===undefined||pr.thi<0||GVIS.has(pr.thi));
    const hidden=allp.length-probs.length;
    if(!STUDENT&&!probs.length&&hidden)
@@ -178,7 +217,7 @@ function draw(){
    if(STUDENT&&(F.cats||[]).length)
     pblock+='<button class="pbtn2" data-na="1">Що поруч (250 м)</button>';
    const ex=p[5].filter(e=>A.has(e[0])).slice(0,4);
-   const cinf=(p[6]===2&&probs.length)?CATNAME[2]:null;
+   const cinf=probs.length?CATNAME[2]:null;
    const html=`<div class="lp">
    ${cinf?`<span class="cbadge" style="background:${cinf[1]}22;color:${cinf[1]}">${cinf[0]}</span>`:''}
    <b>${p[2]||'адреса не визначена'}</b>
@@ -214,4 +253,8 @@ map.on('zoomend moveend',drawFacts);
 // доходить до карти, і по кліку підсвітка гасла б одразу після появи.
 // Закриття вікна — це і є «користувач пішов з цього місця».
 map.on('popupclose',()=>hlayer.clearLayers());
-draw();drawRisks();drawFacts();"""
+draw();drawRisks();drawFacts();
+// Посилання виду karta.html#desnianskyi відкриває одразу потрібний район:
+// викладач може дати групі адресу конкретного району, а не «знайдіть самі».
+{const i=DSLUG.indexOf(decodeURIComponent(location.hash.slice(1)).toLowerCase());
+ if(i>=0) enterDistrict(i,false);}"""

@@ -43,6 +43,60 @@ const rlayer=L.layerGroup().addTo(map);
 const poplayer=L.layerGroup();          // фон під усім іншим
 const flayer=L.layerGroup().addTo(map); // чинники середовища за чекбоксами
 const hlayer=L.layerGroup().addTo(map); // підсвітка «чинники поруч» для конкретного місця
+// ---- РАЙОНИ В МЕЖАХ ОДНОГО ФАЙЛУ ----
+// Міська карта несе межі всіх десяти районів і їхні власні переліки проблем.
+// Клік по району не веде на інший файл: карта під'їжджає, затемнює решту
+// міста й перемикає панель. Фільтри при цьому лишаються — раніше вони гинули
+// разом із перезавантаженням сторінки.
+const DN=M.dnames||[], DBORD=M.borders||[], DSLUG=M.dslug||[];
+let CURD=-1;                       // -1 = все місто, інакше індекс району
+let dmask=null;
+const dlayer=L.layerGroup().addTo(map);
+const dshapes=[];
+const CITY={c:M.center||[50.45,30.52], z:11};
+const dBounds=i=>L.latLngBounds(DBORD[i]);
+if(DN.length&&!M.only) DN.forEach((nm,i)=>{
+ const pg=L.polygon(DBORD[i],{color:'#7b8aa3',weight:1.3,opacity:.6,
+   fillColor:'#8ea0bd',fillOpacity:.05});
+ const np=(M.dprob||[])[i]||0;
+ pg.bindTooltip(`<b>${nm}</b><span>`+(np?`${np} проблем · `:'')+`натисніть, щоб відкрити</span>`,
+   {className:'rt',sticky:true});
+ pg.on('mouseover',()=>{if(CURD<0)pg.setStyle({fillOpacity:.13,opacity:.9})});
+ pg.on('mouseout', ()=>{if(CURD<0)pg.setStyle({fillOpacity:.04,opacity:.45})});
+ pg.on('click',    ()=>{if(CURD<0)enterDistrict(i)});
+ pg.addTo(dlayer); dshapes.push(pg);
+});
+// Межі решти районів у вибраному районі гасимо, а не ховаємо: під затемненням
+// вони все одно не читаються, зате перемикання лишається однією дією.
+function paintScope(){
+ dshapes.forEach((pg,i)=>pg.setStyle(CURD<0
+   ? {opacity:.6,fillOpacity:.05}
+   : {opacity:i===CURD?.95:0,fillOpacity:0}));
+ if(dmask){map.removeLayer(dmask);dmask=null}
+ if(CURD>=0){
+  const W=[[-85,-360],[-85,360],[85,360],[85,-360]];
+  dmask=L.polygon([W,DBORD[CURD]],{pane:'maskPane',color:'#0f1117',weight:0,
+    fillColor:'#0f1117',fillOpacity:.78,interactive:false}).addTo(map);
+ }
+}
+function enterDistrict(i,fly){
+ if(!(i>=0&&i<DN.length)) return;
+ CURD=i; paintScope();
+ if(fly===false) map.fitBounds(dBounds(i),{padding:[28,28]});
+ else map.flyToBounds(dBounds(i),{padding:[28,28],duration:1.15,easeLinearity:.22});
+ if(location.hash.slice(1)!==DSLUG[i]) history.replaceState(null,'','#'+DSLUG[i]);
+ onScopeChange();
+}
+function exitDistrict(){
+ CURD=-1; paintScope();
+ map.flyTo(CITY.c,CITY.z,{duration:1.0});
+ history.replaceState(null,'',location.pathname+location.search);
+ onScopeChange();
+}
+window.addEventListener('hashchange',()=>{
+ const i=DSLUG.indexOf(decodeURIComponent(location.hash.slice(1)).toLowerCase());
+ if(i>=0){if(i!==CURD)enterDistrict(i)} else if(CURD>=0)exitDistrict();
+});
 const FCOL=['#f59e0b','#38bdf8','#a3a3a3'];   // притягують / збирають людей / стан
 const FZOOM=14;                               // ближче за цей масштаб — показуємо позначки
 const RCOL={metro:'#38bdf8',busstop:'#7dd3fc',

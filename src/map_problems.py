@@ -46,6 +46,13 @@ COURTS = {'Golosiivskyi':'Голосіївський','Darnytskyi':'Дарниц
 # у трьох файлах і вони встигли розійтися.
 THSLUG = M.THSLUG
 
+# Короткі ярлики районів для адреси сторінки: karta.html#desna. Живуть тут,
+# бо ними користуються і карта (перехід по районах), і крок 5 (плитки).
+SLUG = {'Голосіївський':'golosiiv','Дарницький':'darnytsia','Деснянський':'desna',
+        'Дніпровський':'dnipro','Оболонський':'obolon','Печерський':'pechersk',
+        'Подільський':'podil','Святошинський':'sviatoshyn',"Солом'янський":'solomianka',
+        'Шевченківський':'shevchenkivsk'}
+
 def in_ring(la, lo, ring):
     """чи точка всередині багатокутника (промінь праворуч)"""
     inside = False
@@ -67,6 +74,18 @@ THEME_SKEW = {
 
 
 
+# ---- ВІДБІР У МЕЖАХ РАЙОНУ ----
+# Міський список — 50 найгостріших на все місто, і тихому району в ньому
+# дістається дві-три позиції. Дільничному цього мало: він працює районом,
+# і найгірше місце Деснянського для нього важливіше за десяте місце Києва.
+# Тому для кожного району складається СВІЙ перелік з тим самим порогом
+# MIN_EPISODES — визначення проблеми не пом'якшується. Де кандидатів менше
+# за DISTRICT_TOP, показуємо скільки є: це теж відповідь.
+DISTRICT_TOP = 10        # скільки проблем показувати всередині району
+CAP_D_THEME  = {'ДОР': 4}   # квота теми в межах району
+CAP_D_DEF    = 3
+
+
 def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
            district, mode, risks, ER, FACT, theme_rgrid, pred_theme):
     """Повертає (P, POP, meta, theme_cnt)."""
@@ -81,8 +100,18 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
     if os.path.exists(BORD):
         ALL_BORDERS = json.load(open(BORD, encoding='utf-8'))
 
+    DNAMES = sorted(ALL_BORDERS)
+    DIDX = {d: i for i, d in enumerate(DNAMES)}
+    # рамка навколо кожного району: точка поза рамкою не може бути в межах,
+    # і дорога перевірка променем для неї не запускається
+    DBOX = {d: (min(q[0] for q in r), max(q[0] for q in r),
+                min(q[1] for q in r), max(q[1] for q in r))
+            for d, r in ALL_BORDERS.items()}
+
     def addr_district(la, lo):
         for d, ring in ALL_BORDERS.items():
+            y0, y1, x0, x1 = DBOX[d]
+            if la < y0 or la > y1 or lo < x0 or lo > x1: continue
             if in_ring(la, lo, ring): return d
         return None
 
@@ -140,6 +169,23 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
         if got >= CITYWIDE: break
         if try_take(c): got += 1
 
+    # Кожен район добирає свій перелік із тих самих кандидатів. Спершу з квотою
+    # за темами, щоб перелік не був суцільним дорожнім рухом; якщо після квоти
+    # місць лишилося, добираємо найгострішим без огляду на тему — інакше в тихому
+    # районі половина рядків просто не заповнилася б.
+    chosen_loc = {}
+    for d in ALL_BORDERS:
+        pool = [c for c in candidates if c['district'] == d]
+        used_d, got = collections.Counter(), 0
+        for pass_ in (0, 1):
+            for c in pool:
+                if got >= DISTRICT_TOP: break
+                key = (c['pi'], c['sim'])
+                if key in chosen_loc: continue
+                if pass_ == 0 and used_d[c['th']] >= CAP_D_THEME.get(c['th'], CAP_D_DEF):
+                    continue
+                chosen_loc[key] = c; used_d[c['th']] += 1; got += 1
+
     problems = sorted(chosen.values(), key=lambda c: -c['score'])
     skew = collections.Counter(c['th'] for c in problems)
     skew_txt = ''
@@ -151,8 +197,16 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
         print(f'   не розглядали {skipped_street:,} центрів вулиць — це не місця, а вулиці загалом')
     if skew_txt: print('   ' + skew_txt)
 
+    # Одна адреса-напрямок може бути і в міському переліку, і в районному,
+    # і лише в одному з них. Запис зберігаємо ОДИН, а належність позначаємо
+    # прапорцями: карта показує те, що доречно для поточного вигляду.
+    city_keys = set(chosen)
+    loc_keys = set(chosen_loc)
+    merged = dict(chosen_loc); merged.update(chosen)
+    merged_list = sorted(merged.values(), key=lambda c: -c['score'])
+
     probs_by_pi = collections.defaultdict(list)
-    for c in problems:
+    for c in merged_list:
         th = c['th']
         # Спершу питаємо модель ВЛАСНОГО механізму цієї проблеми, і лише якщо
         # для нього моделі немає — загальну модель теми.
@@ -164,16 +218,24 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
             analysis = dict(pc=risk_pc, hit=round(100*d.get('hit_середовище', 0)),
                              factors=[[n_, round(float(w), 3)] for n_, w in d.get('фактори', []) if w > 0][:8],
                              train=d.get('навчання', 0), test=d.get('перевірка', 0))
+        key = (c['pi'], c['sim'])
         probs_by_pi[c['pi']].append(dict(
             thi=gi_of_theme.get(th, -1),   # індекс теми — щоб картка ховалась разом із фільтром
             sim=c['sim'], theme=L.THEMES.get(th, th), mech=M.simname(c['sim']),
             n=c['n'], core_n=c['core_n'], years=c['years'], arts=c['arts'],
+            d=DIDX.get(c['district'], -1),           # район адреси
+            city=1 if key in city_keys else 0,       # у міському переліку
+            loc=1 if key in loc_keys else 0,         # у переліку свого району
             analysis=analysis))
 
     for pi, p in enumerate(P):
         probs = probs_by_pi.get(pi, [])
-        p.append(2 if probs else 0)     # кат.: 0 інцидент, 2 проблема (п.7.1)
+        p.append(2 if any(q['city'] for q in probs) else 0)   # кат.: 0 інцидент, 2 проблема
         p.append(probs)
+        # район точки рахуємо тут раз назавжди: далі карта перемикає райони
+        # порівнянням числа, а не геометрією — інакше кожен клік коштував би
+        # дванадцяти тисяч перевірок променем у браузері
+        p.append(DIDX.get(addr_district(p[0], p[1]), -1))
 
     pp2 = os.path.join(DATA, 'population.json')
     if os.path.exists(pp2):
@@ -182,6 +244,38 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
 
     meta['skew'] = skew_txt
     meta['n_problems'] = len(problems)
+
+    # ---- ДАНІ ДЛЯ ПЕРЕХОДУ ПО РАЙОНАХ У МЕЖАХ ОДНОГО ФАЙЛУ ----
+    # Міська карта несе межі всіх районів, їхні переліки проблем і короткі
+    # латинські ярлики для адреси сторінки. Районні файли цього не потребують:
+    # вони вже обрізані.
+    if not district and ALL_BORDERS:
+        meta['dnames'] = DNAMES
+        meta['dslug'] = [SLUG.get(d, d) for d in DNAMES]
+        meta['borders'] = [ALL_BORDERS[d] for d in DNAMES]
+        dcnt, dskew = [], []
+        for d in DNAMES:
+            got = [c for c in chosen_loc.values() if c['district'] == d]
+            dcnt.append(len(got))
+            sk = collections.Counter(c['th'] for c in got)
+            dskew.append(('У районі %d %s: ' % (len(got), 'проблема' if len(got) == 1 else 'проблем')
+                          + ', '.join(f'{n} {THEME_SKEW.get(t, L.THEMES.get(t, t))}'
+                                      for t, n in sk.most_common()) + '.') if got else '')
+        meta['dprob'] = dcnt
+        meta['dskew'] = dskew
+        # Події кожного району за темами — з цього крок 5 будує плитки оглядової
+        # сторінки. Рахуємо тут, бо тут уже відомий район кожної точки: інакше
+        # довелося б збирати десять карт лише заради десяти чисел.
+        dth = [collections.Counter() for _ in DNAMES]
+        for pt in P:
+            di = pt[8] if len(pt) > 8 else -1
+            if di < 0: continue
+            for e in pt[4]: dth[di][labels[e[1]][0]] += 1
+        meta['dtheme'] = [dict(x) for x in dth]
+        thin = [f'{DNAMES[i]} — {n}' for i, n in enumerate(dcnt) if n < DISTRICT_TOP]
+        print(f'   переліки районів: по {DISTRICT_TOP} проблем, разом {sum(dcnt)}')
+        if thin:
+            print('   менше за поріг набрали: ' + '; '.join(thin))
 
     if district:
         ring = ALL_BORDERS.get(district)
@@ -241,4 +335,8 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
             if len(p) > 6: p[6] = -1        # категорію приховуємо
             if len(p) > 7: p[7] = []         # і розбір причини — теж (розд.6 передачі)
         meta['skew'] = ''
+        # переліки проблем ховаються і з підказок на межах районів
+        if 'dprob' in meta:
+            meta['dprob'] = [0] * len(meta['dprob'])
+            meta['dskew'] = [''] * len(meta['dskew'])
     return P, POP, meta, theme_cnt

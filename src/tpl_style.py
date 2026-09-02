@@ -42,6 +42,8 @@ button:hover{background:#28303f}button.act{background:#e0533d;border-color:#e053
 .gr.open .ar{transform:rotate(90deg)}.ar{display:inline-block;transition:transform .12s}
 .gb label{font-size:12px;color:#c4cbd8}.gb .n{color:#5f6878;font-size:10.5px;margin-left:auto;flex:0 0 auto}
 .hint{font-size:11px;color:#5f6878;margin-top:7px;line-height:1.4}
+#backl a{color:#e0533d;font-size:12px;text-decoration:none;display:inline-block;margin-top:2px}
+#backl a:hover{text-decoration:underline}
 #fr label,#frisk label,#fctx label{font-size:12px}
 #fr .n,#frisk .n,#fctx .n{color:#5f6878;font-size:10.5px;margin-left:auto;flex:0 0 auto}
 #fr .sw,#frisk .sw,#fctx .sw{width:9px;height:9px;border-radius:2px;flex:0 0 auto}

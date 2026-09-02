@@ -18,7 +18,9 @@ from step3_tpl import TPL
 from map_excl import load_excl, detect_institutional
 import map_layers
 import map_problems
-from map_problems import COURTS
+from map_problems import COURTS, SLUG
+
+LAST_META = {}          # meta останньої збірки — читає крок 5
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data'); DB = os.path.join(DATA, 'events.db')
@@ -150,6 +152,11 @@ def main(district=None, mode='full', out=None):
               .replace('__RISKS__', json.dumps(risks, ensure_ascii=False, separators=(',', ':'))) \
               .replace('__META__', json.dumps(meta, ensure_ascii=False)) \
               .replace('__PTS__', json.dumps(P, ensure_ascii=False, separators=(',', ':')))
+    # Крок 5 бере звідси числа районів для плиток — щоб не збирати десять карт
+    # заради десяти чисел.
+    global LAST_META
+    LAST_META = meta
+
     dst = out or OUT
     os.makedirs(os.path.dirname(dst) or '.', exist_ok=True)
     open(dst, 'w', encoding='utf-8').write(html)
