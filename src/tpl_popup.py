@@ -52,6 +52,63 @@ PERIODS.forEach((p,i)=>{const s=document.createElement('span');
  s.innerHTML=`${p[0]}<i>${p[1]}</i>`;s.dataset.p=i;hb.appendChild(s)});
 hb.onclick=e=>{const t=e.target.closest('[data-p]');if(t){t.classList.toggle('on');draw()}};
 const sel=a=>new Set([...document.querySelectorAll(`[data-${a}]`)].filter(x=>x.checked).map(x=>+x.dataset[a]));
+// ---- ПРАВА ПАНЕЛЬ: усі рішення адреси ----
+// Витяг обставин і посилання на папери лежать окремо від сторінки: на сайті
+// це файл spravy/<район>.json, який тягнемо, коли панель відкривають уперше.
+// У сторінці, відкритій з диска, DOCS уже вкладено — тоді нічого не тягнемо.
+const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>
+ ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const REESTR='https://od.reyestr.court.gov.ua/files/';
+const docUrl=h=>REESTR+h.slice(0,2)+'/'+h.slice(2)+'.rtf';
+function docsFor(i){
+ if(DOCS) return Promise.resolve(DOCS[i]||[]);
+ const sl=(M.dslug||[])[(P[i]||[])[8]]||'inshe';
+ if(!DOCCACHE[sl]) DOCCACHE[sl]=fetch('spravy/'+sl+'.json')
+   .then(r=>r.ok?r.json():{}).catch(()=>null);
+ return DOCCACHE[sl].then(o=>o?(o[i]||[]):null);
+}
+function closePanel(){$('#pan').classList.remove('on')}
+function openPanel(i){
+ const p=P[i]; if(!p) return;
+ $('#pan').classList.add('on');
+ $('#panh').innerHTML='<button id="panx" title="Закрити">&times;</button>'+
+  `<div class="pa">${esc(p[2]||'адреса не визначена')}</div>`+
+  '<div class="ps">завантажую…</div>';
+ $('#panx').onclick=closePanel;
+ $('#panb').innerHTML='';
+ docsFor(i).then(cs=>{
+  if(cs===null){
+   $('#panh').querySelector('.ps').textContent='перелік рішень недоступний';
+   $('#panb').innerHTML='<div class="sub">Сторінку відкрито з диска, а перелік '+
+     'рішень лежить окремим файлом поруч — браузер такому файлу читати сусідів '+
+     'не дозволяє. Відкрийте карту з сайту.</div>';
+   return;
+  }
+  // панель слухається тих самих фільтрів, що й карта: інакше в ній були б
+  // рішення, яких на карті зараз не видно
+  const A=sel('a'), Y=new Set([...sel('y')].map(k=>M.years[k]));
+  const H=new Set(); hb.querySelectorAll('.on').forEach(x=>
+    PERIODS[+x.dataset.p][2].forEach(h=>H.add(h)));
+  const vis=cs.filter(c=>A.has(c[0])
+    && (Y.has((c[1]||'').slice(0,4))||Y.has('раніше'))
+    && (!H.size||H.has(c[2])));
+  $('#panh').querySelector('.ps').textContent =
+    vis.length===cs.length ? `${cs.length} ${cs.length===1?'справа':'справ'}`
+    : `${vis.length} з ${cs.length} справ за поточним фільтром`;
+  $('#panb').innerHTML = vis.length ? vis.map(c=>{
+   // повну назву статті тут не повторюємо на кожному рядку — вона є в картці
+   // проблеми й у підказці таблиці; тут важать дата, стаття й обставини
+   return '<div class="cs">'+
+    `<div class="cd" title="${esc(LAW(M.cats[c[0]]))}"><b>${esc(c[1]||'')}</b>${c[2]>=0?' · '+String(c[2]).padStart(2,'0')+':00':''} · ${esc(M.cats[c[0]])}</div>`+
+    (c[3]?`<div class="cn">справа ${esc(c[3])}</div>`:'')+
+    (c[5]?`<div class="cx">${esc(c[5])}</div>`:'')+
+    ((c[4]||[]).length?'<div class="cl">'+c[4].map((h,k)=>
+      `<a href="${docUrl(h)}" target="_blank" rel="noopener">${(c[4].length>1?'рішення '+(k+1):'відкрити рішення')}</a>`).join('')+'</div>':'')+
+    '</div>';
+  }).join('') : '<div class="sub">За поточним фільтром рішень немає.</div>';
+ });
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closePanel()});
 // Що доречно для поточного вигляду. У місті — міський перелік проблем,
 // у районі — перелік цього району. Район точки порахований у Python (p[8]),
 // тому перемикання коштує одного порівняння чисел, а не геометрії.
@@ -232,7 +289,7 @@ function draw(){
    // висунув гіпотезу. Кнопка нічого не підказує, лише показує околиці.
    if((F.cats||[]).length)
     pblock+='<button class="pbtn2" data-na="1">Що поруч (250 м)</button>';
-   const ex=p[5].filter(e=>A.has(e[0])).slice(0,4);
+   const ncase=typeof p[5]==='number'?p[5]:(p[5]||[]).length;
    const cinf=probs.length?CATNAME[2]:null;
    const html=`<div class="lp">
    ${cinf?`<span class="cbadge" style="background:${cinf[1]}22;color:${cinf[1]}">${cinf[0]}</span>`:''}
@@ -241,14 +298,14 @@ function draw(){
    <table class="bd">`+rows.map(([i,c])=>
      `<tr><td title="${LAW(M.cats[i])}">${M.cats[i]}</td><td><b>${c}</b></td></tr>`).join('')+`</table>
    ${bars}${hint}${pblock}
-   <div class="ex">Приклади рішень:</div><ul>`+
-   ex.map(e=>`<li><span style="color:#79839a">${e[1]}${e[2]>=0?', '+String(e[2]).padStart(2,'0')+':00':''} · ${e[3]}</span> <a href="${e[4]}" target="_blank">відкрити</a></li>`).join('')+
-   '</ul></div>';
+   <button class="pbtn2" data-all="1">Усі рішення (${ncase})</button>
+   </div>`;
    const wrap=document.createElement('div');wrap.innerHTML=html;
    wrap.querySelectorAll('[data-pp]').forEach(b=>b.onclick=()=>downloadPassport(p,probs[+b.dataset.pp]));
    wrap.querySelectorAll('[data-nf]').forEach(b=>b.onclick=()=>{
     const q=showNear(p[0],p[1],probs[+b.dataset.nf].analysis.factors);
     b.textContent=q?`Підсвічено об’єктів: ${q}`:'Поруч нічого з чинників немає'});
+   wrap.querySelectorAll('[data-all]').forEach(b=>b.onclick=()=>openPanel(P.indexOf(p)));
    wrap.querySelectorAll('[data-na]').forEach(b=>b.onclick=()=>{
     const q=showAllNear(p[0],p[1],250);
     b.textContent=q?`Показано об’єктів: ${q}`:'Поруч нічого не знайдено'});

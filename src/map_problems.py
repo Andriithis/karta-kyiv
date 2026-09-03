@@ -284,10 +284,25 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
             before = len(P)
             P = [p for p in P if in_ring(p[0], p[1], ring)]
             print(f'   район {district}: {len(P):,} адрес (за межами відсіяно {before-len(P):,})')
+            # Потоки тепер стислі: геометрія лежить один раз у risks['geo'],
+            # а шар несе номер відрізка й число. Обрізаємо обидва види, і
+            # заразом викидаємо з geo те, що за межами району.
+            geo = risks.get('geo') or []
             for k, v in list(risks.get('lines', {}).items()):
-                v['items'] = [x for x in v['items']
-                              if any(in_ring(q[0], q[1], ring) for q in x[0])]
+                if v.get('g'):
+                    v['items'] = [x for x in v['items'] if 0 <= x[0] < len(geo)
+                                  and any(in_ring(q[0], q[1], ring) for q in geo[x[0]][0])]
+                else:
+                    v['items'] = [x for x in v['items']
+                                  if any(in_ring(q[0], q[1], ring) for q in x[0])]
                 if not v['items'] and not v.get('nodata'): risks['lines'].pop(k, None)
+            if geo:
+                keep = sorted({x[0] for v in risks['lines'].values() if v.get('g')
+                               for x in v['items']})
+                pos = {j: i for i, j in enumerate(keep)}
+                risks['geo'] = [geo[j] for j in keep]
+                for v in risks['lines'].values():
+                    if v.get('g'): v['items'] = [[pos[x[0]], x[1]] for x in v['items']]
             POP = [x for x in POP if in_ring(x[0], x[1], ring)]
             for _c in FACT.get('cats', []):
                 _c['pts'] = [q for q in _c['pts'] if in_ring(q[0], q[1], ring)]

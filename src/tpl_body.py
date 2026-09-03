@@ -34,4 +34,5 @@ BODY = r"""<body><div id="wrap"><div id="side">
 <fieldset><legend>Рік</legend><div id="fy"></div></fieldset>
 <fieldset><legend>Час доби</legend><div id="hr"></div>
 <div class="hint">Порожній вибір = усі. Розмір кола = кількість подій за адресою. Сірі кола — прив'язка лише до вулиці, без номера будинку.</div></fieldset>
-</div><div id="map"></div></div>"""
+</div><div id="map"></div>
+<div id="pan"><div id="panh"></div><div id="panb"></div></div></div>"""

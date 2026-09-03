@@ -15,6 +15,16 @@ const CATTH={};M.groups.forEach((g,gi)=>g[1].forEach(i=>CATTH[i]=gi));
 // Порожньо, якщо назви немає: приблизна назва в листі гірша за її відсутність.
 const LAW=s=>(M.law&&M.law[s])||'';
 const R=__RISKS__, POP=__POP__, F=__FACTS__;
+// Справи адрес для правої панелі. У сторінці, відкритій з диска, вони лежать
+// тут-таки; на сайті — у файлах spravy/<район>.json, які тягнемо на вимогу.
+let DOCS=__DOCS__;
+const DOCCACHE={};
+// Потоки приїжджають стисло: геометрія кожного відрізка лежить один раз у
+// R.geo, а шари несуть тільки номер відрізка й число. Розгортаємо тут-таки,
+// щоб решта коду працювала як раніше.
+if(R.geo) Object.values(R.lines||{}).forEach(v=>{
+ if(v.g) v.items=v.items.map(x=>[R.geo[x[0]][0], R.geo[x[0]][1], x[1]]);
+});
 const map=L.map('map',{preferCanvas:true}).setView(M.center||[50.45,30.52],M.only?13:11);
 map.createPane('popPane'); map.getPane('popPane').style.zIndex=350;
 map.createPane('maskPane'); map.getPane('maskPane').style.zIndex=345;

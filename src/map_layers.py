@@ -46,20 +46,29 @@ def build(district, labels):
         FLOWS = [('flow_school', 3, 'Потік до шкіл і садків', '07:30–08:30, 12:00–14:00'),
                  ('flow_transit', 4, 'Потік до транспорту', 'години пік'),
                  ('flow_shop', 5, 'Потік до торгівлі', 'день, рівномірно')]
-        # На РАЙОННІЙ карті показуємо ВСІ ненульові потоки — інакше тихі квартали
-        # виглядають порожніми, хоча потік там є (перевірено на вул. Кадетський Гай:
-        # потік до торгівлі 202, але 3287-е місце по місту -> не потрапляв у топ).
-        # На єдиній міській карті ліміт лишається, бо інакше вона нечитабельна.
-        FLOW_CAP = None if district else 2500
+        # Геометрія відрізка записувалася тричі — по разу на шар, — а в кожній
+        # районній карті ще й наново. Виміряно 3 вересня: три шари з власною
+        # геометрією без обмеження важать 2,87 МБ, а геометрія один раз плюс
+        # три масиви значень — 1,28 МБ. Це дешевше за нинішні 1,34 МБ за
+        # обрізані топ-2500, тому обмеження знято: показуємо всі відрізки.
+        #
+        # Стеля була потрібна саме через дублювання. На районній карті вона
+        # вже й тоді знімалася (перевірено на вул. Кадетський Гай: потік до
+        # торгівлі 202, але 3287-е місце по місту — у топ не потрапляв).
+        used = sorted({j for _k, idx, _t, _w in FLOWS
+                       for j, x in enumerate(it) if len(x) > idx and x[idx] > 0})
+        pos = {j: k for k, j in enumerate(used)}
+        if used:
+            risks['geo'] = [[it[j][0], it[j][1]] for j in used]
         for key, idx, title, when in FLOWS:
-            vals = [x for x in it if len(x) > idx and x[idx] > 0]
+            vals = [(pos[j], int(it[j][idx])) for j in used
+                    if len(it[j]) > idx and it[j][idx] > 0]
             if not vals: continue
-            vals.sort(key=lambda x: -x[idx])
-            top = vals if FLOW_CAP is None else vals[:FLOW_CAP]
+            vals.sort(key=lambda x: -x[1])
             risks.setdefault('lines', {})[key] = {
-                'title': title, 'when': when,
-                'items': [[x[0], x[1], int(x[idx])] for x in top]}
-            print(f'   {title}: {len(top):,} відрізків з {len(vals):,}')
+                'title': title, 'when': when, 'g': 1,
+                'items': [[a, b] for a, b in vals]}
+            print(f'   {title}: {len(vals):,} відрізків')
     else:
         print('шар потоків відсутній (запустіть 2c-NETWORK) — карта буде без нього')
 
