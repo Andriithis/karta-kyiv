@@ -327,7 +327,7 @@ map.on('zoomend moveend',drawFacts);
 // Закриття вікна — це і є «користувач пішов з цього місця».
 map.on('popupclose',()=>hlayer.clearLayers());
 draw();drawRisks();drawFacts();
-// Посилання виду karta.html#desnianskyi відкриває одразу потрібний район:
+// Посилання виду kyiv.html#desna відкриває одразу потрібний район:
 // викладач може дати групі адресу конкретного району, а не «знайдіть самі».
 {const i=DSLUG.indexOf(decodeURIComponent(location.hash.slice(1)).toLowerCase());
  if(i>=0) enterDistrict(i,false); else if(DN.length&&!M.only) paintDistrictList();}"""

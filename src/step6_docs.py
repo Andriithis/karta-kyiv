@@ -30,7 +30,7 @@ def build(outdir, A=None, D=None):
     if A is None: A = analyse(D)
     os.makedirs(outdir, exist_ok=True)
     open(os.path.join(outdir, 'doslidzhennya.html'), 'w', encoding='utf-8').write(
-        doc_research(A, D, 'full'))
+        doc_research(A, D))
     open(os.path.join(outdir, 'rezyume.html'), 'w', encoding='utf-8').write(
         doc_summary(A, D))
     open(os.path.join(outdir, 'analiz.html'), 'w', encoding='utf-8').write(

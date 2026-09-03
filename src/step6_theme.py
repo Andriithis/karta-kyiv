@@ -10,7 +10,7 @@ import mech as M
 from step6_base import (esc, num, page, stamp, bar, fac_human,
                         parse_factor, THSLUG, TRAIN_Y, TEST_Y)
 
-def theme_block(th, i, A, D, mode='full'):
+def theme_block(th, i, A, D):
     ER = A['ER']; d = ER.get(th, {})
     rows = A['streets'].get(th, [])
     sl = THSLUG.get(th, th)
@@ -56,64 +56,7 @@ def theme_block(th, i, A, D, mode='full'):
                      + '. Від’ємна вага не означає «безпечно» — вона означає, що за '
                        'інших рівних умов подій цього типу там фіксують менше.</p>')
 
-    if rows and mode == 'student':
-        b.append('<div class="box"><h4>Поіменний перелік вулиць — у викладацькій '
-                 'версії</h4><p>Тут навмисно немає готового списку ризикованих '
-                 'вулиць цієї теми. Сенс вправи в тому, щоб ви знайшли скупчення '
-                 'на карті самі, натиснули «Що поруч» і пояснили його тим, що '
-                 'бачите. Таблиця вище показує, <b>що саме</b> модель вважає '
-                 'важливим — це підказка, а не відповідь.</p></div>')
-    elif rows:
-        b.append(f'<h4>Ризиковані вулиці: {len(rows)} відрізків</h4>')
-        b.append('<p class="muted">Перелік навмисно короткий. Раніше тут стояли '
-                 'сотні відрізків, але в хвості того переліку подій майже не було — '
-                 'він створював видимість знання. Показуємо стільки, скільки людина '
-                 'здатна реально об’їхати й перевірити.</p>')
-        b.append('<p class="muted">Оцінка — частка від найвищої в місті. «Справи ' +
-                 TRAIN_Y + '» — скільки подій теми фіксували на самому відрізку '
-                 'у справах навчального року; нуль при високій оцінці означає, що модель '
-                 'вказує на вулицю <b>наперед</b>. «Поруч» — об’єкти тих типів, що '
-                 'входять у найвагоміші чинники теми, з відстанню, на якій їх рахує '
-                 'модель.</p>')
-        b.append(f'<input class="f" data-for="#tb-{sl}" placeholder="пошук вулиці…">')
-        b.append(f'<div class="tw"><table id="tb-{sl}"><thead><tr>'
-                 '<th class="n">№</th><th>Вулиця</th><th class="n">Оцінка</th>'
-                 f'<th class="n">Справи {TRAIN_Y}</th><th class="n">Прохідність</th>'
-                 '<th>Поруч (у радіусі чинника)</th></tr></thead><tbody>')
-        for r in rows:
-            near = ', '.join(f'{esc(n)} — {q} ({rad} м)' for n, q, rad, _ in r['near'])
-            fl = ('—' if r['flow'] is None
-                  else f"{num(r['flow'])}<span class='muted'> · {r['flow_rank']} місце</span>")
-            b.append(f"<tr data-nm=\"{esc(r['name'])}\">"
-                     f"<td class='n'>{r['rank']}</td>"
-                     f"<td>{esc(r['name'])} <a class='muted' target='_blank' "
-                     f"rel='noopener' href='https://www.openstreetmap.org/"
-                     f"#map=18/{r['lat']:.5f}/{r['lon']:.5f}'>↗ мапа</a></td>"
-                     f"<td class='n'>{r['score']:.2f}</td>"
-                     f"<td class='n'>{r['ev24']}</td>"
-                     f"<td class='n'>{fl}</td>"
-                     f"<td>{near or '<span class=muted>нічого з чинників теми</span>'}</td>"
-                     f"</tr>")
-        b.append('</tbody></table></div>')
-
-        top = rows[:5]
-        b.append('<h4>Розбір п’яти найвищих</h4><ul>')
-        for r in top:
-            near = r['near']
-            if near:
-                txt = ('поруч ' + ', '.join(f'{n.lower()} — {q} у {rad} м'
-                                            for n, q, rad, _ in near[:3]))
-            else:
-                txt = 'жоден із чинників теми поруч не трапляється — оцінку дали ' \
-                      'геометрія вулиці й потік'
-            ev = (f"у справах {TRAIN_Y} року: {r['ev24']} подій" if r['ev24']
-                  else f"у справах {TRAIN_Y} року подій тут немає — вулиця в переліку "
-                       f"саме як прогноз")
-            b.append(f"<li><b>{esc(r['name'])}</b> — оцінка {r['score']:.2f}; "
-                     f"{ev}; {txt}.</li>")
-        b.append('</ul>')
-
-    an = A['anom'].get(th, []) if mode != 'student' else []
+    an = A['anom'].get(th, [])
     if an:
         b.append('<h4>Аномалії: подій багато, а середовище їх не пояснює</h4>')
         b.append('<p class="muted">Ці відрізки дають чимало подій, але модель ставить '
@@ -126,7 +69,7 @@ def theme_block(th, i, A, D, mode='full'):
                      f"а за середовищем лише {r['rank']}-те місце з {len(rows)}.</li>")
         b.append('</ul>')
 
-    fr = A['fresh'].get(th, []) if mode != 'student' else []
+    fr = A['fresh'].get(th, [])
     if fr:
         b.append('<h4>Попередження: умови є, подій ще не фіксували</h4>')
         b.append('<p class="muted">Верхні за оцінкою вулиці, де в навчальному році '

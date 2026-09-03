@@ -333,8 +333,9 @@ diff локальний_файл /tmp/chk/src/файл
 python3 -m py_compile /tmp/chk/src/*.py
 ```
 
-Для `step3_tpl.py` додатково: витягнути `<script>` зі згенерованої `karta.html`,
+Для шаблону додатково: витягнути `<script>` зі згенерованої `site/kyiv.html`,
 перевірити `node --check`, розмітку — балансом тегів через `HTMLParser`.
+Усе це вже робить `PEREVIRKA.bat` — окремо вигадувати не треба.
 
 **Мережа з пісочниці.** `reyestr.court.gov.ua`, `overpass-api.de` та
 `api.github.com` через curl недоступні. Працюють WebSearch, WebFetch, конектор

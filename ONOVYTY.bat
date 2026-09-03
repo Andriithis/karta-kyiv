@@ -25,7 +25,8 @@ echo [3/3] Zbirka karty...
 if errorlevel 1 goto err
 
 echo.
-echo === GOTOVO === karta.html onovleno
+echo === GOTOVO === kartu zibrano v papku site
+echo Shchob podyvytysya - zapustit PODYVYTYSYA.bat
 echo.
 pause
 exit /b 0

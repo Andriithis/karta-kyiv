@@ -38,7 +38,7 @@ FSEARCH = """<script>
 })();
 </script>"""
 
-def doc_research(A, D, mode='full'):
+def doc_research(A, D):
     ER = A['ER']
     b = []
     b += sect_intro(A, D)
@@ -86,7 +86,7 @@ def doc_research(A, D, mode='full'):
                      f'частинах міста однакові умови працюють неоднаково.</p></div>')
 
         for i, th in enumerate(A['themes_ok']):
-            b.append(theme_block(th, i, A, D, mode))
+            b.append(theme_block(th, i, A, D))
 
         if A['themes_no']:
             b.append('<h3>Теми, для яких моделі немає</h3><p>')
@@ -102,8 +102,5 @@ def doc_research(A, D, mode='full'):
     b += sect_tail(A, D)
 
     return page('Дослідження ризиків', 'Методика, результати, перевірка та поіменний '
-                'розбір ризикованих вулиць Києва. Оновлюється автоматично.'
-                if mode != 'student' else
-                'Як рахується ризик, на яких працях це побудовано і наскільки '
-                'модель справджується. Оновлюється автоматично.',
+                'розбір ризикованих вулиць Києва. Оновлюється автоматично.',
                 '\n'.join(b), script=FSEARCH)
