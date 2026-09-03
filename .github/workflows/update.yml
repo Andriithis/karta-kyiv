@@ -116,36 +116,23 @@ jobs:
             git push
           fi
 
-      - name: Підготувати публічну сторінку (лише версія для слухачів)
+      # Версія одна для всіх: поділу на викладацьку й слухацьку більше немає.
+      # Перелік проблем відкритий — перший крок ланцюга саме «обрати проблему
+      # зі списку», а робота слухача починається далі, за SARA.
+      - name: Підготувати публічну сторінку
         run: |
-          if [ ! -d site/slukhach ] || [ ! -d site/vykladach ]; then
+          if [ ! -f site/kyiv.html ] || [ ! -f site/index.html ]; then
             echo "::error::site/ не зібрано — дивіться крок 5"
             exit 1
           fi
           rm -rf _site && mkdir -p _site
-          cp -r site/slukhach/. _site/
+          cp -r site/. _site/
           printf '%s' "$(date -u +'%Y-%m-%d %H:%M UTC')" > _site/updated.txt
           echo "публікується файлів: $(ls _site | wc -l)  розмір: $(du -sh _site | cut -f1)"
 
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
-
-      # Викладацька версія НЕ публікується на Pages: сайт відкритий, і слухачі
-      # інакше бачили б готові висновки. Вона збирається в архів, який завантажує
-      # викладач зі сторінки запуску в Actions.
-      - name: Викладацька версія в архів
-        run: |
-          rm -rf _teacher && mkdir -p _teacher
-          cp -r site/vykladach/. _teacher/
-          if [ -f karta.html ]; then cp karta.html _teacher/karta-misto.html; fi
-          echo "викладацька версія: $(du -sh _teacher | cut -f1)"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: karta-vykladach
-          path: _teacher
-          retention-days: 60
 
   deploy:
     needs: build
