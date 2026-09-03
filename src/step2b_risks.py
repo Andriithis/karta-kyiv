@@ -47,6 +47,14 @@ LIGHT = {
  'school':  '(nwr["amenity"~"^(school|kindergarten)$"](area.k););out tags center;',
  'univer':  '(nwr["amenity"~"^(university|college)$"](area.k););out tags center;',
  'health':  '(nwr["amenity"~"^(hospital|clinic|pharmacy)$"](area.k););out tags center;',
+ # --- установи, у яких оформлюють протоколи ---
+ # Відділи поліції, суди, прокуратура. Потрібні не як чинник ризику, а щоб
+ # викидати їх з карти: подія, записана на адресу відділу, сталася не там.
+ # Беремо саме з OSM, бо це КООРДИНАТИ — текстовий перелік адрес спіткала б
+ # та сама біда, що й решту адрес тут: «вул. С. Хороброго, 9» і «вул. Святослава
+ # Хороброго, 9» різні рядки, а будівля одна.
+ 'ustanovy':'(nwr["amenity"~"^(police|courthouse|prosecutor)$"](area.k);'
+            'nwr["government"~"^(police|prosecutor)$"](area.k););out tags center;',
  # --- занедбаність ---
  'abandon': '(nwr["building"~"^(ruins|abandoned|construction)$"](area.k);'
             'nwr["abandoned"="yes"](area.k);nwr["ruins"="yes"](area.k);'
@@ -148,7 +156,18 @@ def main():
                 time.sleep(5)
             json.dump(raw, open(RAW, 'w', encoding='utf-8'), ensure_ascii=False)
         else:
-            print('сирі дані OSM вже є (видаліть data/osm_risks_raw.json щоб перезавантажити)')
+            # Докачуємо лише те, чого в кеші немає. Раніше поява нової категорії
+            # означала перезавантаження всіх 25 хвилин; тепер це хвилина.
+            miss = [k for k in LIGHT if k not in raw]
+            if miss:
+                print('докачую нові категорії:', ', '.join(miss))
+                for k in miss:
+                    r_ = fetch(k, LIGHT[k])
+                    raw[k] = r_ if r_ is not None else []
+                    time.sleep(5)
+                json.dump(raw, open(RAW, 'w', encoding='utf-8'), ensure_ascii=False)
+            else:
+                print('сирі дані OSM вже є (видаліть data/osm_risks_raw.json щоб перезавантажити)')
     else:
         print('1) завантаження з OpenStreetMap (10-25 хв):')
         raw = {}
@@ -195,6 +214,20 @@ def main():
                 pts.append([round(c[0],5), round(c[1],5), (t.get('name') or t.get('amenity') or t.get('shop') or '')[:40]])
         out['points'][k] = {'title': title, 'items': pts}
         print(f'   {title}: {len(pts):,}')
+
+    # --- установи: окремий маленький файл для виключення з карти ---
+    ust = []
+    for el in raw.get('ustanovy', []):
+        c = center(el)
+        if c:
+            t = el.get('tags', {})
+            ust.append([round(c[0], 5), round(c[1], 5),
+                        (t.get('name') or t.get('amenity') or '')[:60]])
+    if ust:
+        up = os.path.join(DATA, 'ustanovy.json')
+        json.dump(ust, open(up, 'w', encoding='utf-8'),
+                  ensure_ascii=False, separators=(',', ':'))
+        print(f'   установи (поліція, суди, прокуратура): {len(ust):,} -> data/ustanovy.json')
 
     # --- відсутності ---
     houses = [c for c in (center(e) for e in raw.get('houses', [])) if c]

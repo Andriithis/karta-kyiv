@@ -8,7 +8,8 @@
      усі десять районів) — справжня база для цього не потрібна;
   3. збирає дві карти: міську й обрізану до одного району;
   4. витягає з кожної <script> і перевіряє синтаксис через node, якщо він є;
-  5. рахує баланс тегів розмітки;
+  5. перевіряє, що відомі установи не просочилися на карту;
+  6. рахує баланс тегів розмітки;
   6. порівнює контрольні суми з попереднім запуском і каже, чи змінився
      результат.
 
@@ -31,6 +32,21 @@ sys.path.insert(0, SRCD)
 
 VOID = {'meta', 'link', 'br', 'hr', 'img', 'input', 'source',
         'area', 'base', 'col', 'embed', 'track', 'wbr'}
+
+# ---- АДРЕСИ, ЯКИХ НА КАРТІ БУТИ НЕ МАЄ ----
+# Це відділи поліції та місця оформлення протоколів. Кожну з них колись уже
+# ловили, і кожна колись поверталася — бо ловилися вони правилом, а не
+# перевіркою. Тепер повернення видно одразу.
+#
+# Додавайте сюди щоразу, коли знаходите установу на карті: спершу рядок тут,
+# і аж потім правило, яке її ловить.
+NE_MAE_BUTY = [
+    'вул. Відпочинку, 18',
+    'вул. Чорних Запорожців, 20',
+    'вул. Святослава Хороброго, 9',
+    'вул. Бродівська, 79',
+    'вул. Радосинська, 140',
+]
 
 
 def drop_cache():
@@ -122,14 +138,20 @@ def main(save=False):
         return 1
     print(f'   {os.path.relpath(TESTDB, ROOT)} розпаковано')
 
-    import step3_map
+    import step3_map, map_excl
     step3_map.DB = TESTDB
+    # Перевірка не має чіпати справжні дані. Раніше вона переписувала
+    # data/vykluchennya.txt переліком, порахованим на зменшеній базі, — і цей
+    # перелік потрапляв у коміт. Вихідні файли відводимо у тимчасову папку;
+    # ваші власні списки (vykluchennya_moyi, vykluchennya_ne) лишаються вхідними.
+    tmp = tempfile.mkdtemp(prefix='karta_check_')
+    map_excl.EXCL = os.path.join(tmp, 'vykluchennya.txt')
+    map_excl.REVIEW = os.path.join(tmp, 'top100.txt')
 
     CASES = [('міська', dict(district=None)),
              ('районна', dict(district='Деснянський'))]
 
-    tmp = tempfile.mkdtemp(prefix='karta_check_')
-    now, problems = {}, []
+    now, problems, city_html = {}, [], ''
     try:
         for name, kw in CASES:
             print(f'3. Збірка: {name}')
@@ -142,6 +164,7 @@ def main(save=False):
                 sys.stdout = keep
                 out.close()
             html = open(dst, encoding='utf-8').read()
+            if name == 'міська': city_html = html
             now[name] = hashlib.sha256(html.encode('utf-8')).hexdigest()[:16]
             for e in check_markup(html):
                 problems.append(f'{name}: розмітка — {e}')
@@ -149,16 +172,41 @@ def main(save=False):
                 problems.append(f'{name}: JavaScript — {e}')
             print(f'   {len(html)/1048576:.1f} МБ · {now[name]}')
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        pass
 
-    print('4. Розмітка і JavaScript')
+    print('4. Установи не просочилися на карту')
+    # Дві перевірки, бо однієї мало. Перелік виключень — те, що вирішило
+    # правило. Підписи точок — те, що врешті побачить людина: одна будівля
+    # буває записана і як «9», і як «9А», тож адреса може вилетіти з переліку,
+    # а точка лишитися під сусіднім написанням.
+    excl_txt = ''
+    if os.path.exists(map_excl.EXCL):
+        excl_txt = open(map_excl.EXCL, encoding='utf-8').read().lower()
+    missed = [a for a in NE_MAE_BUTY if a.lower() not in excl_txt]
+    leaked = []
+    m_ = re.search(r'const M=.*?, P=(\[.*?\]);\n', city_html or '', re.S)
+    if m_:
+        addrs = {(p or [None, None, ''])[2] for p in json.loads(m_.group(1))}
+        leaked = [a for a in NE_MAE_BUTY if a in addrs]
+    else:
+        print('   не знайшов перелік точок у сторінці')
+    for a in missed: print(f'   ПОМИЛКА не потрапила у виключення: {a}')
+    for a in leaked: print(f'   ПОМИЛКА лишилася точкою на карті: {a}')
+    if not missed and not leaked:
+        print(f'   усі {len(NE_MAE_BUTY)} відомих установ виключено й на карті їх немає')
+    if missed or leaked:
+        return 1
+
+    print('5. Розмітка і JavaScript')
     if problems:
         for p in problems:
             print('   ПОМИЛКА', p)
         return 1
     print('   чисто')
 
-    print('5. Порівняння з попереднім запуском')
+    shutil.rmtree(tmp, ignore_errors=True)
+
+    print('6. Порівняння з попереднім запуском')
     if save:
         json.dump(now, open(STATE, 'w'))
         print('   еталон збережено')
