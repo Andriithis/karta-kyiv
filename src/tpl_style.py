@@ -43,6 +43,12 @@ button:hover{background:#28303f}button.act{background:#e0533d;border-color:#e053
 .gb label{font-size:12px;color:#c4cbd8}.gb .n{color:#5f6878;font-size:10.5px;margin-left:auto;flex:0 0 auto}
 .hint{font-size:11px;color:#5f6878;margin-top:7px;line-height:1.4}
 #backl a{color:#e0533d;font-size:12px;text-decoration:none;display:inline-block;margin-top:2px}
+#fd{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+#fd span{padding:6px 5px;background:#1f2432;border-radius:6px;font-size:11.5px;cursor:pointer;
+ user-select:none;text-align:center;line-height:1.15;transition:background .12s}
+#fd span:hover{background:#28303f}
+#fd span i{display:block;font-style:normal;font-size:10px;color:#6d7789;margin-top:1px}
+#fd span.on{background:#e0533d;color:#fff}#fd span.on i{color:#ffd9d0}
 #backl a:hover{text-decoration:underline}
 #fr label,#frisk label,#fctx label{font-size:12px}
 #fr .n,#frisk .n,#fctx .n{color:#5f6878;font-size:10.5px;margin-left:auto;flex:0 0 auto}

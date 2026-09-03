@@ -10,6 +10,8 @@ BODY = r"""<body><div id="wrap"><div id="side">
 <div id="backl"></div>
 <div id="skew"></div>
 <div id="cnt">0</div><div class="sub" id="cntl"></div>
+<fieldset id="fdw"><legend>Район міста</legend><div id="fd"></div>
+<div class="hint">Натисніть район — карта під'їде до нього й покаже його власний перелік проблем. По межах на карті теж можна клікати, але в щільному центрі їх закривають позначки подій.</div></fieldset>
 <button id="heat">Теплова карта</button><button id="reset">Скинути фільтри</button>
 <fieldset><legend>Що показувати</legend><div id="fcat"></div>
 <div class="hint" id="cathint"></div></fieldset>

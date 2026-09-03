@@ -67,8 +67,25 @@ function recount(){
  for(const p of P){if(!inScope(p))continue;for(const e of p[4])c[e[1]]++}
  return c;
 }
+// Перелік районів у панелі. У щільному центрі клікнути по багатокутнику майже
+// неможливо — його закривають позначки подій, тому головний шлях у район саме
+// тут, а клік по карті лишається зручним доповненням.
+if(DN.length&&!M.only){
+ const dev=(M.dtheme||[]).map(o=>Object.values(o||{}).reduce((a,b)=>a+b,0));
+ $('#fd').innerHTML=DN.map((n,i)=>{
+  const np=(M.dprob||[])[i]||0;
+  const sub=np?`${np} ${np===1?'проблема':'проблем'}`:(dev[i]?fmt(dev[i])+' подій':'');
+  return `<span data-d="${i}">${n}<i>${sub}</i></span>`}).join('');
+ $('#fd').onclick=e=>{const t=e.target.closest('[data-d]'); if(!t)return;
+  const i=+t.dataset.d; if(i===CURD) exitDistrict(); else enterDistrict(i)};
+}else{const w=$('#fdw'); if(w) w.style.display='none'}
+function paintDistrictList(){
+ document.querySelectorAll('#fd [data-d]').forEach(el=>
+  el.classList.toggle('on', +el.dataset.d===CURD));
+}
 function onScopeChange(){
  if(M.only){draw();return}                    // окремий файл району — перемикати нічого
+ paintDistrictList();
  const c=recount();
  document.querySelectorAll('[data-a]').forEach(inp=>{
   const n=inp.parentElement.querySelector('.n'); if(n)n.textContent=fmt(c[+inp.dataset.a])});
@@ -257,4 +274,4 @@ draw();drawRisks();drawFacts();
 // Посилання виду karta.html#desnianskyi відкриває одразу потрібний район:
 // викладач може дати групі адресу конкретного району, а не «знайдіть самі».
 {const i=DSLUG.indexOf(decodeURIComponent(location.hash.slice(1)).toLowerCase());
- if(i>=0) enterDistrict(i,false);}"""
+ if(i>=0) enterDistrict(i,false); else if(DN.length&&!M.only) paintDistrictList();}"""

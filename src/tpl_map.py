@@ -28,11 +28,20 @@ if(M.bounds){
  map.setMaxBounds(lim);
  map.setMinZoom(map.getBoundsZoom(lim));
 }
+// Зовнішня рамка затемнення. Раніше тут стояв нерухомий прямокутник на весь
+// світ (довготи -360..360). Полотно Leaflet обрізає такий багатокутник, і на
+// широкому екрані ліворуч та вгорі лишалася незатемнена смуга — видно на
+// живому сайті. Тепер рамка будується від поточного вигляду з добрим запасом
+// і перебудовується під час руху карти.
+function maskRing(){
+ const b=map.getBounds().pad(2.5);
+ return [[b.getSouth(),b.getWest()],[b.getSouth(),b.getEast()],
+         [b.getNorth(),b.getEast()],[b.getNorth(),b.getWest()]];
+}
 if(M.border){
- // затемнення всього поза межами району: великий прямокутник з "дірою" по контуру
- const W=[[-85,-360],[-85,360],[85,360],[85,-360]];
- L.polygon([W,M.border],{pane:'maskPane',color:'#0f1117',weight:0,
+ let mk=L.polygon([maskRing(),M.border],{pane:'maskPane',color:'#0f1117',weight:0,
    fillColor:'#0f1117',fillOpacity:.82,interactive:false}).addTo(map);
+ map.on('moveend zoomend',()=>mk.setLatLngs([maskRing(),M.border]));
  L.polygon(M.border,{color:'#6b7890',weight:1.8,opacity:.9,
    fill:false,dashArray:'6,5',interactive:false}).addTo(map);
 }
@@ -56,7 +65,7 @@ const dshapes=[];
 const CITY={c:M.center||[50.45,30.52], z:11};
 const dBounds=i=>L.latLngBounds(DBORD[i]);
 if(DN.length&&!M.only) DN.forEach((nm,i)=>{
- const pg=L.polygon(DBORD[i],{color:'#7b8aa3',weight:1.3,opacity:.6,
+ const pg=L.polygon(DBORD[i],{color:'#9fb0c9',weight:1.8,opacity:.85,dashArray:'7,5',
    fillColor:'#8ea0bd',fillOpacity:.05});
  const np=(M.dprob||[])[i]||0;
  pg.bindTooltip(`<b>${nm}</b><span>`+(np?`${np} проблем · `:'')+`натисніть, щоб відкрити</span>`,
@@ -70,15 +79,17 @@ if(DN.length&&!M.only) DN.forEach((nm,i)=>{
 // вони все одно не читаються, зате перемикання лишається однією дією.
 function paintScope(){
  dshapes.forEach((pg,i)=>pg.setStyle(CURD<0
-   ? {opacity:.6,fillOpacity:.05}
-   : {opacity:i===CURD?.95:0,fillOpacity:0}));
+   ? {opacity:.85,fillOpacity:.05,dashArray:'7,5'}
+   : {opacity:i===CURD?1:0,fillOpacity:0,dashArray:null}));
  if(dmask){map.removeLayer(dmask);dmask=null}
  if(CURD>=0){
-  const W=[[-85,-360],[-85,360],[85,360],[85,-360]];
-  dmask=L.polygon([W,DBORD[CURD]],{pane:'maskPane',color:'#0f1117',weight:0,
+  dmask=L.polygon([maskRing(),DBORD[CURD]],{pane:'maskPane',color:'#0f1117',weight:0,
     fillColor:'#0f1117',fillOpacity:.78,interactive:false}).addTo(map);
  }
 }
+// рамка затемнення має встигати за картою, інакше при від'їзді з'являються
+// незатемнені краї
+map.on('moveend zoomend',()=>{if(dmask)dmask.setLatLngs([maskRing(),DBORD[CURD]])});
 function enterDistrict(i,fly){
  if(!(i>=0&&i<DN.length)) return;
  CURD=i; paintScope();
