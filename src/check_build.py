@@ -44,6 +44,7 @@ NE_MAE_BUTY = [
     'вул. Відпочинку, 18',
     'вул. Чорних Запорожців, 20',
     'вул. Святослава Хороброго, 9',
+    'вул. С. Хороброго, 9',
     'вул. Бродівська, 79',
     'вул. Радосинська, 140',
 ]
@@ -182,6 +183,11 @@ def main(save=False):
     excl_txt = ''
     if os.path.exists(map_excl.EXCL):
         excl_txt = open(map_excl.EXCL, encoding='utf-8').read().lower()
+    # Ваш ручний список (vykluchennya_moyi.txt) теж прибирає точки з карти —
+    # без нього тут «пропущено» помилково, якщо адреса виключена саме ним,
+    # а не автоматикою (знайдено 3 вересня на вул. С. Хороброго, 9).
+    if os.path.exists(map_excl.MANUAL):
+        excl_txt += '\n' + open(map_excl.MANUAL, encoding='utf-8').read().lower()
     missed = [a for a in NE_MAE_BUTY if a.lower() not in excl_txt]
     leaked = []
     m_ = re.search(r'const M=.*?, P=(\[.*?\]);\n', city_html or '', re.S)
