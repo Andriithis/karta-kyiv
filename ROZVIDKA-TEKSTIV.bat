@@ -1,14 +1,14 @@
 @echo off
 chcp 65001 > nul
 cd /d "%~dp0"
-title ROZVIDKA FABUL
+title ROZVIDKA TEKSTIV
 set PY=py -3
 %PY% --version >nul 2>&1 || set PY=python
 set PYTHONIOENCODING=utf-8
 
 echo.
 echo ========================================
-echo   ROZVIDKA FABUL
+echo   ROZVIDKA TEKSTIV RISHEN
 echo ========================================
 echo.
 echo Kachae nevelyku vybirku rishen i dyvytsya,
