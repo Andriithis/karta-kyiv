@@ -7,7 +7,7 @@
 якщо відібраний напрямок не пояснюється моделлю ризику, картка просто каже
 «причина встановлюється на місці» (п.7.1, 7.4).
 """
-import os, re, sys, csv, json, glob, math, sqlite3, collections
+import os, re, sys, csv, gzip, json, glob, math, sqlite3, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import labels as L
 import mech as M
@@ -29,6 +29,7 @@ OUT  = os.path.join(ROOT, 'site', 'kyiv.html')
 NETW  = os.path.join(DATA, 'network.json')
 RISKF = os.path.join(DATA, 'risk.json')
 BORD  = os.path.join(DATA, 'borders.json')
+FABSNAP = os.path.join(DATA, 'fabuly.csv.gz')   # витяги обставин для збірки в CI
 FACTF = os.path.join(DATA, 'factors.json')             # шар чинників середовища (крок 2e)
 EXCL = os.path.join(DATA, 'vykluchennya.txt')          # формується автоматично
 MANUAL = os.path.join(DATA, 'vykluchennya_moyi.txt')    # ваш список, ніколи не перезаписується
@@ -65,10 +66,23 @@ def main(district=None, out=None):
 
     # витяги обставин (крок 1b). Може не бути зовсім або бути частково —
     # завантаження довге, а карта має збиратися з тим, що вже є.
+    # Витяги обставин (крок 1b). Спершу таблиця в базі — вона є на комп'ютері,
+    # де крок 1b і працював. Якщо таблиці немає, читаємо знімок із репозиторію:
+    # саме так це відбувається в GitHub Actions, де база збирається наново з
+    # events.csv.gz і жодного витягу в ній немає. Без цього на живому сайті
+    # панель була б без обставин, хоча вони давно зібрані й лежать поруч.
     fab = {}
     if c.execute("SELECT name FROM sqlite_master WHERE name='fab'").fetchone():
         fab = {r[0]: r[1] for r in c.execute("SELECT doc_id, txt FROM fab WHERE txt<>''")}
-        if fab: print(f'витяги обставин: {len(fab):,}')
+        if fab: print(f'витяги обставин: {len(fab):,} (з бази)')
+    if not fab and os.path.exists(FABSNAP):
+        with gzip.open(FABSNAP, 'rt', encoding='utf-8', newline='') as fh:
+            rd = csv.reader(fh, delimiter='\t')
+            next(rd, None)
+            fab = {r[0]: r[1] for r in rd if len(r) >= 2 and r[1]}
+        if fab: print(f'витяги обставин: {len(fab):,} (зі знімка)')
+    if not fab:
+        print('витягів обставин немає — панель покаже перелік рішень без опису')
 
     print('перевірка на адреси установ:')
     excl = detect_institutional(rows, load_excl())
