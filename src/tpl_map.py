@@ -9,7 +9,10 @@
 Друга половина (бічна панель, спливні вікна, картка проблеми) — у tpl_popup.
 """
 JS_MAP = r"""const M=__META__, P=__PTS__;
-const PALA=['#e0533d','#e8a33d','#8b5cf6','#ef4444','#3b82f6','#22c55e','#14b8a6'];
+// 8 кольорів — по одному на кожну тему з labels.ORDER (ГП..ДОМ). Було 7 на 8
+// тем: домашнє насильство (індекс 7) отримувало через %7 той самий колір,
+// що й громадський порядок (індекс 0) — на карті їх було не відрізнити.
+const PALA=['#e0533d','#e8a33d','#8b5cf6','#ef4444','#3b82f6','#22c55e','#14b8a6','#ec4899'];
 const CATTH={};M.groups.forEach((g,gi)=>g[1].forEach(i=>CATTH[i]=gi));
 // Повна назва статті з кодексу за коротким підписом (src/pravo.py).
 // Порожньо, якщо назви немає: приблизна назва в листі гірша за її відсутність.
@@ -68,6 +71,12 @@ const hlayer=L.layerGroup().addTo(map); // підсвітка «чинники �
 // разом із перезавантаженням сторінки.
 const DN=M.dnames||[], DBORD=M.borders||[], DSLUG=M.dslug||[];
 let CURD=-1;                       // -1 = все місто, інакше індекс району
+// Клік по вікні проблеми, коли воно відкрите, мав закривати саме вікно — а
+// закривав вікно (стандартна поведінка Leaflet) І одночасно відкривав район,
+// бо межі району клікабельні майже по всій площі міста. Перший клік «повз»
+// відкрите вікно тепер лише закриває його; район відкриє вже наступний клік.
+let popupWasOpen=false;
+map.on('preclick',()=>{popupWasOpen=!!map._popup});
 let dmask=null;
 const dlayer=L.layerGroup().addTo(map);
 const dshapes=[];
@@ -81,7 +90,7 @@ if(DN.length&&!M.only) DN.forEach((nm,i)=>{
    {className:'rt',sticky:true});
  pg.on('mouseover',()=>{if(CURD<0)pg.setStyle({fillOpacity:.13,opacity:.9})});
  pg.on('mouseout', ()=>{if(CURD<0)pg.setStyle({fillOpacity:.04,opacity:.45})});
- pg.on('click',    ()=>{if(CURD<0)enterDistrict(i)});
+ pg.on('click',    ()=>{if(popupWasOpen){popupWasOpen=false;return}if(CURD<0)enterDistrict(i)});
  pg.addTo(dlayer); dshapes.push(pg);
 });
 // Межі решти районів у вибраному районі гасимо, а не ховаємо: під затемненням
@@ -122,7 +131,7 @@ const FZOOM=14;                               // ближче за цей мас
 const RCOL={metro:'#38bdf8',busstop:'#7dd3fc',
  flow_school:'#fbbf24',flow_transit:'#38bdf8',flow_shop:'#f472b6'};
 // ризик успадковує колір своєї теми — той самий, що в подіях
-Object.keys(R.lines||{}).forEach(k=>{if(k.startsWith('risk_'))RCOL[k]=PALA[(R.lines[k].theme||0)%7]});;
+Object.keys(R.lines||{}).forEach(k=>{if(k.startsWith('risk_'))RCOL[k]=PALA[(R.lines[k].theme||0)%PALA.length]});;
 if(M.skew) $ify('#skew', `<div class="skew">${M.skew}</div>`);
 function $ify(sel,html){const el=document.querySelector(sel);if(el)el.innerHTML=html}
 {

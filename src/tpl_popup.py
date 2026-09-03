@@ -236,7 +236,7 @@ function draw(){
  for(const [p,n,th] of vis){
   const r=Math.max(3.2,Math.min(19,3.2+8.5*Math.sqrt(n/Math.max(mx,1))*2));
   L.circleMarker([p[0],p[1]],{radius:r,weight:p[3]?.8:0,color:'#0f1117',
-   fillColor:p[3]?(PALA[th%7]):'#5f6878',fillOpacity:p[3]?.72:.35})
+   fillColor:p[3]?(PALA[th%PALA.length]):'#5f6878',fillOpacity:p[3]?.72:.35})
   .bindPopup(()=>{
    const ev=p[4].filter(e=>C.has(e[0])&&A.has(e[1])&&Y.has(e[2])&&(!H.size||H.has(e[3])));
    const bc={},hh=new Array(24).fill(0);let nk=0;
