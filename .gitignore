@@ -10,6 +10,6 @@ data/osm_risks_raw.json
 data/top100_dlya_pereviryky.txt
 data/_check_last.json
 FABULA_REZULTAT.txt
-karta.html
+site/
 _site/
 __pycache__/

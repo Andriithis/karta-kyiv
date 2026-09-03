@@ -61,7 +61,6 @@ const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>
 const REESTR='https://od.reyestr.court.gov.ua/files/';
 const docUrl=h=>REESTR+h.slice(0,2)+'/'+h.slice(2)+'.rtf';
 function docsFor(i){
- if(DOCS) return Promise.resolve(DOCS[i]||[]);
  const sl=(M.dslug||[])[(P[i]||[])[8]]||'inshe';
  if(!DOCCACHE[sl]) DOCCACHE[sl]=fetch('spravy/'+sl+'.json')
    .then(r=>r.ok?r.json():{}).catch(()=>null);
@@ -79,9 +78,10 @@ function openPanel(i){
  docsFor(i).then(cs=>{
   if(cs===null){
    $('#panh').querySelector('.ps').textContent='перелік рішень недоступний';
-   $('#panb').innerHTML='<div class="sub">Сторінку відкрито з диска, а перелік '+
-     'рішень лежить окремим файлом поруч — браузер такому файлу читати сусідів '+
-     'не дозволяє. Відкрийте карту з сайту.</div>';
+   $('#panb').innerHTML='<div class="sub">Карту відкрито як файл із диска, а '+
+     'перелік рішень лежить окремим файлом поруч — браузер такому файлу читати '+
+     'сусідів не дозволяє. Відкрийте карту з сайту або запустіть '+
+     '<b>PODYVYTYSYA.bat</b>.</div>';
    return;
   }
   // панель слухається тих самих фільтрів, що й карта: інакше в ній були б

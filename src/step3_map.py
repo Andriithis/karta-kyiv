@@ -25,7 +25,7 @@ LAST_DOCS = []          # справи адрес для панелі, пара�
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data'); DB = os.path.join(DATA, 'events.db')
-OUT  = os.path.join(ROOT, 'karta.html')
+OUT  = os.path.join(ROOT, 'site', 'kyiv.html')
 NETW  = os.path.join(DATA, 'network.json')
 RISKF = os.path.join(DATA, 'risk.json')
 BORD  = os.path.join(DATA, 'borders.json')
@@ -234,37 +234,25 @@ def main(district=None, out=None):
     # Для karta.html, яку відкривають подвійним клацанням, робимо навпаки:
     # вкладаємо все всередину. Браузер не дозволяє файлу з диска підтягувати
     # сусідні файли, тож інакше панель була б порожня.
-    dsub = json.dumps(None)
-    if out:
-        fdir = os.path.join(os.path.dirname(dst) or '.', 'spravy')
-        os.makedirs(fdir, exist_ok=True)
-        slugs = meta.get('dslug', [])
-        by_d = collections.defaultdict(dict)
-        for i, p in enumerate(P):
-            di = p[8] if len(p) > 8 else -1
-            if i < len(DOCS): by_d[di][i] = DOCS[i]
-        tot = 0
-        for di, v in by_d.items():
-            name = slugs[di] if 0 <= di < len(slugs) else 'inshe'
-            fp = os.path.join(fdir, name + '.json')
-            json.dump(v, open(fp, 'w', encoding='utf-8'),
-                      ensure_ascii=False, separators=(',', ':'))
-            tot += os.path.getsize(fp)
-        print(f'   справи адрес: {len(by_d)} файлів у spravy/ ({tot/1048576:.1f} МБ)')
-    else:
-        # Витяги обставин важать 25 МБ на всі події — стільки в сторінку не
-        # кладемо навіть локально. Лишаємо їх для адрес із проблемами, решта
-        # отримує перелік справ із посиланнями. На сайті витяги є скрізь.
-        emb, kept = [], 0
-        for i, cs in enumerate(DOCS):
-            has_prob = i < len(P) and len(P[i]) > 7 and P[i][7]
-            if has_prob:
-                emb.append(cs); kept += 1
-            else:
-                emb.append([[a_, b_, c_, d_, e_, ''] for a_, b_, c_, d_, e_, _f in cs])
-        dsub = json.dumps(emb, ensure_ascii=False, separators=(',', ':'))
-        if fab: print(f'   витяги в сторінці лише для {kept} адрес із проблемами')
-    html = html.replace('__DOCS__', dsub)
+    # ---- СПРАВИ АДРЕС: окремими файлами по районах ----
+    # Разом із витягами обставин це десятки мегабайтів — у сторінку такому не
+    # місце. Панель тягне файл свого району тоді, коли її відкривають, і одне
+    # посилання лишається одним.
+    fdir = os.path.join(os.path.dirname(dst) or '.', 'spravy')
+    os.makedirs(fdir, exist_ok=True)
+    slugs = meta.get('dslug', [])
+    by_d = collections.defaultdict(dict)
+    for i, p in enumerate(P):
+        di = p[8] if len(p) > 8 else -1
+        if i < len(DOCS): by_d[di][i] = DOCS[i]
+    tot = 0
+    for di, v in by_d.items():
+        name = slugs[di] if 0 <= di < len(slugs) else 'inshe'
+        fp = os.path.join(fdir, name + '.json')
+        json.dump(v, open(fp, 'w', encoding='utf-8'),
+                  ensure_ascii=False, separators=(',', ':'))
+        tot += os.path.getsize(fp)
+    print(f'   справи адрес: {len(by_d)} файлів у spravy/ ({tot/1048576:.1f} МБ)')
 
     open(dst, 'w', encoding='utf-8').write(html)
     print(f'готово: {os.path.basename(dst)} ({os.path.getsize(dst)/1048576:.1f} МБ)')
