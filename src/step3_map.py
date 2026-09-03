@@ -34,7 +34,9 @@ EXCL = os.path.join(DATA, 'vykluchennya.txt')          # формується а
 MANUAL = os.path.join(DATA, 'vykluchennya_moyi.txt')    # ваш список, ніколи не перезаписується
 REVIEW = os.path.join(DATA, 'top100_dlya_pereviryky.txt')
 
-def main(district=None, mode='full', out=None):
+def main(district=None, out=None):
+    """Збирає карту. Версія одна: поділу на викладацьку й слухацьку немає —
+    проблеми бачать усі, слухач копає причину далі за SARA."""
     if not os.path.exists(DB): print('спочатку кроки 1 і 2'); sys.exit(1)
     c = sqlite3.connect(DB)
     if not c.execute("SELECT name FROM sqlite_master WHERE name='geo'").fetchone():
@@ -145,7 +147,7 @@ def main(district=None, mode='full', out=None):
     # ---- відбір проблем і обрізання до району (map_problems) ----
     P, POP, meta, theme_cnt = map_problems.select(
         P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
-        district, mode, risks, ER, FACT, theme_rgrid, pred_theme)
+        district, risks, ER, FACT, theme_rgrid, pred_theme)
 
     html = TPL.replace('__POP__', json.dumps(POP, separators=(',', ':'))) \
               .replace('__FACTS__', json.dumps(FACT, ensure_ascii=False, separators=(',', ':'))) \

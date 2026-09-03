@@ -24,30 +24,26 @@ from step6_research import doc_research
 from step6_state import doc_summary, doc_analysis
 
 # ============================================================ ЗБІРКА
-def build(outdir, mode='full', A=None, D=None):
-    """Кладе документи в задану папку. mode='student' — без аналізу стану."""
+def build(outdir, A=None, D=None):
+    """Кладе всі три документи в задану папку. Версія одна для всіх."""
     if D is None: D = load()
     if A is None: A = analyse(D)
     os.makedirs(outdir, exist_ok=True)
     open(os.path.join(outdir, 'doslidzhennya.html'), 'w', encoding='utf-8').write(
-        doc_research(A, D, mode))
+        doc_research(A, D, 'full'))
     open(os.path.join(outdir, 'rezyume.html'), 'w', encoding='utf-8').write(
         doc_summary(A, D))
-    made = ['doslidzhennya.html', 'rezyume.html']
-    if mode != 'student':
-        open(os.path.join(outdir, 'analiz.html'), 'w', encoding='utf-8').write(
-            doc_analysis(A, D))
-        made.append('analiz.html')
-    return made
+    open(os.path.join(outdir, 'analiz.html'), 'w', encoding='utf-8').write(
+        doc_analysis(A, D))
+    return ['doslidzhennya.html', 'rezyume.html', 'analiz.html']
 
 def main():
     D = load()
     if not D['ER']:
         print('немає data/engine_report.json — документи будуть без розділу результатів')
     A = analyse(D)
-    for mode, sub in (('full', 'vykladach'), ('student', 'slukhach')):
-        made = build(os.path.join(SITE, sub), mode, A, D)
-        print(f'   {sub}: ' + ', '.join(made))
+    made = build(SITE, A, D)
+    print('   ' + ', '.join(made))
     print('=== ГОТОВО === документи зібрано')
 
 if __name__ == '__main__':

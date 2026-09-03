@@ -87,7 +87,7 @@ CAP_D_DEF    = 3
 
 
 def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
-           district, mode, risks, ER, FACT, theme_rgrid, pred_theme):
+           district, risks, ER, FACT, theme_rgrid, pred_theme):
     """Повертає (P, POP, meta, theme_cnt)."""
     POP = []
 
@@ -324,19 +324,4 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
     for p in P:
         for e in p[4]: theme_cnt[labels[e[1]][0]] += 1
 
-    meta['mode'] = mode
-    if mode == 'student':
-        for k in list(risks.get('lines', {})):
-            if k.startswith('risk_'):
-                risks['lines'][k]['why'] = ''
-                risks['lines'][k]['factors'] = []
-                risks['lines'][k]['method'] = ''
-        for p in P:
-            if len(p) > 6: p[6] = -1        # категорію приховуємо
-            if len(p) > 7: p[7] = []         # і розбір причини — теж (розд.6 передачі)
-        meta['skew'] = ''
-        # переліки проблем ховаються і з підказок на межах районів
-        if 'dprob' in meta:
-            meta['dprob'] = [0] * len(meta['dprob'])
-            meta['dskew'] = [''] * len(meta['dskew'])
     return P, POP, meta, theme_cnt

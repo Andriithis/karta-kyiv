@@ -1,12 +1,17 @@
 # -*- coding: utf-8 -*-
-"""Крок 5. Збирає сайт: оглядова сторінка + ОДНА карта, у двох версіях.
+"""Крок 5. Збирає сайт: оглядова сторінка + ОДНА карта. Версія одна.
 
 Районних файлів більше немає. Карта міста несе межі всіх районів і їхні
 власні переліки проблем, а перехід у район — це клік або адреса виду
 kyiv.html#desna. Плитки оглядової сторінки ведуть саме туди.
 
-Було 22 файли по 12 МБ, стало 2 по 4 МБ — і фільтри при переході в район
-більше не скидаються разом із перезавантаженням сторінки.
+Поділу на викладацьку й слухацьку версії теж немає. Проблеми бачать усі:
+перший крок ланцюга — «обрати проблему зі списку», а робота слухача починається
+далі, за SARA — встановити причину й перевірити її на місці. Ховати перелік
+означало б залишити слухачеві пошук найлюднішої вулиці, тобто ту саму
+реактивність, яку проєкт прибирає.
+
+Було 22 файли по 12 МБ, стало 1 на 4 МБ.
 """
 import os, sys, json, sqlite3, collections, shutil
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -63,7 +68,7 @@ a.card:hover{background:#1c2030;border-color:#3a4256;transform:translateY(-2px)}
 COLORS = {'ГП':'#e0533d','АЛК':'#e8a33d','НАР':'#8b5cf6','НАС':'#ef4444',
           'МАЙ':'#3b82f6','ДОР':'#22c55e','СЕР':'#14b8a6','ДОМ':'#94a3b8'}
 
-def build_index(per, mode):
+def build_index(per):
     cards = []
     for d in sorted(per, key=lambda x: -sum(per[x].values())):
         c = per[d]; tot = sum(c.values()) or 1
@@ -82,24 +87,23 @@ def build_index(per, mode):
            '<a class="card" href="rezyume.html"><div class="nm">Резюме</div>'
            '<div class="ev">&#8801;</div><div class="evl">одна сторінка</div>'
            '<div class="leg">коротко: що зроблено, що вийшло, чого не можна робити</div></a>')
-    if mode == 'full':
-        doc += ('<a class="card" href="analiz.html"><div class="nm">Аналіз стану</div>'
-                '<div class="ev">&#9776;</div><div class="evl">що показують дані</div>'
-                '<div class="leg">концентрація, райони, час, виявлені проблеми '
-                'та можливі причини</div></a>')
+    doc += ('<a class="card" href="analiz.html"><div class="nm">Аналіз стану</div>'
+            '<div class="ev">&#9776;</div><div class="evl">що показують дані</div>'
+            '<div class="leg">концентрація, райони, час, виявлені проблеми '
+            'та можливі причини</div></a>')
     cards.append(doc)
     cards.append('<a class="card" href="kyiv.html"><div class="nm">Весь Київ</div>'
                  '<div class="ev">&#8721;</div><div class="evl">та сама карта, без вибраного району</div>'
                  '<div class="leg">межі районів на ній видно, район відкривається кліком</div></a>')
-    note = ('<b>Як читати.</b> Кожна карта показує, де саме в районі концентруються правопорушення '
-            'і які умови середовища з ними пов\'язані. ')
-    if mode == 'full':
-        note += ('Скупчення поділено на <b>проблеми</b> — ті, що пояснюються умовами середовища, '
-                 'і <b>аномалії</b> — ті, де причина є, але її немає в даних; такі місця треба '
-                 'дивитися на місці. Поодинокі події позначені як <b>інциденти</b>.')
-    else:
-        note += ('Ваше завдання — знайти скупчення, висунути гіпотезу про причину '
-                 'і перевірити її на місці.')
+    note = ('<b>Як читати.</b> Карта одна на все місто. Район відкривається кліком — '
+            'у ньому свій перелік проблем, бо найгірше місце тихого району важливіше '
+            'за десяте місце Києва. ')
+    note += ('<b>Проблема</b> — не будь-яке скупчення, а пара «адреса + механізм», яка '
+             'повторюється роками: інцидент стався раз випадково, проблема має причину '
+             'в місці. Перелік дається готовим — робота починається далі: встановити '
+             'причину й перевірити її на місці. Кнопка «Що поруч» у вікні будь-якої '
+             'адреси показує, що є в радіусі 250 метрів; які з цих об’єктів справді '
+             'пояснюють скупчення — вирішуєте ви.')
     note += ('<br><br>Джерело: відкриті дані ЄДРСР (розпорядник — Державна судова адміністрація України) '
              'та OpenStreetMap. Показані лише справи, розглянуті судом.')
     return INDEX.replace('__CARDS__', '\n'.join(cards)).replace('__NOTE__', note)
@@ -108,30 +112,28 @@ def main():
     if not os.path.exists(os.path.join(DATA, 'events.db')):
         print('немає data/events.db'); sys.exit(1)
     by_court = stats()          # які райони взагалі є в базі
-    for mode, sub in (('full', 'vykladach'), ('student', 'slukhach')):
-        out = os.path.join(SITE, sub)
-        os.makedirs(out, exist_ok=True)
-        print(f'\n=== версія: {sub} ===')
-        M3.main(district=None, mode=mode, out=os.path.join(out, 'kyiv.html'))
-        # Числа плиток беремо з тієї самої збірки, на яку плитка веде: раніше
-        # плитка рахувала за судом, а карта — за географією меж, і Деснянський
-        # показував 2 319 проти 3 839. Тепер джерело одне.
-        meta = M3.LAST_META
-        names, dth = meta.get('dnames', []), meta.get('dtheme', [])
-        per = {d: collections.Counter(dth[i]) for i, d in enumerate(names)
-               if i < len(dth) and dth[i]}
-        open(os.path.join(out, 'index.html'), 'w', encoding='utf-8').write(
-            build_index(per or by_court, mode))
-        # крок 6 — після карт: step3_map дорогою будує data/factors.json,
-        # без якого в документах не було б розділу «що поруч»
-        try:
-            made = D6.build(out, mode)
-            print('   документи: ' + ', '.join(made))
-        except Exception as e:
-            print('   документи не зібрано:', e)
-    print(f'\n=== ГОТОВО === сайт у папці site/ (одна карта замість одинадцяти)')
-    print('   site/vykladach/index.html — повна версія')
-    print('   site/slukhach/index.html  — версія для слухачів')
+    out = SITE
+    os.makedirs(out, exist_ok=True)
+    M3.main(district=None, out=os.path.join(out, 'kyiv.html'))
+    # Числа плиток беремо з тієї самої збірки, на яку плитка веде: раніше
+    # плитка рахувала за судом, а карта — за географією меж, і Деснянський
+    # показував 2 319 проти 3 839. Тепер джерело одне.
+    meta = M3.LAST_META
+    names, dth = meta.get('dnames', []), meta.get('dtheme', [])
+    per = {d: collections.Counter(dth[i]) for i, d in enumerate(names)
+           if i < len(dth) and dth[i]}
+    open(os.path.join(out, 'index.html'), 'w', encoding='utf-8').write(
+        build_index(per or by_court))
+    # крок 6 — після карти: step3_map дорогою будує data/factors.json,
+    # без якого в документах не було б розділу «що поруч»
+    try:
+        made = D6.build(out)
+        print('   документи: ' + ', '.join(made))
+    except Exception as e:
+        print('   документи не зібрано:', e)
+    print(f'\n=== ГОТОВО === сайт у папці site/')
+    print('   site/index.html — оглядова сторінка')
+    print('   site/kyiv.html  — карта, райони відкриваються кліком')
 
 if __name__ == '__main__':
     main()

@@ -177,12 +177,11 @@ function $ify(sel,html){const el=document.querySelector(sel);if(el)el.innerHTML=
  $ify('#ffact',ff||'<div class="sub">шар чинників недоступний</div>');
  $ify('#fhint','Об’єкти, які модель рахує як чинники ризику. З’являються від масштабу '+
    FZOOM+' — інакше карта нечитабельна.'+
-   (M.mode==='student'
-     ? ' У вікні будь-якої адреси та ризикованої вулиці є кнопка «Що поруч» — '+
-       'вона підсвічує все, що є в радіусі 250 м, із відстанню до кожного об’єкта. '+
-       'Які з них справді пояснюють скупчення — визначаєте ви.'
-     : ' У картці проблеми та у вікні ризикованої вулиці є кнопка '+
-       '«Показати чинники поруч» — вона підсвічує саме ті об’єкти, що дали цьому місцю ризик.'));
+   ' У картці проблеми та у вікні ризикованої вулиці є кнопка «Показати чинники '+
+   'поруч» — вона підсвічує саме ті об’єкти, що дали цьому місцю ризик. '+
+   'Кнопка «Що поруч» у вікні будь-якої адреси показує все в радіусі 250 м, '+
+   'без підказки моделі: які з цих об’єктів справді пояснюють скупчення — '+
+   'визначаєте ви.');
 }
 // підсвічує об'єкти, які модель порахувала для конкретної точки, з колами радіусів
 function showNear(la,lo,factors){
@@ -262,9 +261,7 @@ function riskPopup(k,it){
  // (?st= підсвічує його й прокручує туди), слухачеві — на методику теми:
  // поіменного переліку в його версії документа немає.
  const an=v.slug?('#t-'+v.slug):'';
- h+=STUDENT
-   ? `<a class="rdoc" href="doslidzhennya.html${an}" target="_blank" rel="noopener">Як рахується цей ризик ↗</a>`
-   : `<a class="rdoc" href="doslidzhennya.html${(it[1]&&it[1]!=='без назви')?('?st='+encodeURIComponent(it[1])):''}${an}" target="_blank" rel="noopener">Розбір вулиці в дослідженні ↗</a>`;
+ h+=`<a class="rdoc" href="doslidzhennya.html${(it[1]&&it[1]!=='без назви')?('?st='+encodeURIComponent(it[1])):''}${an}" target="_blank" rel="noopener">Розбір вулиці в дослідженні ↗</a>`;
  h+='</div>';
  return h;
 }
@@ -305,8 +302,8 @@ function drawRisks(){
          bt.onclick=()=>{const q=showNear(ev.latlng.lat,ev.latlng.lng,v.factors);
            bt.textContent=q?`Підсвічено об’єктів: ${q}`:'Поруч нічого з чинників немає'};
          w.appendChild(bt);
-        } else if(STUDENT&&(F.cats||[]).length){
-         // слухачам — те саме вікно, але без підказки моделі: просто околиці
+        } else if((F.cats||[]).length){
+         // моделі для цієї вулиці немає — показуємо просто околиці, без підказки
          const bt=document.createElement('button'); bt.className='pbtn2';
          bt.textContent='Що поруч (250 м)';
          bt.onclick=()=>{const q=showAllNear(ev.latlng.lat,ev.latlng.lng,250);

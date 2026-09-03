@@ -33,16 +33,14 @@ function syncThemes(){document.querySelectorAll('.gt').forEach(el=>{
  el.checked=on>0; el.indeterminate=on>0&&on<ids.length})}
 const PERIODS=[['Ранок','6–11',[6,7,8,9,10,11]],['День','12–17',[12,13,14,15,16,17]],
  ['Вечір','18–23',[18,19,20,21,22,23]],['Ніч','0–5',[0,1,2,3,4,5]]];
-const STUDENT = M.mode==='student';
-// Документи кроку 6. «Аналіз поточного стану» будується лише для викладацької
-// версії, тож слухачам на нього не посилаємося — інакше буде мертве посилання.
+// Документи кроку 6. Версія одна, тож посилання однакові для всіх.
 $ify('#docs',
  '<a href="doslidzhennya.html" target="_blank" rel="noopener">Дослідження ризиків ↗</a>'+
  '<a href="rezyume.html" target="_blank" rel="noopener">Резюме на одну сторінку ↗</a>'+
- (STUDENT?'':'<a href="analiz.html" target="_blank" rel="noopener">Аналіз поточного стану ↗</a>'));
+ '<a href="analiz.html" target="_blank" rel="noopener">Аналіз поточного стану ↗</a>');
 // п.7.7: замість чотирьох кнопок категорій — лише "Усі" й "Тільки проблеми"
-const CATS=STUDENT?[['Усі','подій ≥1','cA',-1]]
- :[['Усі','подій ≥1','cA',-1],['Тільки проблеми',`з відібраних ${M.n_problems||50}`,'c2',2]];
+const CATS=[['Усі','подій ≥1','cA',-1],
+            ['Тільки проблеми',`з відібраних ${M.n_problems||50}`,'c2',2]];
 const cb_=$('#fcat');
 CATS.forEach((c,i)=>{const sp=document.createElement('span');
  sp.className=c[2]+(i===0?' on':'');sp.innerHTML=`${c[0]}<i>${c[1]}</i>`;sp.dataset.c=c[3];cb_.appendChild(sp)});
@@ -160,10 +158,10 @@ function draw(){
   for(const e of p[4]) if(C.has(e[0])&&A.has(e[1])&&Y.has(e[2])&&(!H.size||H.has(e[3]))){n++;if(th===null)th=CATTH[e[1]]}
   if(n){tot+=n;vis.push([p,n,th])}}
  vis.sort((a,b)=>b[1]-a[1]);
- // у версії для слухачів категорія прихована (p[6]=-1), тому фільтр по ===2 давав
- // порожній список і «Топ адрес» завжди показував «нема даних». Слухачам перелік
- // найгарячіших адрес потрібний саме для самостійного пошуку скупчень.
- const rank=vis.filter(v=>v[0][3]&&(STUDENT||probsOf(v[0]).length));
+ // «Топ адрес за фільтром» слухається саме фільтра, а не переліку проблем:
+ // увімкнено «Тільки проблеми» — тут проблеми, вимкнено — найгарячіші адреси
+ // взагалі. Слухачеві потрібне саме друге, щоб шукати скупчення самому.
+ const rank=vis.filter(v=>v[0][3]);
  $('#cnt').textContent=tot.toLocaleString('uk');
  $('#cntl').textContent=`подій на ${vis.length.toLocaleString('uk')} адресах`;
  {let q=0;P.forEach(p=>{if(inScope(p)&&probsOf(p).length)q++});
@@ -199,10 +197,10 @@ function draw(){
    const allp=probsOf(p);
    const probs=allp.filter(pr=>pr.thi===undefined||pr.thi<0||GVIS.has(pr.thi));
    const hidden=allp.length-probs.length;
-   if(!STUDENT&&!probs.length&&hidden)
+   if(!probs.length&&hidden)
     pblock=`<div class="hn">Ця адреса — у списку проблем, але за іншим напрямком `+
      `(${allp.map(x=>x.theme).join(', ')}). Увімкніть відповідні правопорушення, щоб побачити картку.</div>`;
-   if(!STUDENT&&probs.length){
+   if(probs.length){
     pblock=probs.map((pr,pi)=>{
      let h=`<div class="pcard"><div class="ph">Проблема · ${pr.theme}</div>`;
      h+=`<div class="pt">${pr.mech}</div>`;
@@ -229,9 +227,10 @@ function draw(){
     }).join('');
     if(probs.length>1) pblock+='<div class="hn" style="margin-top:4px">Кілька напрямків на адресі — кілька окремих проблем із різними причинами.</div>';
    }
-   // слухачам кнопка потрібна в КОЖНІЙ адресі — це їхній основний хід:
-   // побачив скупчення -> подивився, що довкола -> висунув гіпотезу
-   if(STUDENT&&(F.cats||[]).length)
+   // Кнопка потрібна в КОЖНІЙ адресі, не лише у відібраних проблемах — це
+   // основний хід слухача: побачив скупчення -> подивився, що довкола ->
+   // висунув гіпотезу. Кнопка нічого не підказує, лише показує околиці.
+   if((F.cats||[]).length)
     pblock+='<button class="pbtn2" data-na="1">Що поруч (250 м)</button>';
    const ex=p[5].filter(e=>A.has(e[0])).slice(0,4);
    const cinf=probs.length?CATNAME[2]:null;
