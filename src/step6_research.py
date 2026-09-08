@@ -50,23 +50,34 @@ def doc_research(A, D):
         b.append('<div class="tw"><table><thead><tr><th>Тема</th>'
                  '<th class="n">Навчання<br>' + TRAIN_Y + '</th>'
                  '<th class="n">Перевірка<br>' + TEST_Y[0] + '–' + TEST_Y[1] + '</th>'
-                 '<th class="n">Влучність<br>середовище</th>'
+                 '<th class="n">Влучність<br>на карті</th>'
                  '<th class="n">PAI</th>'
-                 '<th class="n">Інша половина<br>міста</th>'
-                 '<th class="n">Тільки<br>історія</th></tr></thead><tbody>')
-        for th in sorted(ER, key=lambda t: -ER[t].get('hit_середовище', 0)):
+                 '<th class="n">Тільки<br>середовище</th>'
+                 '<th class="n">Тільки<br>історія</th>'
+                 '<th class="n">Інша половина<br>міста</th></tr></thead><tbody>')
+        # Головна колонка й порядок — за моделлю, яка СПРАВДІ показується на
+        # карті (середовище разом з історією). Окремі колонки лишаються, щоб
+        # було видно внесок кожної половини знання.
+        for th in sorted(ER, key=lambda t: -ER[t].get('hit_разом', 0)):
             d = ER[th]
             g = d.get('hit_інший_район')
             b.append(f"<tr><td>{esc(d.get('тема', th))}</td>"
                      f"<td class='n'>{num(d.get('навчання', 0))}</td>"
                      f"<td class='n'>{num(d.get('перевірка', 0))}</td>"
-                     f"<td class='n'><b>{100*d.get('hit_середовище',0):.0f}%</b></td>"
-                     f"<td class='n'>{d.get('PAI_середовище','—')}</td>"
-                     f"<td class='n'>{'—' if g is None else f'{100*g:.0f}%'}</td>"
-                     f"<td class='n'>{100*d.get('hit_історія',0):.0f}%</td></tr>")
+                     f"<td class='n'><b>{100*d.get('hit_разом',0):.0f}%</b></td>"
+                     f"<td class='n'>{d.get('PAI_разом','—')}</td>"
+                     f"<td class='n'>{100*d.get('hit_середовище',0):.0f}%</td>"
+                     f"<td class='n'>{100*d.get('hit_історія',0):.0f}%</td>"
+                     f"<td class='n'>{'—' if g is None else f'{100*g:.0f}%'}</td></tr>")
         b.append('</tbody></table></div>')
         best = max(ER, key=lambda t: ER[t].get('hit_середовище', 0))
         worst = min(ER, key=lambda t: ER[t].get('hit_середовище', 0))
+        b.append("<p>На карту йде модель, яка зважує і обстановку вулиці, і те, що "
+                 "на ній уже ставалося: у переважній більшості тем вона точніша за "
+                 "кожну зі своїх половин окремо. Колонка «тільки середовище» "
+                 "показує іншу річ — наскільки подію видно з самої лише обстановки, "
+                 "без знання історії. Саме вона й підказує вулиці, де подій ще не "
+                 "було, але умови ті самі.</p>")
         b.append(f"<p>Найкраще середовищем пояснюється «{esc(ER[best].get('тема',best))}» "
                  f"({100*ER[best].get('hit_середовище',0):.0f}% подій у верхніх 10% "
                  f"вулиць), найгірше — «{esc(ER[worst].get('тема',worst))}» "
