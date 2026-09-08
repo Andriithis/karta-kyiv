@@ -137,8 +137,13 @@ function $ify(sel,html){const el=document.querySelector(sel);if(el)el.innerHTML=
 {
  // --- прогноз ризику ---
  let rh='';
- const rkeys=Object.keys(R.lines||{}).filter(k=>k.startsWith('risk_'))
-   .sort((a,b)=>R.lines[b].hit-R.lines[a].hit);
+ // Тільки КАТЕГОРІЇ (теми). Механізми ('risk_ДОР_ДТП' тощо) модель рахує й
+ // далі, вони лишаються в risk.json і в дослідженні — але в панелі їх було
+ // вісімнадцять проти восьми тем, і список читався як звалище. Рішення
+ // 7 вересня: у панелі лише теми, по одному рядку на категорію.
+ const rkeys=Object.keys(R.lines||{})
+   .filter(k=>k.startsWith('risk_')&&(R.lines[k].kind==='theme'||R.lines[k].nodata))
+   .sort((a,b)=>(R.lines[b].hit||0)-(R.lines[a].hit||0));
  // Один рядок панелі. Ключ — тема ('risk_ДОР') або механізм ('risk_ДОР_ДТП').
  const rrow=k=>{const v=R.lines[k],c=RCOL[k];
   if(v.nodata){
@@ -189,7 +194,8 @@ function $ify(sel,html){const el=document.querySelector(sel);if(el)el.innerHTML=
   if(!inG.length) return;
   ff+=`<div class="fgh">${gn}</div>`;
   inG.forEach(c=>{ff+=`<label><input type="checkbox" data-f="${c._i}">
-    <span class="sw" style="background:${FCOL[gi]}"></span><span>${c.n}</span>
+    <span class="fic sw2" style="border-color:${FCOL[gi]}">${FICON[c.k]||'•'}</span
+     ><span>${c.n}</span>
     <span class="n">${c.pts.length.toLocaleString('uk')}</span></label>`});
  });
  $ify('#ffact',ff||'<div class="sub">шар чинників недоступний</div>');
@@ -250,6 +256,24 @@ function showAllNear(la,lo,rad){
    fillColor:'#fbbf24',fillOpacity:1,interactive:false}).addTo(hlayer);
  return shown;
 }
+// Кожен вид об'єкта — свій значок, а не однаковий кружечок: магазин, зупинка
+// й покинута будівля мають читатися з першого погляду. Колір кола лишається
+// за роллю (притягує / збирає людей / стан середовища), значок — за видом.
+const FICON={bar_on:'🍺',bar_off:'🍾',shop24:'🛒',food:'🍽',finance:'💱',
+ gambling:'🎰',fuel:'⛽',school:'🎒',univer:'🎓',health:'✚',market:'🏬',
+ metro:'Ⓜ',busstop:'🚏',play:'🧸',abandon:'🏚',parking:'🅿',cctv:'📹'};
+const FICO_CACHE={};
+function ficon(k,g){
+ const key=k+'|'+g;
+ if(!FICO_CACHE[key]) FICO_CACHE[key]=L.divIcon({className:'',iconSize:[20,20],
+   iconAnchor:[10,10],
+   html:`<span class="fic" style="border-color:${FCOL[g]}">${FICON[k]||'•'}</span>`});
+ return FICO_CACHE[key];
+}
+// Скільки значків малюємо за один перемальовок. Понад це — вертаємось до
+// простих кружечків: інакше на дрібному масштабі з увімкненими зупинками
+// карта підвисає на кілька секунд.
+const FMAX=900;
 function drawFacts(){
  flayer.clearLayers();
  const zo=map.getZoom()<FZOOM;
@@ -258,19 +282,35 @@ function drawFacts(){
  if(el) el.textContent = (zo&&on) ? 'Наблизьте карту, щоб побачити позначки' : '';
  if(zo) return;
  const b=map.getBounds();
+ // спершу рахуємо, скільки об'єктів узагалі потрапляє у вікно
+ let want=0;
  document.querySelectorAll('[data-f]').forEach(cb=>{
   if(!cb.checked) return;
   const c=F.cats[+cb.dataset.f]; if(!c) return;
-  const col=FCOL[c.g];
+  c.pts.forEach(p=>{if(b.contains(p))want++});
+ });
+ const plain=want>FMAX;
+ document.querySelectorAll('[data-f]').forEach(cb=>{
+  if(!cb.checked) return;
+  const c=F.cats[+cb.dataset.f]; if(!c) return;
+  const col=FCOL[c.g], ic=ficon(c.k,c.g);
   c.pts.forEach(p=>{
    if(!b.contains(p)) return;
-   L.circleMarker(p,{radius:4,weight:1,color:'#0f1117',fillColor:col,fillOpacity:.9})
+   (plain
+     ? L.circleMarker(p,{radius:4,weight:1,color:'#0f1117',fillColor:col,fillOpacity:.9})
+     : L.marker(p,{icon:ic}))
     .bindTooltip(c.n,{className:'rt'}).addTo(flayer)});
  });
+ if(el&&plain) el.textContent='Забагато об’єктів у вікні — показано кружечками; '
+   +'наблизьте карту, щоб побачити значки за видом';
 }
 function riskPopup(k,it){
  const v=R.lines[k];
- let h=`<div class="rpop"><b>${it[1]}</b><span class="sub">${v.title} — верхні ${101-it[2]}% за ризиком</span>`;
+ const hot=(it[3]|0)>0;
+ let h=`<div class="rpop"><b>${it[1]}</b><span class="sub">${v.title} — верхні `
+  +`${101-it[2]}% за ризиком`
+  +(hot?`, подій уже було: ${it[3]}`
+       :', подій ще не було — модель попереджає наперед')+`</span>`;
  if(v.method) h+=`<div class="rmeth">${v.method}</div>`;
  if(v.factors&&v.factors.length){
   h+='<table>'+v.factors.map(f=>`<tr><td>${f[0]}</td><td>+${f[1]}</td></tr>`).join('')+'</table>';
@@ -307,10 +347,19 @@ function drawRisks(){
   const isRisk=k.startsWith('risk_'), v=R.lines[k];
   if(isRisk){
    // п.7.5: без теплового світіння (блокувало кліки) — самі лінії, товщі й клікабельні
-   v.items.forEach(it=>
+   //
+   // it[2] — місце вулиці у переліку, у відсотках (100 = найризикованіша).
+   // it[3] — скільки подій там уже було за період навчання моделі.
+   // Суцільна лінія — вулиця, де події вже були; пунктир — де ще не було,
+   // але умови ті самі. Друге і є те, заради чого модель узагалі потрібна:
+   // без цієї різниці шар читався як другий шар подій.
+   v.items.forEach(it=>{
+     const hot=(it[3]|0)>0;
      L.polyline(it[0],{color:col,weight:Math.max(2,1.5+it[2]/16),
-       opacity:Math.max(.35,.85*it[2]/100)})
-      .bindTooltip(`<b>${it[1]}</b><span>${v.title} — верхні ${101-it[2]}% за ризиком, клікніть для деталей</span>`,
+       opacity:Math.max(.35,.85*it[2]/100),dashArray:hot?null:'7,5'})
+      .bindTooltip(`<b>${it[1]}</b><span>${v.title} — верхні ${101-it[2]}% за ризиком`
+        +(hot?`, подій уже було: ${it[3]}`:', подій ще не було — прогноз наперед')
+        +`. Клікніть для деталей</span>`,
         {className:'rt',sticky:true})
       .on('click',ev=>{
         const w=document.createElement('div'); w.innerHTML=riskPopup(k,it);
@@ -329,7 +378,7 @@ function drawRisks(){
          w.appendChild(bt);
         }
         L.popup({maxWidth:320}).setLatLng(ev.latlng).setContent(w).openOn(map)})
-      .addTo(rlayer));
+      .addTo(rlayer);});
   } else {
    const mxf=Math.max(...v.items.map(x=>x[2]))||1;
    v.items.forEach(it=>

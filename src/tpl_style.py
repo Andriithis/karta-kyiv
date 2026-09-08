@@ -160,6 +160,12 @@ button:hover{background:#28303f}button.act{background:#e0533d;border-color:#e053
 #ffact label{font-size:12px}
 #ffact .n{color:#5f6878;font-size:10.5px;margin-left:auto;flex:0 0 auto}
 #ffact .sw{width:9px;height:9px;border-radius:99px;flex:0 0 auto;margin-top:3px}
+/* значок виду об'єкта: коло, обведене кольором ролі, всередині символ виду */
+.fic{display:flex;align-items:center;justify-content:center;width:20px;height:20px;
+ border-radius:99px;border:1.5px solid;font-size:11px;line-height:1;
+ background:#11141c;box-shadow:0 0 0 1px #0f1117}
+#ffact .sw2{width:18px;height:18px;font-size:10px;flex:0 0 auto;margin-top:0;
+ box-shadow:none}
 .pbtn2{width:100%;padding:6px;background:#2b3243;color:#e8eaf0;border:1px solid #3a4256;
  border-radius:6px;font:inherit;font-size:11.5px;cursor:pointer;margin-top:5px}
 .pbtn2:hover{background:#343d52}

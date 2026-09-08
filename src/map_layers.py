@@ -99,7 +99,12 @@ def build(district, labels):
             grid = collections.defaultdict(list)
             items_out = []
             for i, x in enumerate(it):
-                items_out.append([x[0], x[1] or 'без назви', int(100 * (n - i) / n)])
+                # 4-й елемент — скільки подій було на цій вулиці за період
+                # навчання. Двигун його рахував завжди, але сюди він не
+                # доходив, і карта не могла відрізнити «вулицю, де вже
+                # негаразд» від «поки тихо, але умови ті самі».
+                items_out.append([x[0], x[1] or 'без назви', int(100 * (n - i) / n),
+                                  int(x[3]) if len(x) > 3 else 0])
             for i, x in enumerate(gr):
                 pc = int(100 * (ng - i) / ng)
                 for pnt in x[0]:
