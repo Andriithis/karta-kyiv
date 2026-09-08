@@ -15,14 +15,14 @@ BODY = r"""<body><div id="wrap"><div id="side">
 <button id="heat">Теплова карта</button><button id="reset">Скинути фільтри</button>
 <fieldset><legend>Що показувати</legend><div id="fcat"></div>
 <div class="hint" id="cathint"></div></fieldset>
+<fieldset><legend>Прогноз ризику</legend><div id="frisk"></div>
+<div class="hint">Модель зважує і умови середовища, і те, що вже ставалося на вулиці. <b>Суцільна лінія</b> — вулиця, де події вже були; <b>пунктир</b> — де ще не було, але умови ті самі. Товщина й насиченість = оцінка. Клікніть на вулицю — розбір чинників і методики. У кружечку — влучність: яка частка подій наступних років припала на верхні 10% вулиць за прогнозом.</div>
+</fieldset>
 <fieldset><legend>Топ адрес за фільтром</legend><div id="top"></div></fieldset>
 <fieldset id="fcw"><legend>Район</legend><div id="fc"></div></fieldset>
 <fieldset><legend>Правопорушення</legend>
 <div style="display:flex;gap:6px"><button id="none" style="margin:0 0 8px">Зняти всі</button>
 <button id="all" style="margin:0 0 8px">Обрати всі</button></div><div id="fa"></div></fieldset>
-<fieldset><legend>Прогноз ризику</legend><div id="frisk"></div>
-<div class="hint">Модель оцінює <b>кожну вулицю</b> за умовами середовища, незалежно від того, чи були там події. Клікніть на вулицю — розбір чинників і методики відкриється в спливному вікні. У кружечку — влучність: яка частка подій наступних років припала на верхні 10% відібраних вулиць.</div>
-</fieldset>
 <fieldset><legend>Документи</legend><div id="docs"></div>
 <div class="hint">Збираються автоматично з тих самих даних, що й карта.</div></fieldset>
 <fieldset><legend>Середовище</legend><div id="ffact"></div>
