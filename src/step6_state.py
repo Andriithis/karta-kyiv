@@ -59,7 +59,10 @@ def doc_summary(A, D):
         # числа — за моделлю, яка показується на карті (середовище + історія)
         for th in sorted(ER, key=lambda t: -ER[t].get('hit_разом', 0)):
             d = ER[th]; g = d.get('hit_інший_район')
-            b.append(f"<tr><td>{esc(d.get('тема',th))}</td>"
+            # механізм підписуємо його ВЛАСНОЮ назвою, а не назвою теми:
+            # інакше «Алкоголь і торгівля» стоїть у таблиці тричі поспіль
+            # з різними числами й читається як помилка
+            b.append(f"<tr><td>{esc(d.get('назва') or d.get('тема',th))}</td>"
                      f"<td class='n'>{100*d.get('hit_разом',0):.0f}%</td>"
                      f"<td class='n'>×{d.get('PAI_разом','—')}</td>"
                      f"<td class='n'>{'—' if g is None else f'{100*g:.0f}%'}</td></tr>")

@@ -61,7 +61,7 @@ def doc_research(A, D):
         for th in sorted(ER, key=lambda t: -ER[t].get('hit_разом', 0)):
             d = ER[th]
             g = d.get('hit_інший_район')
-            b.append(f"<tr><td>{esc(d.get('тема', th))}</td>"
+            b.append(f"<tr><td>{esc(d.get('назва') or d.get('тема', th))}</td>"
                      f"<td class='n'>{num(d.get('навчання', 0))}</td>"
                      f"<td class='n'>{num(d.get('перевірка', 0))}</td>"
                      f"<td class='n'><b>{100*d.get('hit_разом',0):.0f}%</b></td>"
