@@ -127,6 +127,19 @@ window.addEventListener('hashchange',()=>{
  if(i>=0){if(i!==CURD)enterDistrict(i)} else if(CURD>=0)exitDistrict();
 });
 const FCOL=['#f59e0b','#38bdf8','#a3a3a3'];   // притягують / збирають людей / стан
+// Кожен вид об'єкта — свій значок, а не однаковий кружечок: магазин, зупинка
+// й покинута будівля мають читатися з першого погляду. Колір кола лишається
+// за роллю (притягує / збирає людей / стан середовища), значок — за видом.
+//
+// ОГОЛОШЕННЯ МАЄ СТОЯТИ ТУТ, ДО бічної панелі. 8 вересня сайт зламався саме
+// через це: FICON лежав нижче, поруч із drawFacts, а список чинників у панелі
+// звертався до нього раніше. Для `const` це не «ще не визначено», а помилка —
+// увесь скрипт сторінки падав, і карта не будувалася зовсім. У пісочниці це
+// не спливло, бо там factors.json порожній і цикл, що читає FICON, не
+// виконувався жодного разу.
+const FICON={bar_on:'🍺',bar_off:'🍾',shop24:'🛒',food:'🍽',finance:'💱',
+ gambling:'🎰',fuel:'⛽',school:'🎒',univer:'🎓',health:'✚',market:'🏬',
+ metro:'Ⓜ',busstop:'🚏',play:'🧸',abandon:'🏚',parking:'🅿',cctv:'📹'};
 const FZOOM=14;                               // ближче за цей масштаб — показуємо позначки
 const RCOL={metro:'#38bdf8',busstop:'#7dd3fc',
  flow_school:'#fbbf24',flow_transit:'#38bdf8',flow_shop:'#f472b6'};
@@ -256,12 +269,6 @@ function showAllNear(la,lo,rad){
    fillColor:'#fbbf24',fillOpacity:1,interactive:false}).addTo(hlayer);
  return shown;
 }
-// Кожен вид об'єкта — свій значок, а не однаковий кружечок: магазин, зупинка
-// й покинута будівля мають читатися з першого погляду. Колір кола лишається
-// за роллю (притягує / збирає людей / стан середовища), значок — за видом.
-const FICON={bar_on:'🍺',bar_off:'🍾',shop24:'🛒',food:'🍽',finance:'💱',
- gambling:'🎰',fuel:'⛽',school:'🎒',univer:'🎓',health:'✚',market:'🏬',
- metro:'Ⓜ',busstop:'🚏',play:'🧸',abandon:'🏚',parking:'🅿',cctv:'📹'};
 const FICO_CACHE={};
 function ficon(k,g){
  const key=k+'|'+g;
