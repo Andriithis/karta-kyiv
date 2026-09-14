@@ -83,16 +83,115 @@ STOP = re.compile(r'(чим\s+(?:вчин|скої|поруш|допуст)\w*|'
                   r'\bСуддя\b|\bГоловуючий\b)', re.I)
 
 
+# ---- МЕЖА РЕЧЕННЯ ----
+# Виміряно 10 вересня на знімку fabuly.csv.gz: 31% витягів (21 376 з 68 189)
+# уперлися в стелю MAXLEN, тобто обривалися посеред речення — «…не нада»,
+# «…приладу Dr?ger Alcotest 6820 №». Медіана довжини 589 при стелі 600:
+# майже все, що показує панель, було обрізане.
+#
+# Причина не в стелі, а в тому, ЩО ми беремо. Суть події зазвичай уміщується
+# в перше-друге речення; далі йде опис приладу з серійним номером, свідки,
+# посилання на матеріали — те, що для гіпотези про причину не потрібне.
+# Тож: ріжемо по межі речення, а не по знаках, і зупиняємось на першому
+# доказовому звороті.
+#
+# Скорочення, після яких крапка НЕ закінчує речення. Без цього «по вул.
+# Полярна» рвалося б на «по вул.» — у цих текстах таких скорочень більше,
+# ніж справжніх меж.
+ABBR = {'вул', 'просп', 'бул', 'пл', 'пров', 'наб', 'буд', 'корп', 'кв', 'каб',
+        'обл', 'р-н', 'м', 'с', 'смт', 'ст', 'ч', 'п', 'абз', 'год', 'хв',
+        'грн', 'коп', 'тис', 'ім', 'акад', 'ген', 'зуп', 'д', 'н', 'з', 'дн',
+        'т', 'та', 'ін', 'напр', 'рр', 'р'}
+SENT_END = re.compile(r'([^\s]+)\.\s+(?=[«"№А-ЯЄІЇҐ])')
+
+# Докази й процедура: усе, що починається з цих зворотів, до обставин події
+# більше не додає. Головний виграш дає саме цей перелік, а не стеля.
+TAIL = re.compile(r'(Огляд\s+на\s+стан|Освідування|згідно\s+з\s+висновк\w+|'
+                  r'відповідно\s+до\s+висновк\w+|Вин[ауі]\s+\S{0,20}\s*підтверджу|'
+                  r'підтверджується\s+(?:матеріалами|доказами|протоколом)|'
+                  r'Допитан\w+|У\s+судове\s+засідання|Свідк\w+|'
+                  r'На\s+підставі\s+викладеного|Дослідивши|Оцінюючи|'
+                  r'Заслухавши|Судом\s+встановлено,\s+що\s+вин)', re.I)
+
+# Процедурний вступ перед обставинами: «До ... суду надійшов протокол ...,
+# згідно з яким останній ...». Виміряно: 6% витягів починалися саме так.
+PROC_HEAD = re.compile(r'^(?:до\s+\S+\s+(?:\S+\s+){0,3}?суду|у\s+провадженні|'
+                       r'на\s+розгляд|розглянувши|заслухавши|вивчивши\s+матеріали|'
+                       r'матеріали\s+про|справ[ауи]\s+про|надійшл\w+|'
+                       r'(?:згідно\s+з\s+)?ухвалою)', re.I)
+MONTHS = ('січня|лютого|березня|квітня|травня|червня|липня|серпня|вересня|'
+          'жовтня|листопада|грудня')
+DATE = re.compile(r'\d{1,2}[.\s/-]\d{1,2}[.\s/-]20\d{2}|\d{1,2}\s+(?:' + MONTHS + r')\s+20\d{2}')
+
+
+def _bounds(t):
+    """Позиції, на яких речення справді закінчується (одразу після крапки)."""
+    out = []
+    for m in SENT_END.finditer(t):
+        w = m.group(1).rstrip('.').lower()
+        if w in ABBR or (len(w) <= 2 and not w.isdigit()):
+            continue
+        out.append(m.start(0) + len(m.group(1)) + 1)
+    return out
+
+
+def _drop_preamble(t):
+    """Якщо текст починається з процедури, а подія описана далі — починаємо
+    з речення, у якому вперше з'являється дата події."""
+    if not PROC_HEAD.match(t):
+        return t
+    d = DATE.search(t)
+    if not d or d.start() < 40:
+        return t
+    starts = [0] + _bounds(t)
+    cut = max((b for b in starts if b <= d.start()), default=0)
+    return t[cut:].lstrip() if cut else t
+
+
+def _recut(t):
+    """Те саме, що excerpt, але для тексту, з якого шапку вже прибрано."""
+    t = re.sub(r'\s+', ' ', t).strip()
+    if not t: return ''
+    t = OPEN.sub('', t).strip()
+    t = _drop_preamble(t)
+    m = STOP.search(t)
+    if m: t = t[:m.start()]
+    m2 = TAIL.search(t)
+    if m2 and m2.start() >= 80: t = t[:m2.start()]
+    if len(t) > MAXLEN:
+        b = [x for x in _bounds(t) if x <= MAXLEN]
+        t = t[:b[-1]] if b else t[:MAXLEN].rsplit(' ', 1)[0] + '…'
+    return t.rstrip(' ,.;:—-')
+
+
 def excerpt(text):
     bs = A.body_start(text)
     t = re.sub(r'\s+', ' ', text[bs:] if bs else text).strip()
     if not t: return ''
     t = OPEN.sub('', t).strip()
+    t = _drop_preamble(t)
     m = STOP.search(t)
-    t = t[:m.start()] if m else t
+    if m: t = t[:m.start()]
+    # доказовий хвіст ріжемо лише тоді, коли до нього вже щось сказано:
+    # інакше з рішення, яке починається з огляду, лишиться порожньо
+    m2 = TAIL.search(t)
+    if m2 and m2.start() >= 80: t = t[:m2.start()]
     if len(t) > MAXLEN:
-        t = t[:MAXLEN].rsplit(' ', 1)[0]
+        b = [x for x in _bounds(t) if x <= MAXLEN]
+        if b:
+            t = t[:b[-1]]
+        else:
+            # жодної межі речення не знайшлося — ріжемо по слову й чесно
+            # ставимо трикрапку, щоб було видно: текст неповний
+            t = t[:MAXLEN].rsplit(' ', 1)[0] + '…'
     return t.rstrip(' ,.;:—-')
+
+
+# Позначка правила витягу в шапці знімка. Знімок, зроблений старим правилом,
+# не має її — і тоді ми переріжемо збережені витяги новим правилом просто
+# при завантаженні. Без цього поліпшення дісталося б лише новим справам, а
+# 68 тисяч уже завантажених так і лишилися б обрізаними на півслова.
+SNAP_RULE = 'v2'
 
 
 def init(conn):
@@ -100,13 +199,26 @@ def init(conn):
     conn.commit()
     if os.path.exists(SNAP):
         have = {r[0] for r in conn.execute('SELECT doc_id FROM fab')}
-        rows = []
+        rows, recut = [], False
         with gzip.open(SNAP, 'rt', encoding='utf-8', newline='') as fh:
             rd = csv.reader(fh, delimiter='\t')
-            next(rd, None)
+            hdr = next(rd, None)
+            recut = not (hdr and len(hdr) > 2 and hdr[2] == SNAP_RULE)
             for r in rd:
                 if len(r) >= 2 and r[0] not in have:
                     rows.append((r[0], r[1]))
+        if recut and rows:
+            # Витяг ідемпотентний: OPEN/STOP/TAIL і межа речення однаково
+            # працюють і на повному тексті, і на вже обрізаному. Шапки в
+            # збереженому витягу вже немає, тож body_start пропускаємо.
+            fixed, n = [], 0
+            for doc, txt in rows:
+                t = _recut(txt)
+                if len(t.strip()) >= 40 and t != txt: n += 1
+                else: t = txt
+                fixed.append((doc, t))
+            rows = fixed
+            print(f'знімок перерізано новим правилом: {n:,} з {len(rows):,}')
         if rows:
             conn.executemany('INSERT OR IGNORE INTO fab VALUES(?,?)', rows)
             conn.commit()
@@ -117,7 +229,7 @@ def save(conn):
     tmp = SNAP + '.tmp'
     with gzip.open(tmp, 'wt', encoding='utf-8', newline='') as fh:
         w = csv.writer(fh, delimiter='\t', lineterminator='\n')
-        w.writerow(['doc_id', 'txt'])
+        w.writerow(['doc_id', 'txt', SNAP_RULE])
         n = 0
         for r in conn.execute('SELECT doc_id, txt FROM fab WHERE txt<>""'):
             w.writerow(r); n += 1
