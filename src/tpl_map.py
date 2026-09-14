@@ -200,18 +200,36 @@ function $ify(sel,html){const el=document.querySelector(sel);if(el)el.innerHTML=
  $ify('#fctx',ch);
 
  // --- середовище: чинники, згруповані за роллю ---
+ // Сімнадцять прапорців поспіль читалися як звалище, і жодної групової дії
+ // не було: щоб побачити всю інфраструктуру, треба було клацнути сімнадцять
+ // разів. Тепер групи згорнуті, а над ними — одна кнопка на весь шар.
  let ff='';
  (F.cats||[]).forEach((c,ci)=>c._i=ci);
  (F.groups||[]).forEach((gn,gi)=>{
   const inG=(F.cats||[]).filter(c=>c.g===gi&&c.pts.length);
   if(!inG.length) return;
-  ff+=`<div class="fgh">${gn}</div>`;
+  const tot=inG.reduce((a,c)=>a+c.pts.length,0);
+  ff+=`<details class="fg"><summary><span class="gn">${gn}</span>`
+    +`<span class="gc">${tot.toLocaleString('uk')}</span></summary>`;
   inG.forEach(c=>{ff+=`<label><input type="checkbox" data-f="${c._i}">
     <span class="fic sw2" style="border-color:${FCOL[gi]}">${FICON[c.k]||'•'}</span
      ><span>${c.n}</span>
     <span class="n">${c.pts.length.toLocaleString('uk')}</span></label>`});
+  ff+='</details>';
  });
  $ify('#ffact',ff||'<div class="sub">шар чинників недоступний</div>');
+ // Одна кнопка на весь шар. Підпис мусить знати й про поодинокі кліки,
+ // інакше він бреше після першого ж прапорця.
+ {const fb=document.querySelector('#fall'), box=document.querySelector('#ffact');
+  if(fb&&box){
+   const all=()=>[...document.querySelectorAll('[data-f]')];
+   const sync=()=>{fb.textContent=all().some(x=>x.checked)
+     ?'Прибрати всі об’єкти':'Показати всі об’єкти';};
+   fb.onclick=()=>{const on=all().some(x=>x.checked);
+     all().forEach(x=>x.checked=!on); sync(); drawFacts();};
+   box.addEventListener('change',sync);
+   sync();
+  }}
  $ify('#fhint','Об’єкти, які модель рахує як чинники ризику. З’являються від масштабу '+
    FZOOM+' — інакше карта нечитабельна.'+
    ' У картці проблеми та у вікні ризикованої вулиці є кнопка «Показати чинники '+
@@ -311,17 +329,49 @@ function drawFacts(){
  if(el&&plain) el.textContent='Забагато об’єктів у вікні — показано кружечками; '
    +'наблизьте карту, щоб побачити значки за видом';
 }
-function riskPopup(k,it){
+// Скільки разів — з правильним відмінком. «у 1,8 раза», «у 2 рази», «у 5 разів».
+function raz(n){
+ const v=Math.round(n*10)/10, t=String(v).replace('.',',');
+ if(!Number.isInteger(v)) return t+' раза';
+ const a=v%10, b=v%100;
+ if(a===1&&b!==11) return t+' раз';
+ if(a>=2&&a<=4&&(b<12||b>14)) return t+' рази';
+ return t+' разів';
+}
+const nfmt=n=>(Math.round(n*10)/10).toLocaleString('uk');
+// Чинники САМЕ ЦІЄЇ вулиці. Кожен рядок — виміряна річ, яку можна перевірити,
+// вийшовши на місце й порахувавши: скільки тут і скільки буває звичайно.
+// Слова «причина» тут немає навмисно: модель міряє, що поруч, а не доводить,
+// через що саме сталася подія. Причину називає той, хто виїхав.
+function factRows(fx){
+ if(!fx||!fx.length) return '';
+ const rows=fx.map(f=>{
+  const [label,val,med,ratio,isCount]=f;
+  // «звичайно 0» читається як помилка. Якщо на більшості вулиць таких
+  // об'єктів немає взагалі, так і кажемо — це найсильніша частина
+  // порівняння, а не найслабша.
+  const cmp=(med===null||med===undefined) ? ''
+    : (isCount&&!med) ? ' <i>на більшості вулиць — жодного</i>'
+    : ` <i>звичайно ${nfmt(med)}</i>`;
+  let right=`<b>${nfmt(val)}</b>`+cmp;
+  const r=(ratio&&ratio>=1.2)?`<div class="fr">де цього більше — подій у ${raz(ratio)} більше</div>`:'';
+  return `<tr><td>${label}${r}</td><td class="fv">${right}</td></tr>`;
+ }).join('');
+ return `<div class="rwhy">Що виміряно на цьому відрізку</div><table class="fx">${rows}</table>`;
+}
+function riskPopup(k,it,quiet){
  const v=R.lines[k];
  const hot=(it[3]|0)>0;
- let h=`<div class="rpop"><b>${it[1]}</b><span class="sub">${v.title} — верхні `
-  +`${101-it[2]}% за ризиком`
-  +(hot?`, подій уже було: ${it[3]}`
-       :', подій ще не було — модель попереджає наперед')+`</span>`;
+ let h=`<div class="rpop"><b>${it[1]}</b><span class="sub">${v.title} — `
+  +(quiet
+    ? 'подій не зафіксовано, але обстановка така сама, як на ризикованих вулицях'
+    : `верхні ${101-it[2]}% за ризиком`
+      +(hot?`, подій уже було: ${it[3]}`:', подій ще не було'))+`</span>`;
+ // Чинники цієї вулиці — головне у вікні, тому стоять першими, до методики.
+ h+=factRows(it[4]);
+ if(!(it[4]&&it[4].length))
+  h+=`<div class="rwhy">Модель не виділила на цьому відрізку жодної піднятої ознаки — оцінку дала здебільшого історія подій.</div>`;
  if(v.method) h+=`<div class="rmeth">${v.method}</div>`;
- if(v.factors&&v.factors.length){
-  h+='<table>'+v.factors.map(f=>`<tr><td>${f[0]}</td><td>+${f[1]}</td></tr>`).join('')+'</table>';
- }
  // відсилка на документ дослідження. Викладачеві — одразу на рядок цієї вулиці
  // (?st= підсвічує його й прокручує туди), слухачеві — на методику теми:
  // поіменного переліку в його версії документа немає.
@@ -330,8 +380,35 @@ function riskPopup(k,it){
  h+='</div>';
  return h;
 }
+// Спільне для «гарячих» і «тихих» вулиць: підказка й вікно з розбором.
+function bindRisk(pl,k,it,quiet){
+ const v=R.lines[k];
+ pl.bindTooltip(`<b>${it[1]}</b><span>${v.title} — `
+   +(quiet?'подій не зафіксовано, але умови ті самі'
+          :`верхні ${101-it[2]}% за ризиком`
+            +((it[3]|0)>0?`, подій уже було: ${it[3]}`:', подій ще не було'))
+   +`. Клікніть для деталей</span>`,{className:'rt',sticky:true});
+ pl.on('click',ev=>{
+   const w=document.createElement('div'); w.innerHTML=riskPopup(k,it,quiet);
+   if(v.factors&&v.factors.length&&(F.cats||[]).length){
+    const bt=document.createElement('button'); bt.className='pbtn2';
+    bt.textContent='Показати чинники поруч';
+    bt.onclick=()=>{const q=showNear(ev.latlng.lat,ev.latlng.lng,v.factors);
+      bt.textContent=q?`Підсвічено об’єктів: ${q}`:'Поруч нічого з чинників немає'};
+    w.appendChild(bt);
+   } else if((F.cats||[]).length){
+    const bt=document.createElement('button'); bt.className='pbtn2';
+    bt.textContent='Що поруч (250 м)';
+    bt.onclick=()=>{const q=showAllNear(ev.latlng.lat,ev.latlng.lng,250);
+      bt.textContent=q?`Показано об’єктів: ${q}`:'Поруч нічого не знайдено'};
+    w.appendChild(bt);
+   }
+   L.popup({maxWidth:320}).setLatLng(ev.latlng).setContent(w).openOn(map)});
+ return pl;
+}
 function drawRisks(){
  rlayer.clearLayers();
+ const quietOn=!!(document.querySelector('#fquiet')||{}).checked;
  const pc=document.querySelector('[data-r="pop"]');
  if(pc&&pc.checked){
   if(!map.hasLayer(poplayer)){
@@ -353,39 +430,21 @@ function drawRisks(){
   if(!(R.lines&&R.lines[k])) return;
   const isRisk=k.startsWith('risk_'), v=R.lines[k];
   if(isRisk){
-   // п.7.5: без теплового світіння (блокувало кліки) — самі лінії, товщі й клікабельні
+   // п.7.5: без теплового світіння (блокувало кліки) — самі лінії, товщі й клікабельні.
    //
    // it[2] — місце вулиці у переліку, у відсотках (100 = найризикованіша).
    // it[3] — скільки подій там уже було за період навчання моделі.
-   // Суцільна лінія — вулиця, де події вже були; пунктир — де ще не було,
-   // але умови ті самі. Друге і є те, заради чого модель узагалі потрібна:
-   // без цієї різниці шар читався як другий шар подій.
+   //
+   // Пунктир БІЛЬШЕ НЕ означає «подій ще не було» всередині цього переліку:
+   // на теперішніх даних таких вулиць тут майже немає (0-2 з 200), бо модель
+   // зважує й історію. Вулиці без подій ідуть окремим переліком v.quiet і
+   // вмикаються прапорцем — там пунктир і має сенс.
    v.items.forEach(it=>{
-     const hot=(it[3]|0)>0;
-     L.polyline(it[0],{color:col,weight:Math.max(2,1.5+it[2]/16),
-       opacity:Math.max(.35,.85*it[2]/100),dashArray:hot?null:'7,5'})
-      .bindTooltip(`<b>${it[1]}</b><span>${v.title} — верхні ${101-it[2]}% за ризиком`
-        +(hot?`, подій уже було: ${it[3]}`:', подій ще не було — прогноз наперед')
-        +`. Клікніть для деталей</span>`,
-        {className:'rt',sticky:true})
-      .on('click',ev=>{
-        const w=document.createElement('div'); w.innerHTML=riskPopup(k,it);
-        if(v.factors&&v.factors.length&&(F.cats||[]).length){
-         const bt=document.createElement('button'); bt.className='pbtn2';
-         bt.textContent='Показати чинники поруч';
-         bt.onclick=()=>{const q=showNear(ev.latlng.lat,ev.latlng.lng,v.factors);
-           bt.textContent=q?`Підсвічено об’єктів: ${q}`:'Поруч нічого з чинників немає'};
-         w.appendChild(bt);
-        } else if((F.cats||[]).length){
-         // моделі для цієї вулиці немає — показуємо просто околиці, без підказки
-         const bt=document.createElement('button'); bt.className='pbtn2';
-         bt.textContent='Що поруч (250 м)';
-         bt.onclick=()=>{const q=showAllNear(ev.latlng.lat,ev.latlng.lng,250);
-           bt.textContent=q?`Показано об’єктів: ${q}`:'Поруч нічого не знайдено'};
-         w.appendChild(bt);
-        }
-        L.popup({maxWidth:320}).setLatLng(ev.latlng).setContent(w).openOn(map)})
-      .addTo(rlayer);});
+     bindRisk(L.polyline(it[0],{color:col,weight:Math.max(2,1.5+it[2]/16),
+       opacity:Math.max(.35,.85*it[2]/100)}),k,it,false).addTo(rlayer);});
+   if(quietOn) (v.quiet||[]).forEach(it=>{
+     bindRisk(L.polyline(it[0],{color:col,weight:2,opacity:.5,dashArray:'7,5'}),
+       k,it,true).addTo(rlayer);});
   } else {
    const mxf=Math.max(...v.items.map(x=>x[2]))||1;
    v.items.forEach(it=>
