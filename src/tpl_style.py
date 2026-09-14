@@ -157,6 +157,28 @@ button:hover{background:#28303f}button.act{background:#e0533d;border-color:#e053
 .pbtn:hover{background:#c94a34}
 /* ---- шар чинників середовища ---- */
 .fgh{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#8b95a8;margin:9px 0 2px}
+/* Групи інфраструктури — згорнуті, як і групи ризику: сімнадцять прапорців
+   поспіль читалися як звалище. Стиль повторює #frisk .rg навмисно, щоб
+   панель мала одну мову. */
+#ffact .fg{margin-bottom:6px;border-radius:6px;background:#151a24;border:1px solid #222836}
+#ffact .fg>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:7px;
+  padding:7px 9px;font-size:12px;color:#c3ccdb}
+#ffact .fg>summary::-webkit-details-marker{display:none}
+#ffact .fg>summary::before{content:'\25B8';color:#5f6878;font-size:9px;transition:.15s}
+#ffact .fg[open]>summary::before{transform:rotate(90deg)}
+#ffact .fg>summary .gn{flex:1;font-weight:500}
+#ffact .fg>summary .gc{font-size:10px;color:#6d7789;padding:1px 6px;border:1px solid #2b3242;border-radius:99px}
+#ffact .fg label{margin:0 8px 4px}
+/* Прапорець «тихих» вулиць стоїть НАД поясненням і відокремлений рискою:
+   це не ще один шар ризику, а інший погляд на ті самі теми. */
+#fquietw{display:flex;align-items:flex-start;gap:7px;margin:8px 0 6px;padding-top:8px;
+  border-top:1px solid #222836;font-size:11.5px;color:#c3ccdb;cursor:pointer;line-height:1.4}
+#fquietw input{margin-top:2px;flex:none}
+/* Постійне застереження про походження адреси. Помітне, але не кричить: воно
+   має читатися щоразу, а не лякати. */
+.warnbar{margin:8px 0 2px;padding:7px 9px;border-radius:6px;font-size:11.5px;
+  line-height:1.45;color:#d8c49a;background:#241f16;border:1px solid #3b3122}
+.warnbar b{color:#f0dcae}
 #ffact label{font-size:12px}
 #ffact .n{color:#5f6878;font-size:10.5px;margin-left:auto;flex:0 0 auto}
 #ffact .sw{width:9px;height:9px;border-radius:99px;flex:0 0 auto;margin-top:3px}
@@ -177,6 +199,16 @@ button:hover{background:#28303f}button.act{background:#e0533d;border-color:#e053
 .rpop td:last-child{text-align:right;color:#e0533d}
 .rpop .rdoc{display:block;margin-top:8px;font-size:11.5px;color:#7cb2ff;text-decoration:none}
 .rpop .rdoc:hover{text-decoration:underline}
+/* Чинники окремої вулиці. Ліворуч — що виміряно, праворуч — скільки тут
+   і скільки буває звичайно. Кратність окремим тонким рядком під назвою:
+   вона пояснює, чому ця ознака взагалі в переліку. */
+.rpop .rwhy{margin:8px 0 3px;font-size:11px;color:#9fb0c9;
+  text-transform:uppercase;letter-spacing:.04em}
+.rpop table.fx td{padding:3px 0;font-size:11.5px;vertical-align:top;color:#cbd5e1}
+.rpop table.fx td.fv{text-align:right;color:#cbd5e1;white-space:nowrap;padding-left:10px}
+.rpop table.fx td.fv b{display:inline;font-size:12px;color:#fff;margin:0}
+.rpop table.fx td.fv i{font-style:normal;color:#7c879b;font-size:10.5px}
+.rpop table.fx .fr{color:#e0a03d;font-size:10.5px;margin-top:1px;line-height:1.35}
 #docs a{display:block;font-size:12.5px;color:#7cb2ff;text-decoration:none;padding:3px 0}
 #docs a:hover{text-decoration:underline}
 @media(max-width:760px){#wrap{flex-direction:column}#side{width:100%;flex:0 0 auto;max-height:50%}}
