@@ -13,6 +13,7 @@
 import os, sys, json, math, collections
 import labels as L
 import mech as M
+import uatext
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -187,7 +188,7 @@ def build(district, labels):
                           f"{d.get('перевірка', 0):,} подіях зі справ 2025–2026. "
                           f"У верхніх 10% вулиць за прогнозом опиняється "
                           f"{100*d.get('hit_середовище', 0):.0f}% подій наступних років "
-                          f"(у {L.raziv(d.get('PAI_середовище', 0))} краще за випадковий відбір).")
+                          f"(у {uatext.raziv(d.get('PAI_середовище', 0))} краще за випадковий відбір).")
             risks.setdefault('lines', {})['risk_' + th] = {
                 'title': v.get('name') or L.THEMES.get(th, th),
                 'slug': v.get('slug') or M.anchor(th),
