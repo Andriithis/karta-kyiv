@@ -163,6 +163,12 @@ tr:hover td{background:#151a25}
 .k{display:inline-block;background:#1c2230;border-radius:5px;padding:1px 7px;
  font-size:12px;color:#c4cbd8;margin:0 3px 3px 0;font-variant-numeric:tabular-nums}
 .muted{color:#79839a;font-size:12.5px}
+/* Перелік вагомих чинників теми: сам чинник помітний, пояснення і спосіб
+   перевірки — тонше й з відступом, щоб око спершу взяло головне. */
+.fl{margin:10px 0 6px;padding-left:20px}
+.fl>li{margin:0 0 12px;line-height:1.5}
+.fl .cw{color:#9aa4b8;font-size:12.5px;margin-top:2px}
+.fl .cw i{color:#7c879b;font-style:normal}
 .big{font-size:30px;font-weight:600;letter-spacing:-.02em;line-height:1.1}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:11px;margin:14px 0}
 .card{background:#151a22;border:1px solid #232838;border-radius:9px;padding:13px 14px}
