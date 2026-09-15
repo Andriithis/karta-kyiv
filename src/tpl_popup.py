@@ -211,10 +211,11 @@ window.__downloadPassport=downloadPassport;
 function draw(){
  syncThemes();
  const C=sel('c'),A=sel('a'),Y=sel('y');
- // які теми зараз видимі за фільтром статей. Від цього набору залежить троє:
- // картки проблем, склад переліку проблем і колір позначки — інакше при
- // фільтрі «Насильство» знизу висіла картка про ДТП, а сама точка світилася
- // кольором теми, яку щойно вимкнули
+ // які теми зараз видимі за фільтром статей. Від цього набору залежать картки
+ // проблем, склад переліку проблем і лічильник — інакше при фільтрі
+ // «Насильство» знизу висіла картка про ДТП. Період сюди свідомо не входить:
+ // обраний рік — це «покажи події цього року», а не «адреса перестала бути
+ // проблемою», і перелік від періоду не пересортовується.
  const GVIS=new Set();M.groups.forEach((g,gi)=>{if(g[1].some(i=>A.has(i)))GVIS.add(gi)});
  const CF=+(cb_.querySelector('.on')||{dataset:{c:-1}}).dataset.c;
  const H=new Set();
@@ -235,26 +236,26 @@ function draw(){
   // Напрямок адреси-проблеми: тема, за якою епізодів більше. Рахується з
   // самих проблем, тому фільтри його не зрушують — Володимирська лишається
   // майновою, хоч би які галочки знімали.
+  // Рівність в обох виборах нижче віддає першій темі за порядком M.groups:
+  // сіре вже означає «центр вулиці», і нічия не має виглядати так само.
   let thProblem=null;
   if(ownProbs.length){
-   const byTheme={};
-   for(const pr of ownProbs) if(pr.thi>=0) byTheme[pr.thi]=(byTheme[pr.thi]||0)+pr.n;
-   let bestN=-1;
-   for(const t_ in byTheme) if(byTheme[t_]>bestN){bestN=byTheme[t_];thProblem=+t_}
+   const byTheme=new Array(M.groups.length).fill(0);
+   for(const pr of ownProbs) if(pr.thi>=0) byTheme[pr.thi]+=pr.n;
+   let bestN=0;
+   for(let gi=0;gi<byTheme.length;gi++) if(byTheme[gi]>bestN){bestN=byTheme[gi];thProblem=gi}
   }
-  let th=null,viaMaj=false;
-  if(thProblem!==null&&GVIS.has(thProblem)){
-   th=thProblem;
-  }else{
-   // Немає проблеми, або її напрямок зараз схований. Тоді колір — переважна
-   // тема серед ПОКАЗАНОГО, за кількістю. Доти бралася тема першої події в
-   // масиві: звідси й синя Борщагівська з 30 ДТП. Рівність лишає колір
-   // першій темі за порядком M.groups (цілі ключі JS перебирає за зростанням).
-   viaMaj=true;
-   let bestC=0;
-   for(const t_ in cnt) if(cnt[t_]>bestC){bestC=cnt[t_];th=+t_}
-  }
-  tot+=n;vis.push([p,n,th,viaMaj,cnt])}
+  // Переважна тема серед ПОКАЗАНОГО, за кількістю. Доти колір брався з першої
+  // події в масиві — звідси й синя Борщагівська, де найбільше ДТП. Рахується
+  // окремо від кольору, бо йде ще й у рядок частки у вікні.
+  let thMaj=null,bestC=0;
+  for(let gi=0;gi<M.groups.length;gi++) if((cnt[gi]||0)>bestC){bestC=cnt[gi];thMaj=gi}
+  // Колір описує саме цю намальовану крапку, тож перевіряємо не галочку теми,
+  // а чи є події напрямку за фільтром, з роком і часом доби: інакше точка
+  // світилася б темою, якої за обраний рік на ній немає.
+  const byProblem=thProblem!==null&&cnt[thProblem]>0;
+  const th=byProblem?thProblem:thMaj;
+  tot+=n;vis.push([p,n,th,byProblem,cnt,thMaj])}
  vis.sort((a,b)=>b[1]-a[1]);
  // Список і справді слухається перемикача — `vis` вище вже відфільтровано
  // за режимом. Але заголовок був той самий в обох режимах, тож у режимі
@@ -284,7 +285,7 @@ function draw(){
  if(heatOn){heat=L.heatLayer(vis.flatMap(v=>Array(Math.min(v[1],20)).fill([v[0][0],v[0][1],1])),
   {radius:18,blur:24,maxZoom:16}).addTo(map);return}
  const mx=vis.length?vis[0][1]:1;
- for(const [p,n,th,viaMaj,cnt] of vis){
+ for(const [p,n,th,byProblem,cnt,thMaj] of vis){
   const r=Math.max(3.2,Math.min(19,3.2+8.5*Math.sqrt(n/Math.max(mx,1))*2));
   L.circleMarker([p[0],p[1]],{radius:r,weight:p[3]?.8:0,color:'#0f1117',
    fillColor:p[3]?(PALA[th%PALA.length]):'#5f6878',fillOpacity:p[3]?.72:.35})
@@ -349,10 +350,13 @@ function draw(){
     pblock+='<button class="pbtn2" data-na="1">Що поруч (250 м)</button>';
    const ncase=typeof p[5]==='number'?p[5]:(p[5]||[]).length;
    const cinf=probs.length?CATNAME[2]:null;
-   // Коли колір узято не з проблеми, а з переважної теми, число має стояти
-   // поруч: інакше зелену точку з 30 ДТП із 57 подій нічим не пояснити.
-   const majTxt=viaMaj&&th!==null&&p[3]
-    ?`<div class="tt">переважає ${esc(lc(M.groups[th][0]))}, ${cnt[th]} із ${n}</div>`:'';
+   // Частка стоїть у кожній адресі з номером будинку. Коли точку пофарбовано
+   // напрямком проблеми, а подій за фільтром більше в іншої теми, це кажемо
+   // окремим реченням — інакше колір і таблиця нижче суперечили б мовчки.
+   const nm=gi=>esc(lc(M.groups[gi][0]));
+   const majTxt=p[3]&&thMaj!==null
+    ?`<div class="tt">${byProblem&&th!==thMaj?`Колір — за напрямком проблеми (${nm(th)}). `:''}`+
+     `За поточним фільтром тут переважає ${nm(thMaj)}, ${cnt[thMaj]} із ${n}.</div>`:'';
    const html=`<div class="lp">
    ${cinf?`<span class="cbadge" style="background:${cinf[1]}22;color:${cinf[1]}">${cinf[0]}</span>`:''}
    <b>${p[2]||'адреса не визначена'}</b>
