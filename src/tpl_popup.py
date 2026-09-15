@@ -58,6 +58,7 @@ const sel=a=>new Set([...document.querySelectorAll(`[data-${a}]`)].filter(x=>x.c
 // У сторінці, відкритій з диска, DOCS уже вкладено — тоді нічого не тягнемо.
 const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>
  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const lc=s=>s?s.charAt(0).toLowerCase()+s.slice(1):s;
 const REESTR='https://od.reyestr.court.gov.ua/files/';
 const docUrl=h=>REESTR+h.slice(0,2)+'/'+h.slice(2)+'.rtf';
 function docsFor(i){
@@ -210,8 +211,10 @@ window.__downloadPassport=downloadPassport;
 function draw(){
  syncThemes();
  const C=sel('c'),A=sel('a'),Y=sel('y');
- // які теми зараз видимі за фільтром статей — картки проблем ховаються разом з ними,
- // інакше при фільтрі «Насильство» знизу висіла картка про ДТП
+ // які теми зараз видимі за фільтром статей. Від цього набору залежить троє:
+ // картки проблем, склад переліку проблем і колір позначки — інакше при
+ // фільтрі «Насильство» знизу висіла картка про ДТП, а сама точка світилася
+ // кольором теми, яку щойно вимкнули
  const GVIS=new Set();M.groups.forEach((g,gi)=>{if(g[1].some(i=>A.has(i)))GVIS.add(gi)});
  const CF=+(cb_.querySelector('.on')||{dataset:{c:-1}}).dataset.c;
  const H=new Set();
@@ -219,10 +222,39 @@ function draw(){
  let tot=0;const vis=[];
  for(const p of P){
   if(!inScope(p)) continue;
-  if(CF>=0&&!probsOf(p).length) continue;
-  let n=0,th=null;
-  for(const e of p[4]) if(C.has(e[0])&&A.has(e[1])&&Y.has(e[2])&&(!H.size||H.has(e[3]))){n++;if(th===null)th=CATTH[e[1]]}
-  if(n){tot+=n;vis.push([p,n,th])}}
+  const ownProbs=probsOf(p);
+  // проблема за прихованим напрямком — не проблема для поточного вигляду:
+  // саме звідси в переліку бралися адреси з трьома подіями. У вікні підпис
+  // про інший напрямок лишається, він корисний.
+  const visProbs=ownProbs.filter(pr=>pr.thi===undefined||pr.thi<0||GVIS.has(pr.thi));
+  if(CF>=0&&!visProbs.length) continue;
+  let n=0;const cnt={};
+  for(const e of p[4]) if(C.has(e[0])&&A.has(e[1])&&Y.has(e[2])&&(!H.size||H.has(e[3]))){
+   n++;const t_=CATTH[e[1]];cnt[t_]=(cnt[t_]||0)+1}
+  if(!n) continue;
+  // Напрямок адреси-проблеми: тема, за якою епізодів більше. Рахується з
+  // самих проблем, тому фільтри його не зрушують — Володимирська лишається
+  // майновою, хоч би які галочки знімали.
+  let thProblem=null;
+  if(ownProbs.length){
+   const byTheme={};
+   for(const pr of ownProbs) if(pr.thi>=0) byTheme[pr.thi]=(byTheme[pr.thi]||0)+pr.n;
+   let bestN=-1;
+   for(const t_ in byTheme) if(byTheme[t_]>bestN){bestN=byTheme[t_];thProblem=+t_}
+  }
+  let th=null,viaMaj=false;
+  if(thProblem!==null&&GVIS.has(thProblem)){
+   th=thProblem;
+  }else{
+   // Немає проблеми, або її напрямок зараз схований. Тоді колір — переважна
+   // тема серед ПОКАЗАНОГО, за кількістю. Доти бралася тема першої події в
+   // масиві: звідси й синя Борщагівська з 30 ДТП. Рівність лишає колір
+   // першій темі за порядком M.groups (цілі ключі JS перебирає за зростанням).
+   viaMaj=true;
+   let bestC=0;
+   for(const t_ in cnt) if(cnt[t_]>bestC){bestC=cnt[t_];th=+t_}
+  }
+  tot+=n;vis.push([p,n,th,viaMaj,cnt])}
  vis.sort((a,b)=>b[1]-a[1]);
  // Список і справді слухається перемикача — `vis` вище вже відфільтровано
  // за режимом. Але заголовок був той самий в обох режимах, тож у режимі
@@ -237,7 +269,10 @@ function draw(){
                                   : 'Найгарячіші адреси за фільтром';}
  $('#cnt').textContent=tot.toLocaleString('uk');
  $('#cntl').textContent=`подій на ${vis.length.toLocaleString('uk')} адресах`;
- {let q=0;P.forEach(p=>{if(inScope(p)&&probsOf(p).length)q++});
+ // лічильник рахує по тому самому правилу, що й перелік: інакше він показував
+ // проблеми, яких за поточним фільтром на карті немає
+ {let q=0;P.forEach(p=>{if(inScope(p)&&probsOf(p).some(pr=>
+   pr.thi===undefined||pr.thi<0||GVIS.has(pr.thi)))q++});
   $('#cathint').innerHTML=q?`У поточних межах: <b style="color:#f87171">${q.toLocaleString('uk')}</b> проблем.`:'';}
  $('#top').innerHTML=rank.slice(0,15).map((v,i)=>
   `<div data-i="${i}"><span>${v[0][2]}</span><b>${v[1]}</b></div>`).join('')||'<div class="sub">нема даних</div>';
@@ -249,7 +284,7 @@ function draw(){
  if(heatOn){heat=L.heatLayer(vis.flatMap(v=>Array(Math.min(v[1],20)).fill([v[0][0],v[0][1],1])),
   {radius:18,blur:24,maxZoom:16}).addTo(map);return}
  const mx=vis.length?vis[0][1]:1;
- for(const [p,n,th] of vis){
+ for(const [p,n,th,viaMaj,cnt] of vis){
   const r=Math.max(3.2,Math.min(19,3.2+8.5*Math.sqrt(n/Math.max(mx,1))*2));
   L.circleMarker([p[0],p[1]],{radius:r,weight:p[3]?.8:0,color:'#0f1117',
    fillColor:p[3]?(PALA[th%PALA.length]):'#5f6878',fillOpacity:p[3]?.72:.35})
@@ -314,10 +349,15 @@ function draw(){
     pblock+='<button class="pbtn2" data-na="1">Що поруч (250 м)</button>';
    const ncase=typeof p[5]==='number'?p[5]:(p[5]||[]).length;
    const cinf=probs.length?CATNAME[2]:null;
+   // Коли колір узято не з проблеми, а з переважної теми, число має стояти
+   // поруч: інакше зелену точку з 30 ДТП із 57 подій нічим не пояснити.
+   const majTxt=viaMaj&&th!==null&&p[3]
+    ?`<div class="tt">переважає ${esc(lc(M.groups[th][0]))}, ${cnt[th]} із ${n}</div>`:'';
    const html=`<div class="lp">
    ${cinf?`<span class="cbadge" style="background:${cinf[1]}22;color:${cinf[1]}">${cinf[0]}</span>`:''}
    <b>${p[2]||'адреса не визначена'}</b>
    <div class="tt">${n} ${n%10===1&&n%100!==11?'подія':'подій'} за поточним фільтром</div>
+   ${majTxt}
    <table class="bd">`+rows.map(([i,c])=>
      `<tr><td title="${LAW(M.cats[i])}">${M.cats[i]}</td><td><b>${c}</b></td></tr>`).join('')+`</table>
    ${bars}${hint}${pblock}
