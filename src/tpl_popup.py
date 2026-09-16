@@ -212,16 +212,18 @@ window.__downloadPassport=downloadPassport;
 // одинична подія виходила пилинкою, у яку не влучиш пальцем. Множник підганяє
 // позначку під масштаб: на міському огляді нічого не злипається, зблизька
 // крапка впевнена.
-const zoomMul=z=>z>=17?1.6:(z>=16?1.3:1);
+const zoomMul=z=>z<=12?.78:z<=14?1:z<=16?1.35:1.7;
 // Від цього зуму вмикається тінь під позначками (див. tpl_style).
 const DEEP_Z=15;
-let lastMul=null;
+let lastMul=null, zTimer=null;
 function applyZoom(){
  const z=map.getZoom();
- document.body.dataset.deep=z>=DEEP_Z?'1':'0';
- // перемальовуємо не на кожен зум, а лише коли множник справді змінився:
- // одинадцять тисяч позначок задарма не перемальовують
- if(zoomMul(z)!==lastMul) draw();
+ map.getContainer().classList.toggle('deep',z>=DEEP_Z);
+ // Перемальовуємо не на кожен зум, а лише коли множник справді змінився, та
+ // ще й із затримкою: під час плавного зуму zoomend приходить чергою, і без
+ // паузи одинадцять тисяч позначок перемальовувалися б по кілька разів.
+ if(zoomMul(z)===lastMul) return;
+ clearTimeout(zTimer); zTimer=setTimeout(draw,140);
 }
 function draw(){
  syncThemes();

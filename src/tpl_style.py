@@ -146,8 +146,8 @@ button:hover{background:var(--rule)}button.act{background:var(--ink);border-colo
    малюється в canvas (preferCanvas), тож фільтр — на полотні. Фільтр
    розмиває силует УСЬОГО полотна на кожному кадрі, а на міському огляді це
    11 686 адрес, і глибини там однаково не видно. Тому тінь вмикається лише
-   зблизька: data-deep ставить tpl_popup на zoomend. */
-body[data-deep="1"] .leaflet-overlay-pane canvas{filter:var(--shadow)}
+   зблизька: клас deep вішає tpl_popup на контейнер карти на zoomend. */
+.deep .leaflet-overlay-pane canvas{filter:var(--shadow)}
 /* перемикач тем у куті карти */
 .tsw{display:flex;gap:2px;background:var(--glass);backdrop-filter:blur(16px) saturate(1.3);
  -webkit-backdrop-filter:blur(16px) saturate(1.3);border:1px solid var(--rule)}
