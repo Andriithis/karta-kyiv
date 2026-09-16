@@ -20,23 +20,27 @@ const PAL={
  svitla:['#eb6834','#1baf7a','#4a3aa7','#e34948','#2a78d6','#008300','#e87ba4','#7a6f63'],
  temna: ['#d95926','#199e70','#9085e9','#e66767','#3987e5','#008300','#d55181','#8d94a2'],
  kolir: ['#d95926','#199e70','#9085e9','#e66767','#3987e5','#008300','#d55181','#8d94a2']};
-// Ключ CARTO. Порожній — плитки віддаються з написом API KEY REQUIRED поверх
-// карти; вставлений ключ його прибирає. Ключ клієнтський, він не секрет.
-const CARTO_KEY='';
-const ck_=CARTO_KEY?('?api_key='+CARTO_KEY):'';
-// Світла підкладка — відкритий REST-ендпоїнт Esri, яким карти користуються
-// роками. Умови Esri формально передбачають обліковий запис; для навчального
-// інструменту ризик малий, але цільова світла підкладка — CARTO Positron:
-// щойно з'явиться ключ, tiles() сам перемкнеться на неї.
+// Ключ CARTO. Безкоштовний, без картки, до 5 млн тайлів на місяць — для
+// Академії це нескінченність. Він клієнтський і однаково лежить у коді
+// сторінки, тому ховати його немає від кого. Параметр називається саме
+// key=, не api_key=: з неправильною назвою ключ мовчки не діє, і виглядає
+// це як зіпсований ключ. Атрибуція CARTO і OpenStreetMap обов'язкова
+// завжди — це умова безкоштовного користування.
+const CARTO_KEY='cb1_3n60_1_74a848e36e851efba49b510b';
+const ck_=CARTO_KEY?('?key='+CARTO_KEY):'';
+// {r} дає @2x на екранах з подвоєною щільністю — саме через нього підкладка
+// виглядає різкою. Esri прибрано: у Києві його растрові тайли обриваються на
+// зумі 16 («Map data not yet available»), а карта про номер будинку ходить
+// до 19. Звичайний OSM лишається запасним: якщо ключ колись відвалиться,
+// карта втратить вигляд, але лишиться робочою.
 const TILES={
- svitla:{u:'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-         a:'Esri, HERE, Garmin, &copy; OpenStreetMap'},
- positron:{u:'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'+ck_,
-         a:'&copy; OpenStreetMap, &copy; CARTO'},
- temna:{u:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'+ck_,
-         a:'&copy; OpenStreetMap, &copy; CARTO'},
- kolir:{u:'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'+ck_,
-         a:'&copy; OpenStreetMap, &copy; CARTO'}};
+ svitla:{u:'https://basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}{r}.png'+ck_,
+         a:'&copy; CARTO, &copy; OpenStreetMap'},
+ temna:{u:'https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png'+ck_,
+         a:'&copy; CARTO, &copy; OpenStreetMap'},
+ kolir:{u:'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'+ck_,
+         a:'&copy; CARTO, &copy; OpenStreetMap'},
+ osm:{u:'https://tile.openstreetmap.org/{z}/{x}/{y}.png', a:'&copy; OpenStreetMap'}};
 const THNAMES=[['svitla','Світла'],['temna','Темна'],['kolir','Кольорова']];
 let THEME=localStorage.getItem('karta-tema');
 if(!PAL[THEME]) THEME='svitla';
@@ -94,9 +98,11 @@ if(M.border){
 // Плитки міняються разом із темою, тож шар тримаємо у змінній і перестворюємо.
 let tileL=null;
 function tiles(){
- const key=THEME==='svitla'?(CARTO_KEY?'positron':'svitla'):THEME;
+ // Порожній ключ означає, що CARTO більше не наш: тоді всі теми падають на
+ // звичайний OSM. Вигляд гірший, зате карта лишається робочою.
+ const t=CARTO_KEY?TILES[THEME]:TILES.osm;
  if(tileL) map.removeLayer(tileL);
- tileL=L.tileLayer(TILES[key].u,{attribution:TILES[key].a,maxZoom:19,detectRetina:true}).addTo(map);
+ tileL=L.tileLayer(t.u,{attribution:t.a,maxZoom:19,detectRetina:true}).addTo(map);
  tileL.bringToBack();
 }
 tiles();
