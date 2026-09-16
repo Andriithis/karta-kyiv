@@ -9,10 +9,43 @@
 Друга половина (бічна панель, спливні вікна, картка проблеми) — у tpl_popup.
 """
 JS_MAP = r"""const M=__META__, P=__PTS__;
-// 8 кольорів — по одному на кожну тему з labels.ORDER (ГП..ДОМ). Було 7 на 8
-// тем: домашнє насильство (індекс 7) отримувало через %7 той самий колір,
-// що й громадський порядок (індекс 0) — на карті їх було не відрізнити.
-const PALA=['#e0533d','#e8a33d','#8b5cf6','#ef4444','#3b82f6','#22c55e','#14b8a6','#ec4899'];
+// ---- ТЕМИ Й ПАЛІТРА ----
+// Порядок кольорів — як у M.groups (ГП, АЛК, НАР, НАС, МАЙ, ДОР, СЕР).
+// Стару палітру прибрано: у ній громадський порядок і насильство були майже
+// однаковим червоним. Ці два набори перевірено на розрізнення при
+// дальтонізмі — світліший лягає на світлу підкладку, темніший на решту.
+// Восьмий колір у кінці — запас для домашнього насильства: у M.groups воно не
+// входить, але без запасу %8 віддавало б йому колір громадського порядку.
+const PAL={
+ svitla:['#eb6834','#1baf7a','#4a3aa7','#e34948','#2a78d6','#008300','#e87ba4','#7a6f63'],
+ temna: ['#d95926','#199e70','#9085e9','#e66767','#3987e5','#008300','#d55181','#8d94a2'],
+ kolir: ['#d95926','#199e70','#9085e9','#e66767','#3987e5','#008300','#d55181','#8d94a2']};
+// Ключ CARTO. Порожній — плитки віддаються з написом API KEY REQUIRED поверх
+// карти; вставлений ключ його прибирає. Ключ клієнтський, він не секрет.
+const CARTO_KEY='';
+const ck_=CARTO_KEY?('?api_key='+CARTO_KEY):'';
+// Світла підкладка — відкритий REST-ендпоїнт Esri, яким карти користуються
+// роками. Умови Esri формально передбачають обліковий запис; для навчального
+// інструменту ризик малий, але цільова світла підкладка — CARTO Positron:
+// щойно з'явиться ключ, tiles() сам перемкнеться на неї.
+const TILES={
+ svitla:{u:'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+         a:'Esri, HERE, Garmin, &copy; OpenStreetMap'},
+ positron:{u:'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'+ck_,
+         a:'&copy; OpenStreetMap, &copy; CARTO'},
+ temna:{u:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'+ck_,
+         a:'&copy; OpenStreetMap, &copy; CARTO'},
+ kolir:{u:'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'+ck_,
+         a:'&copy; OpenStreetMap, &copy; CARTO'}};
+const THNAMES=[['svitla','Світла'],['temna','Темна'],['kolir','Кольорова']];
+let THEME=localStorage.getItem('karta-tema');
+if(!PAL[THEME]) THEME='svitla';
+document.body.dataset.t=THEME;
+let PALA=PAL[THEME];
+// Маски, межі й гало малює JS, а кольори теми живуть у CSS. Щоб вони не
+// розходилися, JS бере їх звідти ж: інакше на світлій темі затемнення поза
+// районом лишилося б чорною плямою.
+const cssv=v=>getComputedStyle(document.body).getPropertyValue(v).trim();
 const CATTH={};M.groups.forEach((g,gi)=>g[1].forEach(i=>CATTH[i]=gi));
 // Повна назва статті з кодексу за коротким підписом (src/pravo.py).
 // Порожньо, якщо назви немає: приблизна назва в листі гірша за її відсутність.
@@ -50,15 +83,23 @@ function maskRing(){
  return [[b.getSouth(),b.getWest()],[b.getSouth(),b.getEast()],
          [b.getNorth(),b.getEast()],[b.getNorth(),b.getWest()]];
 }
+let cityMask=null, cityLine=null;
 if(M.border){
- let mk=L.polygon([maskRing(),M.border],{pane:'maskPane',color:'#0f1117',weight:0,
-   fillColor:'#0f1117',fillOpacity:.82,interactive:false}).addTo(map);
- map.on('moveend zoomend',()=>mk.setLatLngs([maskRing(),M.border]));
- L.polygon(M.border,{color:'#6b7890',weight:1.8,opacity:.9,
+ cityMask=L.polygon([maskRing(),M.border],{pane:'maskPane',color:cssv('--ground'),weight:0,
+   fillColor:cssv('--ground'),fillOpacity:.82,interactive:false}).addTo(map);
+ map.on('moveend zoomend',()=>cityMask.setLatLngs([maskRing(),M.border]));
+ cityLine=L.polygon(M.border,{color:cssv('--dim'),weight:1.8,opacity:.9,
    fill:false,dashArray:'6,5',interactive:false}).addTo(map);
 }
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-{attribution:'&copy; OpenStreetMap',maxZoom:19}).addTo(map);
+// Плитки міняються разом із темою, тож шар тримаємо у змінній і перестворюємо.
+let tileL=null;
+function tiles(){
+ const key=THEME==='svitla'?(CARTO_KEY?'positron':'svitla'):THEME;
+ if(tileL) map.removeLayer(tileL);
+ tileL=L.tileLayer(TILES[key].u,{attribution:TILES[key].a,maxZoom:19,detectRetina:true}).addTo(map);
+ tileL.bringToBack();
+}
+tiles();
 let layer=L.layerGroup().addTo(map),heat=null,heatOn=false;
 const rlayer=L.layerGroup().addTo(map);
 const poplayer=L.layerGroup();          // фон під усім іншим
@@ -83,8 +124,8 @@ const dshapes=[];
 const CITY={c:M.center||[50.45,30.52], z:11};
 const dBounds=i=>L.latLngBounds(DBORD[i]);
 if(DN.length&&!M.only) DN.forEach((nm,i)=>{
- const pg=L.polygon(DBORD[i],{color:'#9fb0c9',weight:1.8,opacity:.85,dashArray:'7,5',
-   fillColor:'#8ea0bd',fillOpacity:.05});
+ const pg=L.polygon(DBORD[i],{color:cssv('--dim'),weight:1.8,opacity:.85,dashArray:'7,5',
+   fillColor:cssv('--dim'),fillOpacity:.05});
  const np=(M.dprob||[])[i]||0;
  pg.bindTooltip(`<b>${nm}</b><span>`+(np?`${np} проблем · `:'')+`натисніть, щоб відкрити</span>`,
    {className:'rt',sticky:true});
@@ -97,12 +138,12 @@ if(DN.length&&!M.only) DN.forEach((nm,i)=>{
 // вони все одно не читаються, зате перемикання лишається однією дією.
 function paintScope(){
  dshapes.forEach((pg,i)=>pg.setStyle(CURD<0
-   ? {opacity:.85,fillOpacity:.05,dashArray:'7,5'}
-   : {opacity:i===CURD?1:0,fillOpacity:0,dashArray:null}));
+   ? {color:cssv('--dim'),fillColor:cssv('--dim'),opacity:.85,fillOpacity:.05,dashArray:'7,5'}
+   : {color:cssv('--dim'),opacity:i===CURD?1:0,fillOpacity:0,dashArray:null}));
  if(dmask){map.removeLayer(dmask);dmask=null}
  if(CURD>=0){
-  dmask=L.polygon([maskRing(),DBORD[CURD]],{pane:'maskPane',color:'#0f1117',weight:0,
-    fillColor:'#0f1117',fillOpacity:.78,interactive:false}).addTo(map);
+  dmask=L.polygon([maskRing(),DBORD[CURD]],{pane:'maskPane',color:cssv('--ground'),weight:0,
+    fillColor:cssv('--ground'),fillOpacity:.78,interactive:false}).addTo(map);
  }
 }
 // рамка затемнення має встигати за картою, інакше при від'їзді з'являються
@@ -161,9 +202,9 @@ function $ify(sel,html){const el=document.querySelector(sel);if(el)el.innerHTML=
  const rrow=k=>{const v=R.lines[k],c=RCOL[k];
   if(v.nodata){
    // тема є в списку правопорушень, але подій замало на навчання моделі
-   return `<div class="rw nod" style="border-left-color:#3a4256">
+   return `<div class="rw nod" style="border-left-color:var(--rule)">
     <label class="rl"><input type="checkbox" disabled>
-     <span class="sw" style="background:#3a4256"></span>
+     <span class="sw" style="background:var(--rule)"></span>
      <span class="nm">${v.title}</span>
      <span class="acc">—</span></label>
     <div class="why">замало подій для навчання моделі</div></div>`}
@@ -314,7 +355,7 @@ function drawFacts(){
   const c=F.cats[+cb.dataset.f]; if(!c) return;
   c.pts.forEach(p=>{if(b.contains(p))want++});
  });
- const plain=want>FMAX;
+ const plain=want>FMAX, HALO=cssv('--halo');
  document.querySelectorAll('[data-f]').forEach(cb=>{
   if(!cb.checked) return;
   const c=F.cats[+cb.dataset.f]; if(!c) return;
@@ -322,7 +363,7 @@ function drawFacts(){
   c.pts.forEach(p=>{
    if(!b.contains(p)) return;
    (plain
-     ? L.circleMarker(p,{radius:4,weight:1,color:'#0f1117',fillColor:col,fillOpacity:.9})
+     ? L.circleMarker(p,{radius:4,weight:1,color:HALO,fillColor:col,fillOpacity:.9})
      : L.marker(p,{icon:ic}))
     .bindTooltip(c.n,{className:'rt'}).addTo(flayer)});
  });
@@ -439,8 +480,14 @@ function drawRisks(){
    // на теперішніх даних таких вулиць тут майже немає (0-2 з 200), бо модель
    // зважує й історію. Вулиці без подій ідуть окремим переліком v.quiet і
    // вмикаються прапорцем — там пунктир і має сенс.
+   // Під кольоровою лінією світлий ореол: на строкатій підкладці тонка лінія
+   // ризику інакше губиться серед вулиць. Узято з макета.
+   const halo=cssv('--halo');
    v.items.forEach(it=>{
-     bindRisk(L.polyline(it[0],{color:col,weight:Math.max(2,1.5+it[2]/16),
+     const w=Math.max(2,1.5+it[2]/16);
+     L.polyline(it[0],{color:halo,weight:w+4,opacity:.5,lineCap:'round',
+       interactive:false}).addTo(rlayer);
+     bindRisk(L.polyline(it[0],{color:col,weight:w,lineCap:'round',
        opacity:Math.max(.35,.85*it[2]/100)}),k,it,false).addTo(rlayer);});
    if(quietOn) (v.quiet||[]).forEach(it=>{
      bindRisk(L.polyline(it[0],{color:col,weight:2,opacity:.5,dashArray:'7,5'}),
@@ -454,4 +501,37 @@ function drawRisks(){
        (v.when?`<span>${v.when}</span>`:''),{className:'rt',sticky:true}).addTo(rlayer));
   }
  });
+}
+// ---- ПЕРЕМИКАЧ ТЕМ ----
+// Три слова в куті карти, вибір запам'ятовується: тему обирають раз і надовго
+// (в аудиторії проєктор — світла, вдома — темна), і питати щоразу немає за що.
+const tswCtl=L.control({position:'topright'});
+tswCtl.onAdd=()=>{const d=L.DomUtil.create('div','tsw');
+ d.innerHTML=THNAMES.map(([k,n])=>
+   `<button data-t="${k}"${k===THEME?' aria-pressed="true"':''}>${n}</button>`).join('');
+ L.DomEvent.disableClickPropagation(d);
+ d.onclick=e=>{const b=e.target.closest('[data-t]'); if(b) setTheme(b.dataset.t)};
+ return d};
+tswCtl.addTo(map);
+function setTheme(t){
+ if(!PAL[t]||t===THEME) return;
+ THEME=t; try{localStorage.setItem('karta-tema',t)}catch(e){}
+ document.body.dataset.t=t; PALA=PAL[t];
+ document.querySelectorAll('.tsw button').forEach(b=>
+   b.setAttribute('aria-pressed',b.dataset.t===t?'true':'false'));
+ Object.keys(R.lines||{}).forEach(k=>{
+   if(k.startsWith('risk_'))RCOL[k]=PALA[(R.lines[k].theme||0)%PALA.length]});
+ // Квадратики в переліку ризиків проставлені інлайном при побудові списку.
+ // Перебудувати список не можна: разом з ним загинули б і поставлені галочки,
+ // і підписки на них, — тому міняємо колір на місці.
+ document.querySelectorAll('#frisk .rw').forEach(el=>{
+  const inp=el.querySelector('[data-r]'); if(!inp||!RCOL[inp.dataset.r]) return;
+  el.style.borderLeftColor=RCOL[inp.dataset.r];
+  const s=el.querySelector('.sw'); if(s) s.style.background=RCOL[inp.dataset.r]});
+ {const lg=document.querySelector('#frisk .lgd');
+  const k=Object.keys(RCOL).find(x=>x.startsWith('risk_'));
+  if(lg&&k) lg.style.color=RCOL[k];}
+ if(cityMask) cityMask.setStyle({color:cssv('--ground'),fillColor:cssv('--ground')});
+ if(cityLine) cityLine.setStyle({color:cssv('--dim')});
+ tiles(); paintScope(); draw(); drawRisks(); drawFacts();
 }"""

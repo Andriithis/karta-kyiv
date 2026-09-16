@@ -10,7 +10,7 @@
 """
 JS_POPUP = r"""const $=s=>document.querySelector(s);
 if(M.only){$('#subt').textContent=M.only+' район · за даними ЄДРСР';
- $('#backl').innerHTML='<a href="index.html" style="color:#e0533d;font-size:12px;text-decoration:none">← всі райони</a>';}
+ $('#backl').innerHTML='<a href="index.html" style="color:var(--ink);font-size:12px;text-decoration:none">← всі райони</a>';}
 $('#fc').innerHTML=M.courts.map((n,i)=>`<label><input type="checkbox" data-c="${i}" checked>${n}</label>`).join('');
 // На карті одного району перелік з усіх десяти районів безглуздий. Ховаємо
 // саму рамку, а прапорці лишаємо в розмітці — на них спирається фільтр draw().
@@ -46,7 +46,7 @@ CATS.forEach((c,i)=>{const sp=document.createElement('span');
  sp.className=c[2]+(i===0?' on':'');sp.innerHTML=`${c[0]}<i>${c[1]}</i>`;sp.dataset.c=c[3];cb_.appendChild(sp)});
 cb_.onclick=e=>{const t=e.target.closest('[data-c]');if(!t)return;
  [...cb_.children].forEach(x=>x.classList.remove('on'));t.classList.add('on');draw()};
-const CATNAME={2:['Проблема','#f87171','у кураторському списку'],0:null};
+const CATNAME={2:['Проблема','var(--ink)','у кураторському списку'],0:null};
 const hb=$('#hr');
 PERIODS.forEach((p,i)=>{const s=document.createElement('span');
  s.innerHTML=`${p[0]}<i>${p[1]}</i>`;s.dataset.p=i;hb.appendChild(s)});
@@ -274,7 +274,7 @@ function draw(){
  // проблеми, яких за поточним фільтром на карті немає
  {let q=0;P.forEach(p=>{if(inScope(p)&&probsOf(p).some(pr=>
    pr.thi===undefined||pr.thi<0||GVIS.has(pr.thi)))q++});
-  $('#cathint').innerHTML=q?`У поточних межах: <b style="color:#f87171">${q.toLocaleString('uk')}</b> проблем.`:'';}
+  $('#cathint').innerHTML=q?`У поточних межах: <b style="color:var(--ink)">${q.toLocaleString('uk')}</b> проблем.`:'';}
  $('#top').innerHTML=rank.slice(0,15).map((v,i)=>
   `<div data-i="${i}"><span>${v[0][2]}</span><b>${v[1]}</b></div>`).join('')||'<div class="sub">нема даних</div>';
  [...$('#top').children].forEach((el,i)=>el.onclick=()=>{const v=rank[i];map.setView([v[0][0],v[0][1]],17);
@@ -285,10 +285,14 @@ function draw(){
  if(heatOn){heat=L.heatLayer(vis.flatMap(v=>Array(Math.min(v[1],20)).fill([v[0][0],v[0][1],1])),
   {radius:18,blur:24,maxZoom:16}).addTo(map);return}
  const mx=vis.length?vis[0][1]:1;
+ // Обвідка тепер світла (гало), а не темна: вона відділяє точку від підкладки,
+ // не забруднюючи сам колір теми. Радіус із макета — удвічі менший за
+ // колишній на максимумі, бо щільний центр колами зливався в суцільну пляму.
+ const HALO=cssv('--halo'), FAINT=cssv('--faint');
  for(const [p,n,th,byProblem,cnt,thMaj] of vis){
-  const r=Math.max(3.2,Math.min(19,3.2+8.5*Math.sqrt(n/Math.max(mx,1))*2));
-  L.circleMarker([p[0],p[1]],{radius:r,weight:p[3]?.8:0,color:'#0f1117',
-   fillColor:p[3]?(PALA[th%PALA.length]):'#5f6878',fillOpacity:p[3]?.72:.35})
+  const r=Math.max(2.8,Math.min(14,2.8+9.5*Math.pow(n/Math.max(mx,1),.42)));
+  L.circleMarker([p[0],p[1]],{radius:r,weight:p[3]?1.5:0,color:HALO,
+   fillColor:p[3]?(PALA[th%PALA.length]):FAINT,fillOpacity:p[3]?.94:.45})
   .bindPopup(()=>{
    const ev=p[4].filter(e=>C.has(e[0])&&A.has(e[1])&&Y.has(e[2])&&(!H.size||H.has(e[3])));
    const bc={},hh=new Array(24).fill(0);let nk=0;
@@ -358,7 +362,7 @@ function draw(){
     ?`<div class="tt">${byProblem&&th!==thMaj?`Колір — за напрямком проблеми (${nm(th)}). `:''}`+
      `За поточним фільтром тут переважає ${nm(thMaj)}, ${cnt[thMaj]} із ${n}.</div>`:'';
    const html=`<div class="lp">
-   ${cinf?`<span class="cbadge" style="background:${cinf[1]}22;color:${cinf[1]}">${cinf[0]}</span>`:''}
+   ${cinf?`<span class="cbadge" style="background:var(--sunk);color:${cinf[1]}">${cinf[0]}</span>`:''}
    <b>${p[2]||'адреса не визначена'}</b>
    <div class="tt">${n} ${n%10===1&&n%100!==11?'подія':'подій'} за поточним фільтром</div>
    ${majTxt}
