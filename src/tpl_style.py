@@ -143,11 +143,11 @@ button:hover{background:var(--rule)}button.act{background:var(--ink);border-colo
    набір плиток, він у tpl_map. */
 .leaflet-container{background:var(--ground);font-family:var(--sans)}
 /* Тінь під точками й лініями. У макеті вона стоїть на svg, а в нас усе
-   малюється в canvas (preferCanvas), тож фільтр — на полотні. Увага: фільтр
-   застосовується до силуету ВСЬОГО полотна, а не до кожного кола; якщо на
-   міському масштабі з усіма темами панорамування смикатиметься — цей рядок
-   прибирати першим, більшу частину глибини дає світле гало. */
-.leaflet-overlay-pane canvas{filter:var(--shadow)}
+   малюється в canvas (preferCanvas), тож фільтр — на полотні. Фільтр
+   розмиває силует УСЬОГО полотна на кожному кадрі, а на міському огляді це
+   11 686 адрес, і глибини там однаково не видно. Тому тінь вмикається лише
+   зблизька: data-deep ставить tpl_popup на zoomend. */
+body[data-deep="1"] .leaflet-overlay-pane canvas{filter:var(--shadow)}
 /* перемикач тем у куті карти */
 .tsw{display:flex;gap:2px;background:var(--glass);backdrop-filter:blur(16px) saturate(1.3);
  -webkit-backdrop-filter:blur(16px) saturate(1.3);border:1px solid var(--rule)}

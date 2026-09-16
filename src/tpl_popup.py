@@ -208,6 +208,21 @@ function downloadPassport(p,pr){
  document.body.appendChild(a);a.click();document.body.removeChild(a);
 }
 window.__downloadPassport=downloadPassport;
+// Радіус у Leaflet — у пікселях і від масштабу не залежить, тому на зумі 18
+// одинична подія виходила пилинкою, у яку не влучиш пальцем. Множник підганяє
+// позначку під масштаб: на міському огляді нічого не злипається, зблизька
+// крапка впевнена.
+const zoomMul=z=>z>=17?1.6:(z>=16?1.3:1);
+// Від цього зуму вмикається тінь під позначками (див. tpl_style).
+const DEEP_Z=15;
+let lastMul=null;
+function applyZoom(){
+ const z=map.getZoom();
+ document.body.dataset.deep=z>=DEEP_Z?'1':'0';
+ // перемальовуємо не на кожен зум, а лише коли множник справді змінився:
+ // одинадцять тисяч позначок задарма не перемальовують
+ if(zoomMul(z)!==lastMul) draw();
+}
 function draw(){
  syncThemes();
  const C=sel('c'),A=sel('a'),Y=sel('y');
@@ -288,9 +303,10 @@ function draw(){
  // Обвідка тепер світла (гало), а не темна: вона відділяє точку від підкладки,
  // не забруднюючи сам колір теми. Радіус із макета — удвічі менший за
  // колишній на максимумі, бо щільний центр колами зливався в суцільну пляму.
- const HALO=cssv('--halo'), FAINT=cssv('--faint');
+ const HALO=cssv('--halo'), FAINT=cssv('--faint'), zm=zoomMul(map.getZoom());
+ lastMul=zm;
  for(const [p,n,th,byProblem,cnt,thMaj] of vis){
-  const r=Math.max(2.8,Math.min(14,2.8+9.5*Math.pow(n/Math.max(mx,1),.42)));
+  const r=(Math.max(2.8,Math.min(14,2.8+9.5*Math.pow(n/Math.max(mx,1),.42))))*zm;
   L.circleMarker([p[0],p[1]],{radius:r,weight:p[3]?1.5:0,color:HALO,
    fillColor:p[3]?(PALA[th%PALA.length]):FAINT,fillOpacity:p[3]?.94:.45})
   .bindPopup(()=>{
@@ -395,13 +411,14 @@ document.querySelectorAll('[data-r]').forEach(x=>x.addEventListener('change',dra
 {const fq=$('#fquiet'); if(fq) fq.addEventListener('change',drawRisks);}
 document.querySelectorAll('[data-f]').forEach(x=>x.addEventListener('change',drawFacts));
 map.on('zoomend moveend',drawFacts);
+map.on('zoomend',applyZoom);
 {const fc=$('#fclear'); if(fc) fc.onclick=()=>hlayer.clearLayers();}
 // Підсвітка «Що поруч» знімається кліком по вільному місці карти.
 // Ловимо саме popupclose, а не click: клік по позначці в Leaflet теж
 // доходить до карти, і по кліку підсвітка гасла б одразу після появи.
 // Закриття вікна — це і є «користувач пішов з цього місця».
 map.on('popupclose',()=>hlayer.clearLayers());
-draw();drawRisks();drawFacts();
+draw();drawRisks();drawFacts();applyZoom();
 // Посилання виду kyiv.html#desna відкриває одразу потрібний район:
 // викладач може дати групі адресу конкретного району, а не «знайдіть самі».
 {const i=DSLUG.indexOf(decodeURIComponent(location.hash.slice(1)).toLowerCase());
