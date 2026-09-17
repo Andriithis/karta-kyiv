@@ -1,14 +1,17 @@
 # -*- coding: utf-8 -*-
-"""Бічна панель і спливні вікна: друга половина клієнтського JavaScript.
+"""Спільна частина клієнтського JavaScript — та, що не знає про рушій карти.
 
-Тут: побудова прапорців і кнопок панелі, паспорт проблеми за SARA
-(buildPassport, downloadPassport) і головна функція draw() — вона малює
-позначки подій і збирає вміст спливних вікон, зокрема картку проблеми.
+Тут: побудова панелі, панель рішень адреси, паспорт проблеми за SARA,
+computeVis() — хто саме зараз видимий і якого кольору, — і popupHTML(),
+вміст вікна адреси разом із карткою проблеми.
+
+Жодного звертання до Leaflet чи MapLibre: цей файл входить в обидві збірки,
+щоб правило кольору й склад переліку були однакові в обох. Малювання —
+у tpl_draw (Leaflet) і tpl_gl (MapLibre); карта й шари — у tpl_map.
 
 Правка картки проблеми чіпає лише цей файл.
-Карта, шари й підсвітка — у tpl_map.
 """
-JS_POPUP = r"""const $=s=>document.querySelector(s);
+JS_CORE = r"""const $=s=>document.querySelector(s);
 if(M.only){$('#subt').textContent=M.only+' район · за даними ЄДРСР';
  $('#backl').innerHTML='<a href="index.html" style="color:var(--ink);font-size:12px;text-decoration:none">← всі райони</a>';}
 $('#fc').innerHTML=M.courts.map((n,i)=>`<label><input type="checkbox" data-c="${i}" checked>${n}</label>`).join('');
@@ -232,24 +235,11 @@ function downloadPassport(p,pr){
  document.body.appendChild(a);a.click();document.body.removeChild(a);
 }
 window.__downloadPassport=downloadPassport;
-// Радіус у Leaflet — у пікселях і від масштабу не залежить, тому на зумі 18
-// одинична подія виходила пилинкою, у яку не влучиш пальцем. Множник підганяє
-// позначку під масштаб: на міському огляді нічого не злипається, зблизька
-// крапка впевнена.
-const zoomMul=z=>z<=12?.78:z<=14?1:z<=16?1.35:1.7;
-// Від цього зуму вмикається тінь під позначками (див. tpl_style).
-const DEEP_Z=15;
-let lastMul=null, zTimer=null;
-function applyZoom(){
- const z=map.getZoom();
- map.getContainer().classList.toggle('deep',z>=DEEP_Z);
- // Перемальовуємо не на кожен зум, а лише коли множник справді змінився, та
- // ще й із затримкою: під час плавного зуму zoomend приходить чергою, і без
- // паузи одинадцять тисяч позначок перемальовувалися б по кілька разів.
- if(zoomMul(z)===lastMul) return;
- clearTimeout(zTimer); zTimer=setTimeout(draw,140);
-}
-function draw(){
+// ---- ЩО ЗАРАЗ ВИДНО ----
+// Чиста частина малювання: які адреси показувати, скільки на них подій за
+// фільтром і якого кольору кожна крапка. Жодного звертання до карти — цим
+// користуються обидві збірки, щоб правило кольору лишалося одне на дві.
+function computeVis(){
  syncThemes();
  const C=sel('c'),A=sel('a'),Y=sel('y');
  // які теми зараз видимі за фільтром статей. Від цього набору залежать картки
@@ -259,7 +249,6 @@ function draw(){
  // проблемою», і перелік від періоду не пересортовується.
  const GVIS=new Set();M.groups.forEach((g,gi)=>{if(g[1].some(i=>A.has(i)))GVIS.add(gi)});
  const CF=MODE==='prob'?2:-1;
- heatOn=(MODE==='heat');
  const H=new Set();
  hb.querySelectorAll('.on').forEach(x=>PERIODS[+x.dataset.p][2].forEach(h=>H.add(h)));
  let tot=0;const vis=[];
@@ -310,20 +299,13 @@ function draw(){
    pr.thi===undefined||pr.thi<0||GVIS.has(pr.thi)))q++});
   const pi_=cb_.querySelector('[data-m="prob"] i');
   if(pi_) pi_.textContent=q?q.toLocaleString('uk'):'';}
- layer.clearLayers();if(heat){map.removeLayer(heat);heat=null}
- if(heatOn){heat=L.heatLayer(vis.flatMap(v=>Array(Math.min(v[1],20)).fill([v[0][0],v[0][1],1])),
-  {radius:18,blur:24,maxZoom:16}).addTo(map);return}
- const mx=vis.length?vis[0][1]:1;
- // Обвідка тепер світла (гало), а не темна: вона відділяє точку від підкладки,
- // не забруднюючи сам колір теми. Радіус із макета — удвічі менший за
- // колишній на максимумі, бо щільний центр колами зливався в суцільну пляму.
- const HALO=cssv('--halo'), FAINT=cssv('--faint'), zm=zoomMul(map.getZoom());
- lastMul=zm;
- for(const [p,n,th,byProblem,cnt,thMaj] of vis){
-  const r=(Math.max(2.8,Math.min(14,2.8+9.5*Math.pow(n/Math.max(mx,1),.42))))*zm;
-  L.circleMarker([p[0],p[1]],{radius:r,weight:p[3]?1.5:0,color:HALO,
-   fillColor:p[3]?(PALA[th%PALA.length]):FAINT,fillOpacity:p[3]?.94:.45})
-  .bindPopup(()=>{
+ return {vis,tot,C,A,Y,H,GVIS,CF};
+}
+// ---- ВІКНО АДРЕСИ ----
+// Готовий вузол DOM: склад подій, розклад доби, картки проблем, кнопки.
+// Рушій лише показує його — у Leaflet це bindPopup, у MapLibre setDOMContent.
+function popupHTML(p,n,th,byProblem,cnt,thMaj,st){
+   const C=st.C,A=st.A,Y=st.Y,H=st.H,GVIS=st.GVIS;
    const ev=p[4].filter(e=>C.has(e[0])&&A.has(e[1])&&Y.has(e[2])&&(!H.size||H.has(e[3])));
    const bc={},hh=new Array(24).fill(0);let nk=0;
    ev.forEach(e=>{bc[e[1]]=(bc[e[1]]||0)+1;if(e[3]>=0){hh[e[3]]++;nk++}});
@@ -410,27 +392,6 @@ function draw(){
    wrap.querySelectorAll('[data-na]').forEach(b=>b.onclick=()=>{
     const q=showAllNear(p[0],p[1],250);
     b.textContent=q?`Показано об’єктів: ${q}`:'Поруч нічого не знайдено'});
-   return wrap},{maxWidth:360,autoPanPaddingTopLeft:[14,14],autoPanPaddingBottomRight:[14,14]}).addTo(layer)}
+   return wrap;
 }
-// Кнопок «Теплова карта», «Скинути фільтри», «Зняти всі» й «Обрати всі» більше
-// немає: теплова стала режимом угорі, а решту робить сам перелік тем.
-// #fquiet перемальовує ШАРИ РИЗИКУ, а не позначки подій — тому його треба
-// і виключити із загального правила, і підписати окремо. Інакше прапорець
-// ніби працює (draw() відпрацьовує), але пунктир не з'являється.
-document.querySelectorAll('#side input:not([data-r]):not([data-f]):not(#fquiet)').forEach(x=>x.addEventListener('change',draw));
-document.querySelectorAll('[data-r]').forEach(x=>x.addEventListener('change',drawRisks));
-{const fq=$('#fquiet'); if(fq) fq.addEventListener('change',drawRisks);}
-document.querySelectorAll('[data-f]').forEach(x=>x.addEventListener('change',drawFacts));
-map.on('zoomend moveend',drawFacts);
-map.on('zoomend',applyZoom);
-{const fc=$('#fclear'); if(fc) fc.onclick=()=>hlayer.clearLayers();}
-// Підсвітка «Що поруч» знімається кліком по вільному місці карти.
-// Ловимо саме popupclose, а не click: клік по позначці в Leaflet теж
-// доходить до карти, і по кліку підсвітка гасла б одразу після появи.
-// Закриття вікна — це і є «користувач пішов з цього місця».
-map.on('popupclose',()=>hlayer.clearLayers());
-paintRows();draw();drawRisks();drawFacts();applyZoom();
-// Посилання виду kyiv.html#desna відкриває одразу потрібний район:
-// викладач може дати групі адресу конкретного району, а не «знайдіть самі».
-{const i=DSLUG.indexOf(decodeURIComponent(location.hash.slice(1)).toLowerCase());
- if(i>=0) enterDistrict(i,false); else if(DN.length&&!M.only) paintDistrictList();}"""
+"""

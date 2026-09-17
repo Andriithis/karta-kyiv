@@ -2,9 +2,10 @@
 """HTML-шаблон карти. Збирається з чотирьох частин.
 
     tpl_style   шапка сторінки і стилі
-    tpl_body    розмітка бічної панелі
-    tpl_map     карта, шари, підсвітка «що поруч»
-    tpl_popup   панель, паспорт SARA, картка проблеми (draw)
+    tpl_body    розмітка панелі
+    tpl_map     карта, шари, підсвітка «що поруч» (Leaflet)
+    tpl_core    панель, паспорт SARA, картка проблеми, computeVis — спільне
+    tpl_draw    малювання позначок (Leaflet)
 
 Плейсхолдери __META__, __PTS__, __RISKS__, __POP__, __FACTS__ підставляє
 step3_map.main(). Тут немає жодного обчислення — тільки те, що бачить
@@ -16,6 +17,11 @@ step3_map.main(). Тут немає жодного обчислення — ті
 from tpl_style import HEAD
 from tpl_body import BODY
 from tpl_map import JS_MAP
-from tpl_popup import JS_POPUP
+from tpl_core import JS_CORE
+from tpl_draw import JS_DRAW
 
-TPL = HEAD + BODY + '\n<script>\n' + JS_MAP + '\n' + JS_POPUP + '\n</script></body></html>'
+# Порядок частин у скрипті важить: tpl_map створює карту, шари й PALA, tpl_core
+# на них спирається, коли будує панель, а tpl_draw малює вже по готовому.
+TPL = (HEAD + BODY + '\n<script>\n'
+       + JS_MAP + '\n' + JS_CORE + '\n' + JS_DRAW
+       + '\n</script></body></html>')
