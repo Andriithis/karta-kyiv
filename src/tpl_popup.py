@@ -17,35 +17,68 @@ $('#fc').innerHTML=M.courts.map((n,i)=>`<label><input type="checkbox" data-c="${
 if(M.only){const w_=$('#fcw'); if(w_) w_.style.display='none';}
 $('#fy').innerHTML=M.years.map((n,i)=>`<label><input type="checkbox" data-y="${i}" checked>${n}</label>`).join('');
 const fmt=n=>n.toLocaleString('uk');
-$('#fa').innerHTML=M.groups.map((g,gi)=>`<div class="gr" data-g="${gi}">
-<div class="gh"><span class="ar">&#9656;</span><input type="checkbox" class="gt" data-gt="${gi}" checked>
-<span class="nm">${g[0]}</span><span class="n">${fmt(g[2])}</span></div>
-<div class="gb">`+g[1].map(i=>`<label><input type="checkbox" data-a="${i}" checked>
-<span>${M.cats[i]}</span><span class="n">${fmt(M.counts[i])}</span></label>`).join('')+
-`</div></div>`).join('');
-document.querySelectorAll('.gh').forEach(el=>el.onclick=e=>{
- if(e.target.tagName==='INPUT')return; el.parentElement.classList.toggle('open')});
-document.querySelectorAll('.gt').forEach(el=>el.onchange=()=>{
- M.groups[+el.dataset.gt][1].forEach(i=>{const b=document.querySelector(`[data-a="${i}"]`);if(b)b.checked=el.checked});
- draw()});
-function syncThemes(){document.querySelectorAll('.gt').forEach(el=>{
- const ids=M.groups[+el.dataset.gt][1], on=ids.filter(i=>document.querySelector(`[data-a="${i}"]`).checked).length;
- el.checked=on>0; el.indeterminate=on>0&&on<ids.length})}
+// Прапорці окремих статей лишаються, але схованими: підрівня статей у панелі
+// більше немає, рядок вмикає всю тему разом. draw() і GVIS спираються саме на
+// них, тому просто прибрати їх не можна.
+$('#fasub').innerHTML=M.groups.map(g=>g[1].map(i=>
+ `<input type="checkbox" data-a="${i}" checked>`).join('')).join('');
+// Один перелік тем замість двох блоків: квадрат вмикає ПОДІЇ теми, риска
+// поруч — ПРОГНОЗ РИЗИКУ тієї самої теми, праворуч від риски точність шару.
+// Доти ті самі сім кольорів жили окремо в «Правопорушеннях» і в «Прогнозі
+// ризику», і це плутало: здавалося, що це два різні переліки.
+const RISKOF={};                         // індекс теми -> ключ її шару ризику
+Object.keys(R.lines||{}).forEach(k=>{const v=R.lines[k];
+ if(k.startsWith('risk_')&&(v.kind==='theme'||v.nodata)&&RISKOF[v.theme|0]===undefined)
+  RISKOF[v.theme|0]=k});
+$('#fasub').insertAdjacentHTML('beforeend',Object.keys(RISKOF).map(gi=>
+ `<input type="checkbox" data-r="${RISKOF[gi]}">`).join(''));
+$('#fa').innerHTML=M.groups.map((g,gi)=>{
+ const rk=RISKOF[gi], nod=(!rk||R.lines[rk].nodata)?1:0;
+ return `<div class="row" data-g="${gi}" data-on="1" data-nod="${nod}">
+  <span class="sq"></span><span class="nm">${g[0]}</span><span class="n">${fmt(g[2])}</span>
+  <span class="ln" data-rk="${rk||''}"></span><span class="acc"></span></div>`}).join('');
+function paintRow(row){
+ const gi=+row.dataset.g, ln=row.querySelector('.ln'), k=ln.dataset.rk;
+ const inp=k?document.querySelector(`[data-r="${k}"]`):null, on=!!(inp&&inp.checked);
+ row.querySelector('.sq').style.background=PALA[gi%PALA.length];
+ ln.style.background=on?RCOL[k]:'';
+ row.querySelector('.acc').textContent=
+   on&&R.lines[k]&&R.lines[k].hit!=null?R.lines[k].hit+'%':'';
+}
+function paintRows(){document.querySelectorAll('#fa .row').forEach(paintRow)}
+$('#fa').onclick=e=>{
+ const row=e.target.closest('.row'); if(!row) return;
+ if(e.target.classList.contains('ln')){
+  if(row.dataset.nod==='1') return;      // замало подій для навчання моделі
+  const inp=document.querySelector(`[data-r="${e.target.dataset.rk}"]`);
+  inp.checked=!inp.checked; paintRow(row); drawRisks(); return}
+ const on=row.dataset.on!=='0';
+ M.groups[+row.dataset.g][1].forEach(i=>{
+  const b=document.querySelector(`[data-a="${i}"]`); if(b) b.checked=!on});
+ row.dataset.on=on?'0':'1'; draw()};
+function syncThemes(){document.querySelectorAll('#fa .row').forEach(row=>{
+ const ids=M.groups[+row.dataset.g][1];
+ row.dataset.on=ids.some(i=>document.querySelector(`[data-a="${i}"]`).checked)?'1':'0'})}
 const PERIODS=[['Ранок','6–11',[6,7,8,9,10,11]],['День','12–17',[12,13,14,15,16,17]],
  ['Вечір','18–23',[18,19,20,21,22,23]],['Ніч','0–5',[0,1,2,3,4,5]]];
 // Документи кроку 6. Версія одна, тож посилання однакові для всіх.
 $ify('#docs',
- '<a href="doslidzhennya.html" target="_blank" rel="noopener">Дослідження ризиків ↗</a>'+
- '<a href="rezyume.html" target="_blank" rel="noopener">Резюме на одну сторінку ↗</a>'+
- '<a href="analiz.html" target="_blank" rel="noopener">Аналіз поточного стану ↗</a>');
-// п.7.7: замість чотирьох кнопок категорій — лише "Усі" й "Тільки проблеми"
-const CATS=[['Усі','подій ≥1','cA',-1],
-            ['Тільки проблеми',`з відібраних ${M.n_problems||50}`,'c2',2]];
+ '<a href="doslidzhennya.html" target="_blank" rel="noopener">Дослідження ризиків<em>HTML</em></a>'+
+ '<a href="rezyume.html" target="_blank" rel="noopener">Резюме на одну сторінку<em>HTML</em></a>'+
+ '<a href="analiz.html" target="_blank" rel="noopener">Аналіз поточного стану<em>HTML</em></a>');
+// Три режими — три відповіді на одне питання «що показувати». Теплова карта
+// доти була окремою кнопкою збоку й читалася як ще один фільтр поверх решти.
+const MODES=[['all','Усі'],['prob','Проблеми'],['heat','Теплова']];
+let MODE='all';
 const cb_=$('#fcat');
-CATS.forEach((c,i)=>{const sp=document.createElement('span');
- sp.className=c[2]+(i===0?' on':'');sp.innerHTML=`${c[0]}<i>${c[1]}</i>`;sp.dataset.c=c[3];cb_.appendChild(sp)});
-cb_.onclick=e=>{const t=e.target.closest('[data-c]');if(!t)return;
- [...cb_.children].forEach(x=>x.classList.remove('on'));t.classList.add('on');draw()};
+cb_.innerHTML=MODES.map(([k,n])=>
+ `<button data-m="${k}"${k===MODE?' aria-pressed="true"':''}>${n}`+
+ (k==='prob'?`<i>${M.n_problems||''}</i>`:'')+'</button>').join('');
+cb_.onclick=e=>{const b=e.target.closest('[data-m]'); if(!b) return;
+ MODE=b.dataset.m;
+ cb_.querySelectorAll('button').forEach(x=>
+   x.setAttribute('aria-pressed',x===b?'true':'false'));
+ draw()};
 const CATNAME={2:['Проблема','var(--ink)','у кураторському списку'],0:null};
 const hb=$('#hr');
 PERIODS.forEach((p,i)=>{const s=document.createElement('span');
@@ -143,26 +176,17 @@ function onScopeChange(){
  if(M.only){draw();return}                    // окремий файл району — перемикати нічого
  paintDistrictList();
  const c=recount();
- document.querySelectorAll('[data-a]').forEach(inp=>{
-  const n=inp.parentElement.querySelector('.n'); if(n)n.textContent=fmt(c[+inp.dataset.a])});
- document.querySelectorAll('.gt').forEach(inp=>{
-  const g=M.groups[+inp.dataset.gt], n=inp.parentElement.querySelector('.n');
-  if(n)n.textContent=fmt(g[1].reduce((a,i)=>a+c[i],0))});
- // Перелік районів за судом усередині району зайвий — як і в окремих файлах.
- {const w=$('#fcw'); if(w) w.style.display=CURD<0?'':'none';}
+ document.querySelectorAll('#fa .row').forEach(row=>{
+  const g=M.groups[+row.dataset.g];
+  row.querySelector('.n').textContent=fmt(g[1].reduce((a,i)=>a+c[i],0))});
  if(CURD<0){
   $('#subt').textContent='за даними ЄДРСР · місто Київ';
   $('#backl').innerHTML='';
-  $ify('#skew',M.skew?`<div class="skew">${M.skew}</div>`:'');
  }else{
   $('#subt').textContent=DN[CURD]+' район';
   $('#backl').innerHTML='<a href="#" class="upl">← усе місто</a>';
   $('#backl').querySelector('.upl').onclick=e=>{e.preventDefault();exitDistrict()};
-  $ify('#skew',(M.dskew||[])[CURD]?`<div class="skew">${M.dskew[CURD]}</div>`:'');
  }
- const c2=cb_.querySelector('.c2');
- if(c2)c2.querySelector('i').textContent=CURD<0
-   ?`з відібраних ${M.n_problems}`:`${(M.dprob||[])[CURD]||0} у цьому районі`;
  draw();
 }
 function buildPassport(p,pr){
@@ -234,7 +258,8 @@ function draw(){
  // обраний рік — це «покажи події цього року», а не «адреса перестала бути
  // проблемою», і перелік від періоду не пересортовується.
  const GVIS=new Set();M.groups.forEach((g,gi)=>{if(g[1].some(i=>A.has(i)))GVIS.add(gi)});
- const CF=+(cb_.querySelector('.on')||{dataset:{c:-1}}).dataset.c;
+ const CF=MODE==='prob'?2:-1;
+ heatOn=(MODE==='heat');
  const H=new Set();
  hb.querySelectorAll('.on').forEach(x=>PERIODS[+x.dataset.p][2].forEach(h=>H.add(h)));
  let tot=0;const vis=[];
@@ -274,30 +299,17 @@ function draw(){
   const th=byProblem?thProblem:thMaj;
   tot+=n;vis.push([p,n,th,byProblem,cnt,thMaj])}
  vis.sort((a,b)=>b[1]-a[1]);
- // Список і справді слухається перемикача — `vis` вище вже відфільтровано
- // за режимом. Але заголовок був той самий в обох режимах, тож у режимі
- // «Тільки проблеми» він читався як другий, окремий перелік проблем поруч
- // із картою. Тепер заголовок каже, що саме зараз у списку.
- // Фільтр по p[3] лишається: це адреси з номером будинку. Центри вулиць
- // сюди не пускаємо — там число означає всю вулицю, і в переліку адрес
- // воно вводило б в оману.
- const rank=vis.filter(v=>v[0][3]);
- {const th_=$('#toph');
-  if(th_) th_.textContent = CF>=0 ? 'Проблеми за фільтром'
-                                  : 'Найгарячіші адреси за фільтром';}
- $('#cnt').textContent=tot.toLocaleString('uk');
- $('#cntl').textContent=`подій на ${vis.length.toLocaleString('uk')} адресах`;
- // лічильник рахує по тому самому правилу, що й перелік: інакше він показував
- // проблеми, яких за поточним фільтром на карті немає
+ // Переліку адрес у панелі більше немає — він переїздить у звіт. Лишається
+ // одне число: скільки подій і на скількох адресах зараз видно.
+ $('#cntl').textContent=
+   `${tot.toLocaleString('uk')} подій на ${vis.length.toLocaleString('uk')} адресах`;
+ // Скільки проблем у поточних межах — числом біля самого режиму, за тим самим
+ // правилом, що й перелік: проблема за прихованим напрямком не рахується,
+ // інакше число не сходилося б з тим, що видно на карті.
  {let q=0;P.forEach(p=>{if(inScope(p)&&probsOf(p).some(pr=>
    pr.thi===undefined||pr.thi<0||GVIS.has(pr.thi)))q++});
-  $('#cathint').innerHTML=q?`У поточних межах: <b style="color:var(--ink)">${q.toLocaleString('uk')}</b> проблем.`:'';}
- $('#top').innerHTML=rank.slice(0,15).map((v,i)=>
-  `<div data-i="${i}"><span>${v[0][2]}</span><b>${v[1]}</b></div>`).join('')||'<div class="sub">нема даних</div>';
- [...$('#top').children].forEach((el,i)=>el.onclick=()=>{const v=rank[i];map.setView([v[0][0],v[0][1]],17);
-  setTimeout(()=>{let best=null,bd=1e9;layer.eachLayer(l=>{const ll=l.getLatLng();
-   const d=Math.abs(ll.lat-v[0][0])+Math.abs(ll.lng-v[0][1]);if(d<bd){bd=d;best=l}});
-   if(best&&bd<1e-4)best.openPopup()},350)});
+  const pi_=cb_.querySelector('[data-m="prob"] i');
+  if(pi_) pi_.textContent=q?q.toLocaleString('uk'):'';}
  layer.clearLayers();if(heat){map.removeLayer(heat);heat=null}
  if(heatOn){heat=L.heatLayer(vis.flatMap(v=>Array(Math.min(v[1],20)).fill([v[0][0],v[0][1],1])),
   {radius:18,blur:24,maxZoom:16}).addTo(map);return}
@@ -400,11 +412,8 @@ function draw(){
     b.textContent=q?`Показано об’єктів: ${q}`:'Поруч нічого не знайдено'});
    return wrap},{maxWidth:360,autoPanPaddingTopLeft:[14,14],autoPanPaddingBottomRight:[14,14]}).addTo(layer)}
 }
-$('#heat').onclick=e=>{heatOn=!heatOn;e.target.classList.toggle('act');e.target.textContent=heatOn?'Показати точки':'Теплова карта';draw()};
-$('#reset').onclick=()=>{document.querySelectorAll('#side input:not([data-r]):not([data-f])').forEach(x=>x.checked=true);
- hb.querySelectorAll('.on').forEach(x=>x.classList.remove('on'));draw()};
-$('#none').onclick=()=>{document.querySelectorAll('[data-a]').forEach(x=>x.checked=false);draw()};
-$('#all').onclick=()=>{document.querySelectorAll('[data-a]').forEach(x=>x.checked=true);draw()};
+// Кнопок «Теплова карта», «Скинути фільтри», «Зняти всі» й «Обрати всі» більше
+// немає: теплова стала режимом угорі, а решту робить сам перелік тем.
 // #fquiet перемальовує ШАРИ РИЗИКУ, а не позначки подій — тому його треба
 // і виключити із загального правила, і підписати окремо. Інакше прапорець
 // ніби працює (draw() відпрацьовує), але пунктир не з'являється.
@@ -420,7 +429,7 @@ map.on('zoomend',applyZoom);
 // доходить до карти, і по кліку підсвітка гасла б одразу після появи.
 // Закриття вікна — це і є «користувач пішов з цього місця».
 map.on('popupclose',()=>hlayer.clearLayers());
-draw();drawRisks();drawFacts();applyZoom();
+paintRows();draw();drawRisks();drawFacts();applyZoom();
 // Посилання виду kyiv.html#desna відкриває одразу потрібний район:
 // викладач може дати групі адресу конкретного району, а не «знайдіть самі».
 {const i=DSLUG.indexOf(decodeURIComponent(location.hash.slice(1)).toLowerCase());

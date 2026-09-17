@@ -192,98 +192,41 @@ const RCOL={metro:'#38bdf8',busstop:'#7dd3fc',
  flow_school:'#fbbf24',flow_transit:'#38bdf8',flow_shop:'#f472b6'};
 // ризик успадковує колір своєї теми — той самий, що в подіях
 Object.keys(R.lines||{}).forEach(k=>{if(k.startsWith('risk_'))RCOL[k]=PALA[(R.lines[k].theme||0)%PALA.length]});;
-if(M.skew) $ify('#skew', `<div class="skew">${M.skew}</div>`);
 function $ify(sel,html){const el=document.querySelector(sel);if(el)el.innerHTML=html}
 {
- // --- прогноз ризику ---
- let rh='';
- // Тільки КАТЕГОРІЇ (теми). Механізми ('risk_ДОР_ДТП' тощо) модель рахує й
- // далі, вони лишаються в risk.json і в дослідженні — але в панелі їх було
- // вісімнадцять проти восьми тем, і список читався як звалище. Рішення
- // 7 вересня: у панелі лише теми, по одному рядку на категорію.
- const rkeys=Object.keys(R.lines||{})
-   .filter(k=>k.startsWith('risk_')&&(R.lines[k].kind==='theme'||R.lines[k].nodata))
-   .sort((a,b)=>(R.lines[b].hit||0)-(R.lines[a].hit||0));
- // Один рядок панелі. Ключ — тема ('risk_ДОР') або механізм ('risk_ДОР_ДТП').
- const rrow=k=>{const v=R.lines[k],c=RCOL[k];
-  if(v.nodata){
-   // тема є в списку правопорушень, але подій замало на навчання моделі
-   return `<div class="rw nod" style="border-left-color:var(--rule)">
-    <label class="rl"><input type="checkbox" disabled>
-     <span class="sw" style="background:var(--rule)"></span>
-     <span class="nm">${v.title}</span>
-     <span class="acc">—</span></label>
-    <div class="why">замало подій для навчання моделі</div></div>`}
-  return `<div class="rw" style="border-left-color:${c}">
-   <label class="rl"><input type="checkbox" data-r="${k}">
-    <span class="sw" style="background:${c}"></span>
-    <span class="nm">${v.title}</span>
-    <span class="acc">${v.hit}%</span></label>
-   ${v.why?`<div class="why">${v.why}</div>`:''}</div>`};
- // Механізмів більше, ніж тем, тож панель згорнута: тема -> її механізми.
- const grp={};
- rkeys.forEach(k=>{const g=R.lines[k].group||R.lines[k].title;(grp[g]=grp[g]||[]).push(k)});
- Object.keys(grp).sort((a,b)=>
-   Math.min(...grp[a].map(k=>R.lines[k].theme|0))-Math.min(...grp[b].map(k=>R.lines[k].theme|0))
- ).forEach(g=>{
-  const ks=grp[g].sort((a,b)=>
-    ((R.lines[a].kind==='theme')?0:1)-((R.lines[b].kind==='theme')?0:1)
-    ||R.lines[b].hit-R.lines[a].hit);
-  if(ks.length<2){rh+=rrow(ks[0]);return}
-  rh+=`<details class="rg"><summary><span class="gn">${g}</span>
-   <span class="gc">${ks.length}</span></summary>${ks.map(rrow).join('')}</details>`});
- if(rkeys.length) rh+=`<div class="lgd" style="color:${RCOL[rkeys[0]]}"><span>менший</span><i></i><span>більший</span></div>`;
- $ify('#frisk',rh);
-
- // --- контекст ---
+ // --- КОНТЕКСТ: населення, потоки й один вимикач на всю інфраструктуру ---
+ // Прогноз ризику звідси пішов у рядки тем (tpl_popup): ті самі сім кольорів
+ // жили у двох різних блоках, і панель читалася як два переліки про одне.
+ // Поділ об'єктів на «притягують / збирають людей» теж прибрано — слухачеві
+ // він нічого не давав, а місця займав більше за самі об'єкти.
+ const ctxRow=(k,name,col,n)=>`<div class="row" data-ctx="${k}" data-on="0">
+  <span class="sq" style="background:${col}"></span><span class="nm">${name}</span>
+  <span class="n">${n.toLocaleString('uk')}</span>
+  <span class="ln" style="visibility:hidden"></span><span class="acc"></span></div>`;
  let ch='';
- if(POP.length) ch+=`<label><input type="checkbox" data-r="pop">
-   <span class="sw" style="background:#3b4a63"></span><span>Щільність населення</span>
-   <span class="n">${POP.length.toLocaleString('uk')}</span></label>`;
+ if(POP.length) ch+=ctxRow('pop','Щільність населення','#4b6fa8',POP.length);
  ['flow_school','flow_transit','flow_shop'].forEach(k=>{const v=R.lines&&R.lines[k];if(!v)return;
-  ch+=`<label><input type="checkbox" data-r="${k}">
-   <span class="sw" style="background:${RCOL[k]}"></span><span>${v.title}</span>
-   <span class="n">${v.items.length.toLocaleString('uk')}</span></label>`});
+  ch+=ctxRow(k,v.title,RCOL[k],v.items.length)});
+ const fcnt=(F.cats||[]).reduce((a,c)=>a+c.pts.length,0);
+ if(fcnt) ch+=ctxRow('facts','Об’єкти довкола','var(--dim)',fcnt);
  $ify('#fctx',ch);
-
- // --- середовище: чинники, згруповані за роллю ---
- // Сімнадцять прапорців поспіль читалися як звалище, і жодної групової дії
- // не було: щоб побачити всю інфраструктуру, треба було клацнути сімнадцять
- // разів. Тепер групи згорнуті, а над ними — одна кнопка на весь шар.
- let ff='';
+ // Прапорці окремих видів об'єктів і шарів контексту лишаються схованими:
+ // drawFacts() і drawRisks() читають саме їх, а вмикає їх тепер рядок вище.
  (F.cats||[]).forEach((c,ci)=>c._i=ci);
- (F.groups||[]).forEach((gn,gi)=>{
-  const inG=(F.cats||[]).filter(c=>c.g===gi&&c.pts.length);
-  if(!inG.length) return;
-  const tot=inG.reduce((a,c)=>a+c.pts.length,0);
-  ff+=`<details class="fg"><summary><span class="gn">${gn}</span>`
-    +`<span class="gc">${tot.toLocaleString('uk')}</span></summary>`;
-  inG.forEach(c=>{ff+=`<label><input type="checkbox" data-f="${c._i}">
-    <span class="fic sw2" style="border-color:${FCOL[gi]}">${FICON[c.k]||'•'}</span
-     ><span>${c.n}</span>
-    <span class="n">${c.pts.length.toLocaleString('uk')}</span></label>`});
-  ff+='</details>';
- });
- $ify('#ffact',ff||'<div class="sub">шар чинників недоступний</div>');
- // Одна кнопка на весь шар. Підпис мусить знати й про поодинокі кліки,
- // інакше він бреше після першого ж прапорця.
- {const fb=document.querySelector('#fall'), box=document.querySelector('#ffact');
-  if(fb&&box){
-   const all=()=>[...document.querySelectorAll('[data-f]')];
-   const sync=()=>{fb.textContent=all().some(x=>x.checked)
-     ?'Прибрати всі об’єкти':'Показати всі об’єкти';};
-   fb.onclick=()=>{const on=all().some(x=>x.checked);
-     all().forEach(x=>x.checked=!on); sync(); drawFacts();};
-   box.addEventListener('change',sync);
-   sync();
-  }}
- $ify('#fhint','Об’єкти, які модель рахує як чинники ризику. З’являються від масштабу '+
-   FZOOM+' — інакше карта нечитабельна.'+
-   ' У картці проблеми та у вікні ризикованої вулиці є кнопка «Показати чинники '+
-   'поруч» — вона підсвічує саме ті об’єкти, що дали цьому місцю ризик. '+
-   'Кнопка «Що поруч» у вікні будь-якої адреси показує все в радіусі 250 м, '+
-   'без підказки моделі: які з цих об’єктів справді пояснюють скупчення — '+
-   'визначаєте ви.');
+ $ify('#ffact',(F.cats||[]).map(c=>`<input type="checkbox" data-f="${c._i}">`).join('')
+   +['pop','flow_school','flow_transit','flow_shop'].map(k=>
+     `<input type="checkbox" data-r="${k}">`).join(''));
+ $ify('#fgroups',(F.groups||[]).join(' · '));
+ {const box=document.querySelector('#fctx');
+  if(box) box.onclick=e=>{
+   const row=e.target.closest('[data-ctx]'); if(!row) return;
+   const k=row.dataset.ctx, on=row.dataset.on!=='0';
+   row.dataset.on=on?'0':'1';
+   if(k==='facts'){document.querySelectorAll('[data-f]').forEach(x=>x.checked=!on);
+     drawFacts(); return}
+   const inp=document.querySelector(`[data-r="${k}"]`);
+   if(inp){inp.checked=!on; drawRisks()}
+  };}
 }
 // підсвічує об'єкти, які модель порахувала для конкретної точки, з колами радіусів
 function showNear(la,lo,factors){
@@ -527,16 +470,10 @@ function setTheme(t){
    b.setAttribute('aria-pressed',b.dataset.t===t?'true':'false'));
  Object.keys(R.lines||{}).forEach(k=>{
    if(k.startsWith('risk_'))RCOL[k]=PALA[(R.lines[k].theme||0)%PALA.length]});
- // Квадратики в переліку ризиків проставлені інлайном при побудові списку.
- // Перебудувати список не можна: разом з ним загинули б і поставлені галочки,
- // і підписки на них, — тому міняємо колір на місці.
- document.querySelectorAll('#frisk .rw').forEach(el=>{
-  const inp=el.querySelector('[data-r]'); if(!inp||!RCOL[inp.dataset.r]) return;
-  el.style.borderLeftColor=RCOL[inp.dataset.r];
-  const s=el.querySelector('.sw'); if(s) s.style.background=RCOL[inp.dataset.r]});
- {const lg=document.querySelector('#frisk .lgd');
-  const k=Object.keys(RCOL).find(x=>x.startsWith('risk_'));
-  if(lg&&k) lg.style.color=RCOL[k];}
+ // Кольори в рядках тем проставлені інлайном при побудові переліку. Перебудувати
+ // перелік не можна: разом з ним загинули б і поставлені галочки, і підписки
+ // на них, — тому міняємо колір на місці.
+ paintRows();
  if(cityMask) cityMask.setStyle({color:cssv('--ground'),fillColor:cssv('--ground')});
  if(cityLine) cityLine.setStyle({color:cssv('--dim')});
  tiles(); paintScope(); draw(); drawRisks(); drawFacts();
