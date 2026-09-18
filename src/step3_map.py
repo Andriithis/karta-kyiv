@@ -14,7 +14,10 @@ import mech as M
 import pravo as PR          # офіційні назви статей для картки і листа
 # HTML-шаблон винесено в окремий файл: разом із ним модуль важив 67 КБ,
 # а це один файл на дві дуже різні речі — логіку відбору й розмітку.
-from step3_tpl import TPL
+from step3_tpl import TPL, TPL_GL
+# Районні файли в MapLibre-збірці вмикаються цим одним рядком — після того, як
+# Андрій затвердить паритет і GL стане типовою версією.
+GL_DISTRICTS = False
 from map_excl import load_excl, detect_institutional
 import map_layers
 import map_problems
@@ -226,11 +229,18 @@ def main(district=None, out=None):
         P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
         district, risks, ER, FACT, theme_rgrid, pred_theme)
 
-    html = TPL.replace('__POP__', json.dumps(POP, separators=(',', ':'))) \
-              .replace('__FACTS__', json.dumps(FACT, ensure_ascii=False, separators=(',', ':'))) \
-              .replace('__RISKS__', json.dumps(risks, ensure_ascii=False, separators=(',', ':'))) \
-              .replace('__META__', json.dumps(meta, ensure_ascii=False)) \
-              .replace('__PTS__', json.dumps(P, ensure_ascii=False, separators=(',', ':')))
+    # Дані серіалізуються один раз і лягають однаково в обидві збірки — і в
+    # Leaflet, і в MapLibre. Інакше порівнювати їх на паритет не було б сенсу.
+    subst = {'__POP__': json.dumps(POP, separators=(',', ':')),
+             '__FACTS__': json.dumps(FACT, ensure_ascii=False, separators=(',', ':')),
+             '__RISKS__': json.dumps(risks, ensure_ascii=False, separators=(',', ':')),
+             '__META__': json.dumps(meta, ensure_ascii=False),
+             '__PTS__': json.dumps(P, ensure_ascii=False, separators=(',', ':'))}
+    def fill(tpl):
+        for k, v in subst.items():
+            tpl = tpl.replace(k, v)
+        return tpl
+    html = fill(TPL)
     # Крок 5 бере звідси числа районів для плиток — щоб не збирати десять карт
     # заради десяти чисел.
     global LAST_META, LAST_DOCS
@@ -262,6 +272,13 @@ def main(district=None, out=None):
 
     open(dst, 'w', encoding='utf-8').write(html)
     print(f'готово: {os.path.basename(dst)} ({os.path.getsize(dst)/1048576:.1f} МБ)')
+    # Друга збірка, MapLibre, поруч із першою. Поки що лише міська карта:
+    # районні файли переходять разом із перемиканням типової версії, і тоді
+    # досить поставити GL_DISTRICTS = True.
+    if district is None or GL_DISTRICTS:
+        dst_gl = dst[:-len('.html')] + '-gl.html'
+        open(dst_gl, 'w', encoding='utf-8').write(fill(TPL_GL))
+        print(f'готово: {os.path.basename(dst_gl)} ({os.path.getsize(dst_gl)/1048576:.1f} МБ)')
     return theme_cnt
 
 if __name__ == '__main__':

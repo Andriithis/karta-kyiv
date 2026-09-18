@@ -11,12 +11,17 @@
 кнопок, карток, тіней і заокруглень; активний стан — підкреслення,
 розділення — волосяна лінія.
 """
-HEAD = r"""<!DOCTYPE html><html lang="uk"><head><meta charset="utf-8">
+LIBS_LEAFLET = r"""<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>"""
+# MapLibre 6.x поставляється лише як ES-модуль: dist/maplibre-gl.js більше
+# немає, тож сам JS підтягує скрипт сторінки через import (див. step3_tpl).
+# Тут лише стилі бібліотеки. Версія точна — оновлення не має приходити саме.
+LIBS_GL = r"""<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.10.0/dist/maplibre-gl.css">"""
+HEAD_TPL = r"""<!DOCTYPE html><html lang="uk"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Карта правопорушень Києва</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+__LIBS__
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;500;600&family=Commissioner:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -201,4 +206,20 @@ aside#side{width:360px;flex:0 0 360px;background:var(--panel);color:var(--ink);
 .rpop table.fx .fr{color:var(--dim);font-size:10.5px;margin-top:1px;line-height:1.35}
 @media(max-width:900px){#wrap{flex-direction:column}#map{height:58%;flex:none}
  aside#side{width:auto;flex:1;border-left:0;border-top:1px solid var(--rule);padding:18px 16px 0}}
+/* ---- MapLibre ----
+   Ті самі змінні тем, що й для Leaflet: вікно, атрибуція й кнопки масштабу
+   мають виглядати однаково в обох збірках, інакше паритет не перевіриш оком.
+   На Leaflet-сторінці ці правила просто ні на що не лягають. */
+.maplibregl-map{font-family:var(--sans)}
+.maplibregl-popup-content{background:var(--panel);color:var(--ink);border-radius:8px;
+ padding:12px 14px;box-shadow:0 3px 14px rgba(0,0,0,.25)}
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip{border-top-color:var(--panel)}
+.maplibregl-popup-anchor-top .maplibregl-popup-tip{border-bottom-color:var(--panel)}
+.maplibregl-popup-anchor-left .maplibregl-popup-tip{border-right-color:var(--panel)}
+.maplibregl-popup-anchor-right .maplibregl-popup-tip{border-left-color:var(--panel)}
+.maplibregl-ctrl-attrib{background:var(--glass)!important;color:var(--faint);font-size:9.5px}
+.maplibregl-ctrl-attrib a{color:var(--dim)}
+.maplibregl-ctrl-group{background:var(--panel)}
 </style></head>"""
+HEAD = HEAD_TPL.replace('__LIBS__', LIBS_LEAFLET)
+HEAD_GL = HEAD_TPL.replace('__LIBS__', LIBS_GL)

@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 """HTML-шаблон карти. Збирається з чотирьох частин.
 
-    tpl_style   шапка сторінки і стилі
+    tpl_style   шапка сторінки і стилі (дві шапки: Leaflet і MapLibre)
     tpl_body    розмітка панелі
+    tpl_base    дані, палітра, теми, константи — спільне
     tpl_map     карта, шари, підсвітка «що поруч» (Leaflet)
     tpl_core    панель, паспорт SARA, картка проблеми, computeVis — спільне
     tpl_draw    малювання позначок (Leaflet)
+    tpl_gl      те саме на MapLibre — друга збірка, kyiv-gl.html
 
 Плейсхолдери __META__, __PTS__, __RISKS__, __POP__, __FACTS__ підставляє
 step3_map.main(). Тут немає жодного обчислення — тільки те, що бачить
@@ -14,14 +16,24 @@ step3_map.main(). Тут немає жодного обчислення — ті
 Розділено 2 вересня 2026: правка в одній частині більше не пересилає
 весь шаблон цілком.
 """
-from tpl_style import HEAD
+from tpl_style import HEAD, HEAD_GL
 from tpl_body import BODY
+from tpl_base import JS_BASE
 from tpl_map import JS_MAP
 from tpl_core import JS_CORE
 from tpl_draw import JS_DRAW
+from tpl_gl import JS_GL_LOAD, JS_GL_MAP, JS_GL_DRAW
 
-# Порядок частин у скрипті важить: tpl_map створює карту, шари й PALA, tpl_core
-# на них спирається, коли будує панель, а tpl_draw малює вже по готовому.
+# Порядок частин у скрипті важить: tpl_base підставляє дані й палітру,
+# рушій створює карту й шари, tpl_core будує панель, а останній файл малює
+# вже по готовому. В обох збірках порядок той самий.
 TPL = (HEAD + BODY + '\n<script>\n'
-       + JS_MAP + '\n' + JS_CORE + '\n' + JS_DRAW
+       + JS_BASE + '\n' + JS_MAP + '\n' + JS_CORE + '\n' + JS_DRAW
        + '\n</script></body></html>')
+
+# MapLibre 6.x — лише ES-модуль, тому GL-сторінка вся в <script type="module">:
+# бібліотеку підтягує import усередині JS_GL_LOAD. Модуль виконується після
+# розбору сторінки, як і звичайний скрипт у кінці <body>.
+TPL_GL = (HEAD_GL + BODY + '\n<script type="module">\n'
+          + JS_GL_LOAD + '\n' + JS_BASE + '\n' + JS_GL_MAP + '\n' + JS_CORE + '\n' + JS_GL_DRAW
+          + '\n</script></body></html>')
