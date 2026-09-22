@@ -15,6 +15,7 @@ import labels as L
 import mech as M
 import uatext
 import podii as PD           # що рахується подією: вирок і постанова, не ухвала
+import map_excl
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
@@ -240,11 +241,9 @@ def main():
     rows = conn.execute("""SELECT e.cat, e.date, g.lat, g.lon, e.street, e.house, e.doc_id
                            FROM events e JOIN geo g ON g.doc_id=e.doc_id
                            WHERE g.precision='house'""").fetchall()
-    before = len(rows)
-    rows = [r for r in rows
-            if ((r[4] + ', ' + r[5]) if (r[4] and r[5]) else (r[4] or '')).lower() not in excl]
-    if before != len(rows):
-        print(f'   вилучено подій на адресах установ: {before - len(rows):,}')
+    # тим самим правилом, що й карта: за рядком адреси і за точкою
+    rows = map_excl.drop_excluded(rows, excl, street=lambda r: r[4], house=lambda r: r[5],
+                                  lat=lambda r: r[2], lon=lambda r: r[3], exact=lambda r: True)
     # Модель вчиться лише на рішеннях по суті (src/podii.py): з ухвал
     # екстрактор брав адреси лікарень, експертиз, будь-чиї — і модель на них
     # училася. Форма — з дампу; маркери по фабулі лише там, де форми немає.

@@ -18,7 +18,7 @@ from step3_tpl import TPL, TPL_GL
 # Районні файли в MapLibre-збірці вмикаються цим одним рядком — після того, як
 # Андрій затвердить паритет і GL стане типовою версією.
 GL_DISTRICTS = False
-from map_excl import load_excl, detect_institutional
+from map_excl import load_excl, detect_institutional, drop_excluded
 import map_layers
 import map_problems
 import podii as PD           # що рахується подією: вирок і постанова, не ухвала
@@ -83,10 +83,9 @@ def main(district=None, out=None):
 
     print('перевірка на адреси установ:')
     excl = detect_institutional(rows, load_excl())
-    before = len(rows)
-    rows = [r for r in rows
-            if ((r[5] + ', ' + r[6]) if (r[5] and r[6]) else (r[5] or '')).lower() not in excl]
-    print(f'   вилучено подій: {before - len(rows):,}  ->  залишилось {len(rows):,}')
+    rows = drop_excluded(rows, excl, street=lambda r: r[5], house=lambda r: r[6],
+                         lat=lambda r: r[7], lon=lambda r: r[8], exact=lambda r: r[9] == 'house')
+    print(f'   залишилось {len(rows):,}')
 
     # ---- ОДНА СПРАВА = ОДНА ПОДІЯ (борг 5.7) ----
     # У двигуні це виправлено 31 серпня, а карта досі рахувала папери. Одна

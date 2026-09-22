@@ -99,6 +99,27 @@ def load_excl():
             if ln: man.add(ln.lower())
     return man
 
+def drop_excluded(rows, excl, street, house, lat, lon, exact):
+    """Відсіює події на адресах установ — за рядком адреси І за точкою.
+
+    Рядка мало: «вул. Братиславська, 3» і «вул. Братиславській, 3» — різні
+    рядки, а лікарня одна, і геокодер ставить обидва в ту саму точку. Тому
+    виключена адреса забирає з собою все, що стоїть у її точці. Лише для
+    точних адрес: центр вулиці спільний для всієї вулиці, і розширення за
+    ним вилучило б її цілком."""
+    def addr(r):
+        s, h = street(r), house(r)
+        return ((s + ', ' + h) if (s and h) else (s or '')).lower()
+    def pt(r):
+        return (round(lat(r), 5), round(lon(r), 5))
+    bad = {pt(r) for r in rows if exact(r) and addr(r) in excl}
+    keep = [r for r in rows if addr(r) not in excl and not (exact(r) and pt(r) in bad)]
+    by_str = sum(1 for r in rows if addr(r) in excl)
+    print(f'   вилучено подій: {by_str:,} за адресою, ще {len(rows) - len(keep) - by_str:,} '
+          f'за точкою (інше написання тієї самої адреси)')
+    return keep
+
+
 def detect_institutional(rows, manual):
     per_court = collections.Counter(r[1] for r in rows)
     per_addr = collections.Counter()

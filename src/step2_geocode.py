@@ -87,6 +87,38 @@ def spread_km(pts):
     la = [p[0] for p in pts]; lo = [p[1] for p in pts]
     return max(max(la)-min(la)*1, 0)*111 + (max(lo)-min(lo))*71
 
+CROSS_M = 150      # далі за це найближчі будинки двох вулиць — вулиці не перетинаються
+
+def _street_key(s, streets, tail):
+    ns = norm(s)
+    if ns in streets: return ns
+    cand = tail.get(ns.split()[-1], []) if ns else []
+    return cand[0] if len(cand) == 1 else None
+
+def cross_point(s1, s2, streets, centro, tail):
+    """Перехрестя двох вулиць. Перехресть в адресній базі немає — лише
+    будинки, тож беремо середину між найближчими будинками двох вулиць.
+    Не знайшли — центр першої вулиці з рівнем 'street': точку перехрестя
+    не вигадуємо."""
+    k1, k2 = _street_key(s1, streets, tail), _street_key(s2, streets, tail)
+    if k1 and k2 and k1 != k2:
+        cell = collections.defaultdict(list)
+        for la, lo in streets[k2]:
+            cell[(int(la * 500), int(lo * 500))].append((la, lo))
+        best = None
+        for la, lo in streets[k1]:
+            ci, cj = int(la * 500), int(lo * 500)
+            for di in (-1, 0, 1):
+                for dj in (-1, 0, 1):
+                    for la2, lo2 in cell.get((ci + di, cj + dj), ()):
+                        d = ((la - la2) * 111320) ** 2 + ((lo - lo2) * 71000) ** 2
+                        if best is None or d < best[0]:
+                            best = (d, (la + la2) / 2, (lo + lo2) / 2)
+        if best and best[0] <= CROSS_M ** 2:
+            return (round(best[1], 6), round(best[2], 6), 'cross')
+    k = k1 if k1 in centro else None
+    return (*centro[k], 'street') if k else None
+
 def main():
     if not os.path.exists(DB): print('спочатку крок 1'); sys.exit(1)
     print('1) адресна база OpenStreetMap, тільки місто Київ')
@@ -126,7 +158,10 @@ def main():
     for doc, street, house in todo:
         ns, h = norm(street), nh(house)
         hit = None
-        if h and (ns, h) in exact:
+        if ' / ' in street:
+            # перехрестя (addr.extract, level='cross'): «вул. X / вул. Y»
+            hit = cross_point(*street.split(' / ', 1), streets, centro, tail)
+        elif h and (ns, h) in exact:
             hit = (*exact[(ns, h)], 'house')
         elif ns in centro:
             hit = (*centro[ns], 'street')
