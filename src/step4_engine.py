@@ -266,21 +266,13 @@ def main():
             for r in csv.DictReader(fh, delimiter='\t'):
                 if r.get('cause_num'): cause[r['doc_id']] = r['cause_num']
     if cause:
-        groups = collections.defaultdict(list)
-        for r in rows:
-            cn = cause.get(r[6])
-            groups[(cn, r[0]) if cn else ('#' + str(r[6]), r[0])].append(r)
-        keep = []
-        for _k, g in groups.items():
-            if len(g) == 1: keep.append(g[0]); continue
-            # серед документів однієї справи беремо найчастішу адресу,
-            # за рівності — найранішу подію
-            addr_n = collections.Counter(
-                ((x[4] or '') + ', ' + (x[5] or '')) for x in g)
-            top = addr_n.most_common(1)[0][0]
-            same = [x for x in g if ((x[4] or '') + ', ' + (x[5] or '')) == top]
-            keep.append(sorted(same, key=lambda x: x[1] or '')[0])
-        print(f'   одна справа = одна подія: {len(rows):,} -> {len(keep):,}')
+        # Одна подія на (справа, вид) — те саме правило, що й на карті
+        # (src/podii.py). Ухвали відсіяно вище, тож кожен документ тут —
+        # рішення по суті; представник — підсумкове, найпізніше.
+        merged = PD.merge_cases(rows, doc=lambda r: r[6], cat=lambda r: r[0], date=lambda r: r[1],
+                                cause=cause, event=lambda r: True)
+        keep = [(lab,) + rep[1:] for rep, _g, lab in merged]
+        print(f'   одна подія на (справа, вид): {len(rows):,} -> {len(keep):,}')
         rows = keep
     else:
         print('   dedup пропущено: немає data/kyiv_*.csv із номерами справ')

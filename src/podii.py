@@ -10,7 +10,8 @@
 Одне місце для карти (step3_map), моделі (step4_engine), звітів (step6_base)
 і діагностики: розійдися правило між ними — карта й модель рахували б різне.
 """
-import os, re, csv, gzip
+import os, re, sys, csv, gzip, collections
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
@@ -90,3 +91,57 @@ def is_event(doc_id, fab, formy):
 def source(doc_id, formy):
     """Звідки взято рішення — для звітів: 'форма' чи 'маркери'."""
     return 'форма' if formy.get(str(doc_id)) else 'маркери'
+
+
+# ---- ОДНА СПРАВА — ОДНА ПОДІЯ (ZAVDANNYA-ADRESY.md, п.2; відповідь 3) ----
+# Ключ — (справа, вид подій), а не (справа, стаття) і не сама справа.
+# Крадіжка й наркотики при одному затриманні — два механізми, і зливати їх в
+# одну подію не можна. А ст.122-4 і ст.124 КУпАП в одній справі — це одна
+# аварія, яка раніше рахувалася двічі.
+import labels as _L
+
+_KK = re.compile(r'^ст\.[\d\-]+\s+КК\b')
+
+
+def theme(cat):
+    return (_L.CODE.get(cat) or ('СЕР', ''))[0]
+
+
+def is_kk(cat):
+    return bool(_KK.match((_L.CODE.get(cat) or ('', ''))[1]))
+
+
+def label_cat(cats, final_cat):
+    """Стаття для підпису події: найтяжча з цього виду в справі.
+
+    Злочин (ККУ) тяжчий за адміністративне правопорушення (КУпАП) — це
+    однозначно. Яка стаття тяжча всередині одного кодексу, ще не вирішено:
+    шкалу за санкціями має затвердити основний чат, по пам'яті її не
+    вигадуємо. Доти всередині кодексу береться стаття підсумкового рішення.
+    Стосується це лише 83 справ із 129 318 (вимір 22.09)."""
+    pool = [c for c in cats if is_kk(c)] or list(cats)
+    return final_cat if final_cat in pool else sorted(pool)[0]
+
+
+def merge_cases(rows, doc, cat, date, cause, event):
+    """Зводить документи в події: одна на (справа, вид).
+
+    rows — будь-які записи; doc, cat, date — як дістати з запису номер
+    документа, код статті й дату; cause — doc_id -> номер справи; event —
+    чи документ є рішенням по суті. Повертає список (представник, усі
+    документи групи, стаття для підпису). Представник — підсумкове рішення
+    по суті, тобто найпізніше: це остаточна кваліфікація й остаточна адреса.
+    Група з самих ухвал події не дає; ухвали лишаються серед документів
+    групи — панель рішень адреси показує й їх."""
+    groups = collections.defaultdict(list)
+    for r in rows:
+        d = str(doc(r)); cn = cause.get(d)
+        groups[(cn, theme(cat(r))) if cn else ('#' + d, theme(cat(r)))].append(r)
+    out = []
+    for g in groups.values():
+        evs = [x for x in g if event(x)]
+        if not evs:
+            continue
+        rep = max(evs, key=lambda x: (date(x) or '', str(doc(x))))
+        out.append((rep, g, label_cat({cat(x) for x in evs}, cat(rep))))
+    return out

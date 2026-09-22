@@ -97,42 +97,23 @@ def main(district=None, out=None):
     # Папери справи не викидаємо, а лишаємо при представнику: панель показує
     # усі рішення справи, і саме заради цього тут не просто відсів.
     #
-    # Подією справи може бути лише рішення по суті (src/podii.py). Ухвали
-    # лишаються в справі — панель показує й їх, — але представником не
-    # стають: з ухвали екстрактор брав чужу адресу. Справа, де самі ухвали,
-    # події не дає зовсім.
+    # Подією справи може бути лише рішення по суті, а подія одна на (справа,
+    # вид подій) — правило спільне з моделлю й звітами, src/podii.py.
+    # Ухвали лишаються серед паперів справи, представником не стають.
     formy = PD.load_formy()
     isev = {r[0]: PD.is_event(r[0], fab.get(r[0], ''), formy) for r in rows}
     nproc = sum(1 for v in isev.values() if not v)
     print(f'   процесуальних документів (ухвали): {nproc:,} з {len(rows):,}; '
           f'форма з дампу є для {sum(1 for d in isev if formy.get(d)):,}')
     cause = {d: v[0] for d, v in extra.items() if v[0]}
-    groups = collections.defaultdict(list)
-    for r in rows:
-        cn = cause.get(r[0])
-        groups[(cn, r[2]) if cn else ('#' + r[0], r[2])].append(r)
+    merged = PD.merge_cases(rows, doc=lambda r: r[0], cat=lambda r: r[2], date=lambda r: r[3],
+                            cause=cause, event=lambda r: isev[r[0]])
     reps, case_docs = [], {}
-    no_event = 0
-    for _k, g in groups.items():
-        evs = [x for x in g if isev[x[0]]]
-        if not evs:
-            no_event += 1
-            continue
-        if len(evs) > 1:
-            # серед рішень по суті однієї справи беремо найчастішу адресу,
-            # за рівності — найранішу подію (те саме правило, що у двигуні)
-            addr_n = collections.Counter((x[5] or '') + ', ' + (x[6] or '') for x in evs)
-            top = addr_n.most_common(1)[0][0]
-            same = [x for x in evs if (x[5] or '') + ', ' + (x[6] or '') == top]
-            rep = sorted(same, key=lambda x: x[3] or '')[0]
-        else:
-            rep = evs[0]
-        reps.append(rep)
+    for rep, g, lab in merged:
+        # підпис події — стаття, найтяжча в цьому виді справи (podii.label_cat)
+        reps.append(rep[:2] + (lab,) + rep[3:])
         case_docs[rep[0]] = [x[0] for x in sorted(g, key=lambda x: x[3] or '')]
-    if no_event:
-        print(f'   справ без рішення по суті (лише ухвали) — подій не дають: {no_event:,}')
-    if len(reps) < len(rows):
-        print(f'   одна справа = одна подія: {len(rows):,} -> {len(reps):,}')
+    print(f'   одна подія на (справа, вид): {len(rows):,} документів -> {len(reps):,} подій')
     rows = reps
 
     # ---- злиття кодів у назви ----

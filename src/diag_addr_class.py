@@ -112,21 +112,20 @@ def main(sample=False):
                            src=PD.source(r['doc_id'], formy),
                            k=classify(r['doc_id'], f, r['street'], formy)))
 
-    # Одна справа — одна подія, як на карті (step3_map): ключ «справа + стаття»,
-    # представник — найчастіша адреса серед рішень по суті, за рівності
-    # найраніший. Справа з самих ухвал події не дає.
-    grp = collections.defaultdict(list)
-    for e in ev:
-        cn = cause.get(e['doc'])
-        grp[(cn, e['cat']) if cn else ('#' + e['doc'], e['cat'])].append(e)
-    reps = []
-    for g in grp.values():
-        g = [x for x in g if x['k'] != 'A']
-        if not g:
-            continue
-        top = collections.Counter(x['street'] + ', ' + x['house'] for x in g).most_common(1)[0][0]
-        reps.append(sorted([x for x in g if x['street'] + ', ' + x['house'] == top],
-                           key=lambda x: x['date'])[0])
+    # Одна подія на (справа, вид), як на карті — тим самим src/podii.py.
+    merged = PD.merge_cases(ev, doc=lambda e: e['doc'], cat=lambda e: e['cat'],
+                            date=lambda e: e['date'], cause=cause, event=lambda e: e['k'] != 'A')
+    reps = [rep for rep, _g, _l in merged]
+    print('\nодна подія на (справа, вид):')
+    print(f'{"тема":<5}{"рішень по суті":>16}{"подій":>8}{"дублів":>8}{"різні адреси":>14}')
+    for th in THEMES:
+        nd = sum(1 for e in ev if e['th'] == th and e['k'] != 'A')
+        grp_th = [(r, g) for r, g, _l in merged if r['th'] == th]
+        # справа, де кілька рішень по суті стоять на різних адресах: саме тут
+        # вибір представника міняє точку на карті
+        split = sum(1 for _r, g in grp_th
+                    if len({x['street'] + ', ' + x['house'] for x in g if x['k'] != 'A'}) > 1)
+        print(f'{th:<5}{nd:>16,}{len(grp_th):>8,}{nd - len(grp_th):>8,}{split:>14,}'.replace(',', ' '))
 
     def table(rows, title, classes='ABCD'):
         print(f'\n{title}')
