@@ -52,6 +52,14 @@ function tiles(){
  tileL.bringToBack();
 }
 tiles();
+// Застереження про адресу. Британський police.uk свого часу обпікся саме на
+// цьому: точки, прив'язані до найближчої адреси, читалися як «тут це
+// сталося», і правопорушення біля закладу опинялися записані на сусідній
+// житловий будинок. Відтоді там тримають попередження на видноті. У нас його
+// прибрано з панелі (RISHENNYA, розд. 18), але причина лишилася: адресу
+// виймає наш розбір тексту рішення, а не поле реєстру, і часом це адреса
+// відділку чи суду. Тож рядок живе дрібно в атрибуції карти.
+map.attributionControl.addAttribution('адреси — з текстів рішень ЄДРСР');
 let layer=L.layerGroup().addTo(map),heat=null,heatOn=false;
 const rlayer=L.layerGroup().addTo(map);
 const poplayer=L.layerGroup();          // фон під усім іншим
@@ -95,7 +103,8 @@ function paintScope(){
 // незатемнені краї
 map.on('moveend zoomend',()=>{if(dmask)dmask.setLatLngs([maskRing(),DBORD[CURD]])});
 function enterDistrict(i,fly){
- if(!(i>=0&&i<DN.length)) return;
+ // В окремому файлі району меж інших районів немає — переходить посилання.
+ if(M.only||!(i>=0&&i<DN.length)) return;
  CURD=i; paintScope();
  if(fly===false) map.fitBounds(dBounds(i),{padding:[28,28]});
  else map.flyToBounds(dBounds(i),{padding:[28,28],duration:1.15,easeLinearity:.22});
@@ -338,7 +347,9 @@ function drawRisks(){
 // ---- ПЕРЕМИКАЧ ТЕМ ----
 // Три слова в куті карти, вибір запам'ятовується: тему обирають раз і надовго
 // (в аудиторії проєктор — світла, вдома — темна), і питати щоразу немає за що.
-const tswCtl=L.control({position:'topright'});
+// Тимчасово ліворуч угорі під кнопками масштабу: правий верхній кут тепер
+// займає картка-навігатор. На кроці 8 перемикач переїде у смугу періоду.
+const tswCtl=L.control({position:'topleft'});
 tswCtl.onAdd=()=>{const d=L.DomUtil.create('div','tsw');
  d.innerHTML=THNAMES.map(([k,n])=>
    `<button data-t="${k}"${k===THEME?' aria-pressed="true"':''}>${n}</button>`).join('');

@@ -12,75 +12,111 @@ computeVis() — хто саме зараз видимий і якого кол�
 Правка картки проблеми чіпає лише цей файл.
 """
 JS_CORE = r"""const $=s=>document.querySelector(s);
-if(M.only){$('#subt').textContent=M.only+' район · за даними ЄДРСР';
- $('#backl').innerHTML='<a href="index.html" style="color:var(--ink);font-size:12px;text-decoration:none">← всі райони</a>';}
+const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>
+ ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const lc=s=>s?s.charAt(0).toLowerCase()+s.slice(1):s;
 $('#fc').innerHTML=M.courts.map((n,i)=>`<label><input type="checkbox" data-c="${i}" checked>${n}</label>`).join('');
-// На карті одного району перелік з усіх десяти районів безглуздий. Ховаємо
-// саму рамку, а прапорці лишаємо в розмітці — на них спирається фільтр draw().
-if(M.only){const w_=$('#fcw'); if(w_) w_.style.display='none';}
 $('#fy').innerHTML=M.years.map((n,i)=>`<label><input type="checkbox" data-y="${i}" checked>${n}</label>`).join('');
 const fmt=n=>n.toLocaleString('uk');
-// Прапорці окремих статей лишаються, але схованими: підрівня статей у панелі
-// більше немає, рядок вмикає всю тему разом. draw() і GVIS спираються саме на
-// них, тому просто прибрати їх не можна.
+// ---- КАРТКА-НАВІГАТОР ----
+// Панель — навігатор, а не аналіз (RISHENNYA, розд. 18): жодного числа й
+// жодного пояснювального напису. Числа живуть у звітах і в кільці на карті.
+//
+// Прапорці окремих статей лишаються, але схованими: draw() і GVIS спираються
+// саме на них. Вид у сітці вмикає всі свої статті разом, «Статті» — кожну
+// окремо; і те, й те пише в ці самі прапорці.
 $('#fasub').innerHTML=M.groups.map(g=>g[1].map(i=>
  `<input type="checkbox" data-a="${i}" checked>`).join('')).join('');
-// Один перелік тем замість двох блоків: квадрат вмикає ПОДІЇ теми, риска
-// поруч — ПРОГНОЗ РИЗИКУ тієї самої теми, праворуч від риски точність шару.
-// Доти ті самі сім кольорів жили окремо в «Правопорушеннях» і в «Прогнозі
-// ризику», і це плутало: здавалося, що це два різні переліки.
-const RISKOF={};                         // індекс теми -> ключ її шару ризику
+// Шар ризику кожного виду. Окремої риски біля виду більше немає: один
+// перемикач «Прогноз ризику» вмикає шари саме тих видів, що ввімкнені вище.
+const RISKOF={};                         // індекс виду -> ключ його шару ризику
 Object.keys(R.lines||{}).forEach(k=>{const v=R.lines[k];
  if(k.startsWith('risk_')&&(v.kind==='theme'||v.nodata)&&RISKOF[v.theme|0]===undefined)
   RISKOF[v.theme|0]=k});
 $('#fasub').insertAdjacentHTML('beforeend',Object.keys(RISKOF).map(gi=>
- `<input type="checkbox" data-r="${RISKOF[gi]}">`).join(''));
-$('#fa').innerHTML=M.groups.map((g,gi)=>{
- const rk=RISKOF[gi], nod=(!rk||R.lines[rk].nodata)?1:0;
- return `<div class="row" data-g="${gi}" data-on="1" data-nod="${nod}">
-  <span class="sq"></span><span class="nm">${g[0]}</span><span class="n">${fmt(g[2])}</span>
-  <span class="ln" data-rk="${rk||''}"></span><span class="acc"></span></div>`}).join('');
-function paintRow(row){
- const gi=+row.dataset.g, ln=row.querySelector('.ln'), k=ln.dataset.rk;
- const inp=k?document.querySelector(`[data-r="${k}"]`):null, on=!!(inp&&inp.checked);
- row.querySelector('.sq').style.background=PALA[gi%PALA.length];
- ln.style.background=on?RCOL[k]:'';
- row.querySelector('.acc').textContent=
-   on&&R.lines[k]&&R.lines[k].hit!=null?R.lines[k].hit+'%':'';
+ `<input type="checkbox" data-r="${RISKOF[gi]}">`).join('')+'<input type="checkbox" id="fquiet">');
+// Короткі назви видів з макета. До перегрупування (крок 6) видів лишається
+// сім; ключ — повна назва з M.groups, щоб не залежати від порядку.
+const SHORT={'Громадський порядок':'Порядок','Алкоголь і торгівля':'Торгівля',
+ 'Наркотики':'Наркотики','Насильство проти особи':'Насильство','Майнові':'Майно',
+ 'Дорожній рух':'Дорожній рух','Середовище і майно громади':'Середовище'};
+const shortOf=gi=>SHORT[M.groups[gi][0]]||M.groups[gi][0];
+const artOn=i=>{const b=document.querySelector(`[data-a="${i}"]`);return !!(b&&b.checked)};
+const setArt=(i,v)=>{const b=document.querySelector(`[data-a="${i}"]`);if(b)b.checked=v};
+const typeOn=gi=>M.groups[gi][1].some(artOn);
+const swSet=(b,v)=>b.setAttribute('aria-pressed',v?'true':'false');
+$('#fa').innerHTML=M.groups.map((g,gi)=>
+ `<button class="type" data-g="${gi}" aria-pressed="true"><i></i>${shortOf(gi)}</button>`).join('');
+// Колір квадрата залежить від теми, тож стоїть інлайном. Перебудовувати сітку
+// при зміні теми не можна — загубився б стан, тому фарбуємо на місці.
+function paintRows(){
+ document.querySelectorAll('#fa .type').forEach(b=>b.style.setProperty('--c',PALA[+b.dataset.g%PALA.length]));
+ document.querySelectorAll('#advgrid h4 i').forEach(x=>x.style.background=PALA[+x.dataset.g%PALA.length]);
 }
-function paintRows(){document.querySelectorAll('#fa .row').forEach(paintRow)}
+function syncThemes(){
+ document.querySelectorAll('#fa .type').forEach(b=>swSet(b,typeOn(+b.dataset.g)));
+ document.querySelectorAll('#advgrid [data-art]').forEach(x=>x.checked=artOn(+x.dataset.art));
+}
 $('#fa').onclick=e=>{
- const row=e.target.closest('.row'); if(!row) return;
- if(e.target.classList.contains('ln')){
-  if(row.dataset.nod==='1') return;      // замало подій для навчання моделі
-  const inp=document.querySelector(`[data-r="${e.target.dataset.rk}"]`);
-  inp.checked=!inp.checked; paintRow(row); drawRisks(); return}
- const on=row.dataset.on!=='0';
- M.groups[+row.dataset.g][1].forEach(i=>{
-  const b=document.querySelector(`[data-a="${i}"]`); if(b) b.checked=!on});
- row.dataset.on=on?'0':'1'; draw()};
-function syncThemes(){document.querySelectorAll('#fa .row').forEach(row=>{
- const ids=M.groups[+row.dataset.g][1];
- row.dataset.on=ids.some(i=>document.querySelector(`[data-a="${i}"]`).checked)?'1':'0'})}
+ const b=e.target.closest('.type'); if(!b) return;
+ const gi=+b.dataset.g, on=typeOn(gi);
+ M.groups[gi][1].forEach(i=>setArt(i,!on));
+ syncRisk(); draw()};
+// ---- ПРОГНОЗ РИЗИКУ ----
+// Один перемикач. Шари ризику ставить код: лише для ввімкнених видів і лише
+// там, де модель навчена. Вимкнули вид — зник і його ризик.
+let RISK_ON=false;
+function syncRisk(){
+ Object.keys(RISKOF).forEach(gi=>{
+  const k=RISKOF[gi], inp=document.querySelector(`[data-r="${k}"]`);
+  if(inp) inp.checked=RISK_ON&&!R.lines[k].nodata&&typeOn(+gi)});
+ drawRisks();
+}
+$('#frisk').onclick=()=>{RISK_ON=!RISK_ON; swSet($('#frisk'),RISK_ON);
+ $('#friskx').hidden=!RISK_ON; syncRisk()};
+// «Тихі вулиці» — інший погляд на ті самі шари ризику, тож їх видно лише
+// тоді, коли прогноз увімкнено.
+$('#fquietc').onclick=()=>{const q=$('#fquiet'); q.checked=!q.checked;
+ swSet($('#fquietc'),q.checked); drawRisks()};
+// ---- КОНТЕКСТ ----
+// Потоки — один перемикач на всі три: розділяються вони на самій карті.
+const CTX={pop:['pop'],flows:['flow_school','flow_transit','flow_shop']};
+// Поріг зуму для шарів, які з міського огляду нечитабельні. Замість напису
+// «наблизьте карту» стан показує сам перемикач: поки масштаб замалий, він
+// приглушений і не натискається. Новий шар із порогом — один рядок тут.
+const ZGATE={facts:FZOOM};
+{const has={pop:POP.length>0,flows:CTX.flows.some(k=>R.lines&&R.lines[k]),
+            facts:(F.cats||[]).some(c=>c.pts.length)};
+ document.querySelectorAll('#fctx [data-ctx]').forEach(b=>{if(!has[b.dataset.ctx]) b.hidden=true});}
+$('#fctx').onclick=e=>{
+ const b=e.target.closest('[data-ctx]'); if(!b||b.getAttribute('aria-disabled')==='true') return;
+ const k=b.dataset.ctx, v=b.getAttribute('aria-pressed')!=='true'; swSet(b,v);
+ if(k==='facts'){document.querySelectorAll('[data-f]').forEach(x=>x.checked=v); drawFacts(); return}
+ CTX[k].forEach(r=>{const inp=document.querySelector(`[data-r="${r}"]`); if(inp) inp.checked=v});
+ drawRisks()};
+function paintZoomGates(){
+ const z=map.getZoom();
+ document.querySelectorAll('#fctx [data-ctx]').forEach(b=>{
+  const need=ZGATE[b.dataset.ctx];
+  b.setAttribute('aria-disabled',need!==undefined&&z<need?'true':'false')});
+}
 const PERIODS=[['Ранок','6–11',[6,7,8,9,10,11]],['День','12–17',[12,13,14,15,16,17]],
  ['Вечір','18–23',[18,19,20,21,22,23]],['Ніч','0–5',[0,1,2,3,4,5]]];
-// Документи кроку 6. Версія одна, тож посилання однакові для всіх.
+// Звіти кроку 6 — три посилання на виду. Версія одна для всіх.
 $ify('#docs',
- '<a href="doslidzhennya.html" target="_blank" rel="noopener">Дослідження ризиків<em>HTML</em></a>'+
- '<a href="rezyume.html" target="_blank" rel="noopener">Резюме на одну сторінку<em>HTML</em></a>'+
- '<a href="analiz.html" target="_blank" rel="noopener">Аналіз поточного стану<em>HTML</em></a>');
+ '<a href="doslidzhennya.html" target="_blank" rel="noopener">Дослідження ризиків <span>↗</span></a>'+
+ '<a href="rezyume.html" target="_blank" rel="noopener">Резюме на одну сторінку <span>↗</span></a>'+
+ '<a href="analiz.html" target="_blank" rel="noopener">Аналіз поточного стану <span>↗</span></a>');
 // Три режими — три відповіді на одне питання «що показувати». Теплова карта
 // доти була окремою кнопкою збоку й читалася як ще один фільтр поверх решти.
-const MODES=[['all','Усі'],['prob','Проблеми'],['heat','Теплова']];
+const MODES=[['all','Події'],['prob','Проблеми'],['heat','Теплова']];
 let MODE='all';
 const cb_=$('#fcat');
 cb_.innerHTML=MODES.map(([k,n])=>
- `<button data-m="${k}"${k===MODE?' aria-pressed="true"':''}>${n}`+
- (k==='prob'?`<i>${M.n_problems||''}</i>`:'')+'</button>').join('');
+ `<button data-m="${k}" aria-pressed="${k===MODE}">${n}</button>`).join('');
 cb_.onclick=e=>{const b=e.target.closest('[data-m]'); if(!b) return;
  MODE=b.dataset.m;
- cb_.querySelectorAll('button').forEach(x=>
-   x.setAttribute('aria-pressed',x===b?'true':'false'));
+ cb_.querySelectorAll('button').forEach(x=>swSet(x,x===b));
  draw()};
 const CATNAME={2:['Проблема','var(--ink)','у кураторському списку'],0:null};
 const hb=$('#hr');
@@ -88,13 +124,87 @@ PERIODS.forEach((p,i)=>{const s=document.createElement('span');
  s.innerHTML=`${p[0]}<i>${p[1]}</i>`;s.dataset.p=i;hb.appendChild(s)});
 hb.onclick=e=>{const t=e.target.closest('[data-p]');if(t){t.classList.toggle('on');draw()}};
 const sel=a=>new Set([...document.querySelectorAll(`[data-${a}]`)].filter(x=>x.checked).map(x=>+x.dataset[a]));
+// ---- «РОЗШИРЕНО»: КОЖНА СТАТТЯ ОКРЕМО ----
+// Підпис статті в даних — «ст.124 КУпАП · ДТП з пошкодженням майна»:
+// назву звичайними словами показуємо рядком, номер статті — дрібно під нею.
+const splitArt=s=>{const m=/^(ст\.[^·]+?)\s*·\s*(.+)$/.exec(s||'');return m?[m[2],m[1]]:[s,'']};
+// Дорожній рух — найбільший вид, тож усередині поділений на три частини
+// (склад — RISHENNYA, розд. 18). Це групування, а не окремий вид і не
+// окремий колір: сьомий колір на темній темі не проходить перевірку для
+// дальтоніків. Стаття руху, якої немає в переліку, іде в «Інше».
+const ROAD={'ДТП':['124 КУпАП','122-4 КУпАП','123 КУпАП','286 КК'],
+ 'За кермом':['130 КУпАП','126 КУпАП','122-2 КУпАП','121 КУпАП','122 КУпАП','287 КК'],
+ 'Інше':['139 КУпАП','140 КУпАП','127 КУпАП','277 КК']};
+const roadPart=label=>{const m=/^ст\.([\d\-]+)\s+(КУпАП|КК)/.exec(label||'');
+ if(m){const key=m[1]+' '+m[2]; for(const part in ROAD) if(ROAD[part].includes(key)) return part}
+ return 'Інше'};
+const ROADGI=M.groups.findIndex(g=>g[0]==='Дорожній рух');
+$('#advgrid').innerHTML=M.groups.map((g,gi)=>{
+ // порядок усередині виду — за кількістю подій; самі числа не показуємо
+ const ids=g[1].slice().sort((a,b)=>(M.counts[b]||0)-(M.counts[a]||0));
+ const art=i=>{const [nm,no]=splitArt(M.cats[i]);
+  return `<label class="art"><input type="checkbox" data-art="${i}" checked>`+
+         `<span>${esc(nm)}<small>${esc(no)}</small></span></label>`};
+ let h=`<div class="ag"><h4><i data-g="${gi}"></i>${shortOf(gi)}</h4>`;
+ if(gi===ROADGI){
+  for(const part of Object.keys(ROAD)){
+   const inPart=ids.filter(i=>roadPart(M.cats[i])===part); if(!inPart.length) continue;
+   h+=`<h5><span>${part}</span><button data-only="${part}">лише це</button></h5>`+inPart.map(art).join('');
+  }
+ } else h+=ids.map(art).join('');
+ return h+'</div>'}).join('');
+$('#advgrid').onchange=e=>{const x=e.target.closest('[data-art]'); if(!x) return;
+ setArt(+x.dataset.art,x.checked); syncThemes(); syncRisk(); draw()};
+// «лише це» вмикає статті однієї частини руху й вимикає решту статей руху;
+// інших видів не чіпає.
+$('#advgrid').onclick=e=>{const b=e.target.closest('[data-only]'); if(!b) return;
+ M.groups[ROADGI][1].forEach(i=>setArt(i,roadPart(M.cats[i])===b.dataset.only));
+ syncThemes(); syncRisk(); draw()};
+function advOpen(v){$('#adv').hidden=!v; $('#advbtn').setAttribute('aria-expanded',v?'true':'false');
+ $('#advbtn').textContent=v?'Розширено ‹':'Розширено ›'}
+$('#advbtn').onclick=()=>advOpen($('#adv').hidden);
+$('#advx').onclick=()=>advOpen(false);
+// Лише точні адреси: центр вулиці (p[3]=0) збирає події всієї вулиці, для
+// яких будинку не знайшлося, і місцем, куди можна приїхати, не є.
+let PRECISE=false;
+$('#fprec').onclick=()=>{PRECISE=!PRECISE; swSet($('#fprec'),PRECISE); draw()};
+// ---- ПОШУК АДРЕСИ ----
+// Без урахування регістру й апострофів: «Солом'янську» пишуть і з ', і з ’,
+// і без нього. Спершу ті, що з цього починаються, далі решта; усередині —
+// де подій більше.
+const norm=s=>(s||'').toLowerCase().replace(/['’ʼ`]/g,'').replace(/\s+/g,' ').trim();
+const PNORM=P.map(p=>norm(p[2]));
+const qEl=$('#q'), sg=$('#sugg');
+let SUG=[];
+function suggest(){
+ const q=norm(qEl.value); SUG=[];
+ if(q){
+  const pre=[],mid=[];
+  PNORM.forEach((n,i)=>{const k=n.indexOf(q); if(k===0) pre.push(i); else if(k>0) mid.push(i)});
+  const byN=(a,b)=>P[b][4].length-P[a][4].length;
+  SUG=pre.sort(byN).concat(mid.sort(byN)).slice(0,8);
+ }
+ sg.innerHTML=SUG.map((i,k)=>`<button data-k="${k}">${esc(P[i][2])}</button>`).join('');
+ sg.hidden=!SUG.length;
+}
+// Адреса — наближення й відкрите вікно адреси. Центр вулиці — наближення до
+// меж усіх точок цієї вулиці: одна точка в її центрі нічого не показує.
+function pick(i){
+ const p=P[i]; sg.hidden=true; qEl.value=p[2]; qEl.blur();
+ if(p[3]) return focusAddress(i);
+ const st=p[2].replace(/ · вся вулиця$/,'');
+ const pts=P.filter(x=>x[2]===p[2]||(x[2]||'').startsWith(st+', ')).map(x=>[x[0],x[1]]);
+ focusBounds(pts.length?pts:[[p[0],p[1]]]);
+}
+qEl.addEventListener('input',suggest);
+qEl.addEventListener('keydown',e=>{
+ if(e.key==='Enter'&&SUG.length){e.preventDefault();pick(SUG[0])}
+ if(e.key==='Escape'){qEl.value='';suggest()}});
+sg.onclick=e=>{const b=e.target.closest('[data-k]'); if(b) pick(SUG[+b.dataset.k])};
 // ---- ПРАВА ПАНЕЛЬ: усі рішення адреси ----
 // Витяг обставин і посилання на папери лежать окремо від сторінки: на сайті
 // це файл spravy/<район>.json, який тягнемо, коли панель відкривають уперше.
 // У сторінці, відкритій з диска, DOCS уже вкладено — тоді нічого не тягнемо.
-const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>
- ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const lc=s=>s?s.charAt(0).toLowerCase()+s.slice(1):s;
 const REESTR='https://od.reyestr.court.gov.ua/files/';
 const docUrl=h=>REESTR+h.slice(0,2)+'/'+h.slice(2)+'.rtf';
 function docsFor(i){
@@ -152,44 +262,35 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closePanel()});
 const probsOf=p=>{const a=p[7]||[];
  return CURD<0?a.filter(q=>q.city):a.filter(q=>q.d===CURD&&q.loc)};
 const inScope=p=>CURD<0||p[8]===CURD;
-// Лічильники бічної панелі рахуються з того, що справді видно: у районі
-// стояли б міські числа, а це та сама помилка, що вже виправлялася раніше.
-function recount(){
- const c=new Array(M.cats.length).fill(0);
- for(const p of P){if(!inScope(p))continue;for(const e of p[4])c[e[1]]++}
- return c;
+// ---- РАЙОН ----
+// Згорнутий список «Район · усе місто ▾». У щільному центрі клікнути по
+// багатокутнику майже неможливо — його закривають позначки подій, тому
+// головний шлях у район саме тут, а клік по карті лишається доповненням.
+// Чисел біля районів більше немає: панель без чисел.
+{const menu=$('#fd');
+ if(!M.only){
+  menu.innerHTML=[['-1','усе місто']].concat(DN.map((n,i)=>[String(i),n])).map(([i,n])=>
+   `<button data-d="${i}">${n}</button>`).join('');
+  menu.onclick=e=>{const t=e.target.closest('[data-d]'); if(!t) return;
+   const i=+t.dataset.d; menu.hidden=true;
+   if(i<0){if(CURD>=0) exitDistrict()} else if(i!==CURD) enterDistrict(i)};
+ }else{
+  // Окремий файл району: усі десять районів, щоб між ними можна було
+  // переходити. Поточний — підкреслений, решта — на міську карту з відкритим
+  // районом, «усе місто» — на оглядову сторінку.
+  menu.innerHTML='<a href="index.html">усе місто</a>'+DN.map((n,i)=>n===M.only
+   ?`<button data-d="${i}" aria-pressed="true">${n}</button>`
+   :`<a href="kyiv.html#${DSLUG[i]}">${n}</a>`).join('');
+ }
+ $('#dbtn').onclick=()=>{menu.hidden=!menu.hidden};
+ if(!DN.length&&!M.only) $('#dbtn').hidden=true;
 }
-// Перелік районів у панелі. У щільному центрі клікнути по багатокутнику майже
-// неможливо — його закривають позначки подій, тому головний шлях у район саме
-// тут, а клік по карті лишається зручним доповненням.
-if(DN.length&&!M.only){
- const dev=(M.dtheme||[]).map(o=>Object.values(o||{}).reduce((a,b)=>a+b,0));
- $('#fd').innerHTML=DN.map((n,i)=>{
-  const np=(M.dprob||[])[i]||0;
-  const sub=np?`${np} ${np===1?'проблема':'проблем'}`:(dev[i]?fmt(dev[i])+' подій':'');
-  return `<span data-d="${i}">${n}<i>${sub}</i></span>`}).join('');
- $('#fd').onclick=e=>{const t=e.target.closest('[data-d]'); if(!t)return;
-  const i=+t.dataset.d; if(i===CURD) exitDistrict(); else enterDistrict(i)};
-}else{const w=$('#fdw'); if(w) w.style.display='none'}
 function paintDistrictList(){
- document.querySelectorAll('#fd [data-d]').forEach(el=>
-  el.classList.toggle('on', +el.dataset.d===CURD));
+ $('#dval').textContent=(M.only||(CURD>=0?DN[CURD]:'усе місто'))+' ▾';
+ if(!M.only) document.querySelectorAll('#fd [data-d]').forEach(el=>swSet(el,+el.dataset.d===CURD));
 }
 function onScopeChange(){
- if(M.only){draw();return}                    // окремий файл району — перемикати нічого
  paintDistrictList();
- const c=recount();
- document.querySelectorAll('#fa .row').forEach(row=>{
-  const g=M.groups[+row.dataset.g];
-  row.querySelector('.n').textContent=fmt(g[1].reduce((a,i)=>a+c[i],0))});
- if(CURD<0){
-  $('#subt').textContent='за даними ЄДРСР · місто Київ';
-  $('#backl').innerHTML='';
- }else{
-  $('#subt').textContent=DN[CURD]+' район';
-  $('#backl').innerHTML='<a href="#" class="upl">← усе місто</a>';
-  $('#backl').querySelector('.upl').onclick=e=>{e.preventDefault();exitDistrict()};
- }
  draw();
 }
 function buildPassport(p,pr){
@@ -254,6 +355,7 @@ function computeVis(){
  let tot=0;const vis=[];
  for(const p of P){
   if(!inScope(p)) continue;
+  if(PRECISE&&!p[3]) continue;           // «Лише точні адреси» — без центрів вулиць
   const ownProbs=probsOf(p);
   // проблема за прихованим напрямком — не проблема для поточного вигляду:
   // саме звідси в переліку бралися адреси з трьома подіями. У вікні підпис
@@ -288,17 +390,9 @@ function computeVis(){
   const th=byProblem?thProblem:thMaj;
   tot+=n;vis.push([p,n,th,byProblem,cnt,thMaj])}
  vis.sort((a,b)=>b[1]-a[1]);
- // Переліку адрес у панелі більше немає — він переїздить у звіт. Лишається
- // одне число: скільки подій і на скількох адресах зараз видно.
- $('#cntl').textContent=
-   `${tot.toLocaleString('uk')} подій на ${vis.length.toLocaleString('uk')} адресах`;
- // Скільки проблем у поточних межах — числом біля самого режиму, за тим самим
- // правилом, що й перелік: проблема за прихованим напрямком не рахується,
- // інакше число не сходилося б з тим, що видно на карті.
- {let q=0;P.forEach(p=>{if(inScope(p)&&probsOf(p).some(pr=>
-   pr.thi===undefined||pr.thi<0||GVIS.has(pr.thi)))q++});
-  const pi_=cb_.querySelector('[data-m="prob"] i');
-  if(pi_) pi_.textContent=q?q.toLocaleString('uk'):'';}
+ // Чисел панель більше не показує (RISHENNYA, розд. 18) — ні подій, ні адрес,
+ // ні проблем. tot і vis лишаються в результаті: з них кільце у вікні й
+ // перевірки паритету.
  return {vis,tot,C,A,Y,H,GVIS,CF};
 }
 // ---- ВІКНО АДРЕСИ ----

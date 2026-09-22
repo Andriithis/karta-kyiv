@@ -3,13 +3,12 @@
 
 Тут: <!DOCTYPE>, <head>, підключення Leaflet і <style> цілком.
 Розміри панелі, вигляд спливних вікон — усе змінюється тут.
-Кольори НЕ пишуться літералом: вони живуть у змінних трьох тем на початку
+Кольори НЕ пишуться літералом: вони живуть у змінних двох тем на початку
 блока. Жодного тексту й жодної логіки: підписи — у tpl_body, поведінка —
-у tpl_map і tpl_popup.
+у tpl_core і рушіях.
 
-Панель узята з погодженого макета PROBA-VYGLIADU.html: жодних залитих
-кнопок, карток, тіней і заокруглень; активний стан — підкреслення,
-розділення — волосяна лінія.
+Теми й типографіка — з макета PROBA-VYGLIADU.html, картка-навігатор — із
+затвердженого макета site/maket-panel.html (версія 4).
 """
 LIBS_LEAFLET = r"""<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -33,73 +32,105 @@ __LIBS__
    body, щоб сторінка мала кольори навіть до того, як відпрацює скрипт. */
 body,body[data-t="svitla"]{--panel:#fff;--sunk:#f7f7f5;--ink:#14161a;--dim:#5f6771;
  --faint:#9aa0a9;--rule:#e7e6e3;--ground:#f6f6f4;--halo:#fff;
- --glass:rgba(255,255,255,.80);--shadow:drop-shadow(0 1px 1.5px rgba(16,18,22,.22))}
+ --glass:rgba(255,255,255,.80);--shadow:drop-shadow(0 1px 1.5px rgba(16,18,22,.22));
+ --card:rgba(255,255,255,.94);--card-shadow:0 6px 24px rgba(20,22,26,.14),0 1px 3px rgba(20,22,26,.10)}
 body[data-t="temna"]{--panel:#0f1217;--sunk:#151920;--ink:#eaebef;--dim:#8d94a2;
  --faint:#5b6371;--rule:#1f242b;--ground:#0c0e12;--halo:#0b0d11;
- --glass:rgba(15,18,23,.78);--shadow:drop-shadow(0 1px 2px rgba(0,0,0,.55))}
-body[data-t="kolir"]{--panel:#12161b;--sunk:#181d23;--ink:#eaebef;--dim:#8d94a2;
- --faint:#5f6775;--rule:#212730;--ground:#1a2430;--halo:#101820;
- --glass:rgba(18,22,27,.78);--shadow:drop-shadow(0 1px 2px rgba(0,0,0,.5))}
+ --glass:rgba(15,18,23,.78);--shadow:drop-shadow(0 1px 2px rgba(0,0,0,.55));
+ --card:rgba(20,23,29,.94);--card-shadow:0 6px 24px rgba(0,0,0,.5),0 1px 3px rgba(0,0,0,.4)}
 :root{--sans:Commissioner,"Segoe UI",system-ui,sans-serif;
  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
  --disp:Unbounded,Commissioner,sans-serif}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;font:14px/1.5 var(--sans);background:var(--ground);color:var(--ink);
  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
-/* ---- ПАНЕЛЬ ----
-   Карта ліворуч, панель праворуч: погляд починає з міста, а не з переліку
-   галочок. Ширина 360 px — з макета. */
-#wrap{display:flex;height:100%}
-#map{flex:1;min-width:0}
-aside#side{width:360px;flex:0 0 360px;background:var(--panel);color:var(--ink);
- border-left:1px solid var(--rule);display:flex;flex-direction:column;gap:26px;
- padding:26px 22px 0;overflow-y:auto;scrollbar-width:thin}
-.brand{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
-.brand b{font:500 15px/1 var(--disp);letter-spacing:-.03em}
-.brand span{font:400 9px/1 var(--mono);letter-spacing:.24em;color:var(--faint)}
-.sub{color:var(--dim);font-size:11.5px}
-#cntl{font:400 11.5px var(--mono);color:var(--dim);font-variant-numeric:tabular-nums}
-#backl a{color:var(--ink);font-size:12px;text-decoration:none}
-#backl a:hover{text-decoration:underline}
-.lab{font:500 9px/1 var(--mono);letter-spacing:.2em;text-transform:uppercase;color:var(--faint)}
-.blk{display:flex;flex-direction:column;gap:12px}
-/* режим: активний підкреслений, не залитий */
-.seg{display:flex;gap:18px;border-bottom:1px solid var(--rule)}
-.seg button{all:unset;cursor:pointer;font-size:13.5px;color:var(--dim);padding-bottom:9px;
- border-bottom:1.5px solid transparent;margin-bottom:-1px;transition:color .16s}
-.seg button:hover{color:var(--ink)}
-.seg button[aria-pressed="true"]{color:var(--ink);border-bottom-color:var(--ink)}
-.seg button i{font-style:normal;font-family:var(--mono);font-size:10px;color:var(--faint);margin-left:5px}
-.rhead{display:flex;justify-content:space-between;align-items:baseline}
-/* рядок теми: квадрат вмикає події, риска — прогноз ризику тієї самої теми,
-   праворуч від риски дрібним точність шару */
-.rows{display:flex;flex-direction:column}
-.row{display:grid;grid-template-columns:14px 1fr auto 20px 30px;align-items:center;gap:12px;
- padding:9px 0;border-bottom:1px solid var(--rule);cursor:pointer}
-.row:last-child{border-bottom:0}
-.row .sq{width:12px;height:12px;justify-self:center;border-radius:2px;transition:all .16s}
-.row .nm{font-size:13.5px;letter-spacing:-.004em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.row .n{font:400 11.5px var(--mono);color:var(--dim);font-variant-numeric:tabular-nums;text-align:right}
-.row .ln{width:20px;height:3px;border-radius:2px;background:var(--rule);transition:background .16s}
-.row .acc{font:400 10px var(--mono);color:var(--faint);text-align:right;font-variant-numeric:tabular-nums}
-.row[data-on="0"] .nm,.row[data-on="0"] .n{color:var(--faint)}
-.row[data-on="0"] .sq{background:transparent!important;box-shadow:inset 0 0 0 1.5px var(--faint)}
-.row[data-nod="1"] .ln{opacity:.3}
-.quiet{display:flex;gap:8px;align-items:flex-start;font-size:11.5px;color:var(--dim);cursor:pointer;line-height:1.4}
-.quiet input{margin:2px 0 0;flex:none;width:13px;height:13px;accent-color:var(--ink)}
-.dists{display:flex;flex-wrap:wrap;gap:5px 14px}
-.dists span{font-size:12px;color:var(--dim);cursor:pointer;border-bottom:1.5px solid transparent;padding-bottom:2px}
-.dists span:hover{color:var(--ink)}
-.dists span.on{color:var(--ink);border-bottom-color:var(--ink)}
-.dists span i{font-style:normal;font-family:var(--mono);font-size:9.5px;color:var(--faint);margin-left:4px}
-.docs{display:flex;flex-direction:column}
-.docs a{display:flex;justify-content:space-between;align-items:baseline;gap:8px;text-decoration:none;
- color:var(--ink);font-size:13px;padding:8px 0;border-bottom:1px solid var(--rule);transition:opacity .16s}
-.docs a:hover{opacity:.62}
-.docs a em{font:400 9.5px var(--mono);font-style:normal;color:var(--faint);letter-spacing:.1em}
-.foot{margin-top:auto;padding:18px 0 26px;border-top:1px solid var(--rule)}
-.fine{font-size:10.5px;line-height:1.5;color:var(--faint);margin-top:10px}
-.fine b{color:var(--dim)}
+/* ---- КАРТКА-НАВІГАТОР ----
+   Карта на все вікно; панель — картка «в повітрі» праворуч угорі, заввишки
+   за змістом (RISHENNYA, розд. 18). Значення — з затвердженого макета
+   site/maket-panel.html, версія 4: будь-яка зміна вигляду спершу
+   узгоджується на макеті, тож тут їх не підбирати на око. */
+#wrap{position:relative;height:100%}
+#map{position:absolute;inset:0}
+aside#side{position:absolute;top:14px;right:14px;z-index:1100;width:292px;
+ background:var(--card);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+ border-radius:6px;box-shadow:var(--card-shadow);padding:14px 16px 12px;color:var(--ink);
+ display:flex;flex-direction:column;gap:14px;max-height:calc(100% - 28px);overflow:auto;scrollbar-width:thin}
+.search{display:flex;align-items:center;gap:8px;border:1px solid var(--rule);border-radius:4px;
+ padding:7px 9px;color:var(--faint);font-size:13px}
+.search svg{flex:none}
+.search input{border:0;outline:0;background:none;font:inherit;color:var(--ink);flex:1;min-width:0;padding:0}
+.search input::placeholder{color:var(--faint)}
+.search input::-webkit-search-cancel-button{display:none}
+.sugg{display:flex;flex-direction:column;margin-top:-14px;border:1px solid var(--rule);border-top:0;border-radius:0 0 4px 4px}
+.sugg[hidden]{display:none}
+.sugg button{background:none;border:0;padding:6px 9px;text-align:left;font:400 12.5px var(--sans);color:var(--ink);cursor:pointer}
+.sugg button:hover{background:var(--sunk)}
+.modes{display:flex;gap:16px;border-bottom:1px solid var(--rule)}
+.modes button{background:none;border:0;padding:0 0 7px;font:400 13.5px var(--sans);color:var(--dim);
+ cursor:pointer;border-bottom:1.5px solid transparent;margin-bottom:-1px}
+.modes button[aria-pressed="true"]{color:var(--ink);border-color:var(--ink)}
+.types{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px}
+.type{display:flex;align-items:center;gap:8px;background:none;border:0;padding:5px 0;
+ font:400 13.5px var(--sans);color:var(--ink);cursor:pointer;text-align:left}
+.type i{width:11px;height:11px;border-radius:2px;border:1.5px solid var(--c);background:var(--c);flex:none}
+.type[aria-pressed="false"]{color:var(--faint)}
+.type[aria-pressed="false"] i{background:transparent}
+.sw{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13.5px;padding:2px 0;
+ background:none;border:0;color:var(--ink);cursor:pointer;width:100%;font-family:var(--sans);text-align:left}
+.sw[hidden]{display:none}
+.tog{width:28px;height:16px;border-radius:8px;background:var(--rule);position:relative;flex:none;transition:background .15s}
+.tog::after{content:"";position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;
+ background:var(--panel);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:left .15s}
+.sw[aria-pressed="true"] .tog{background:var(--ink)}
+.sw[aria-pressed="true"] .tog::after{left:14px}
+/* поріг зуму: поки масштаб замалий — приглушений і не натискається */
+.sw[aria-disabled="true"]{color:var(--faint);cursor:default}
+.sw[aria-disabled="true"] .tog{opacity:.45}
+.chips{display:flex;flex-wrap:wrap;gap:4px 12px;padding:2px 0 0}
+.chips[hidden]{display:none}
+.chip{background:none;border:0;padding:0 0 1px;font:400 12px var(--sans);color:var(--faint);
+ cursor:pointer;border-bottom:1px solid transparent}
+.chip[aria-pressed="true"]{color:var(--ink);border-color:var(--ink)}
+.grp{display:flex;flex-direction:column;gap:6px;padding-top:12px;border-top:1px solid var(--rule)}
+.sel{display:flex;justify-content:space-between;align-items:center;font-size:13.5px;border:0;
+ background:none;padding:0;color:var(--ink);cursor:pointer;font-family:var(--sans);width:100%}
+.sel[hidden]{display:none}
+.sel span:last-child{color:var(--dim);font-size:12px}
+.menu{display:flex;flex-direction:column;gap:2px;padding:4px 0 0 0}
+.menu[hidden]{display:none}
+.menu button,.menu a{background:none;border:0;padding:3px 0;text-align:left;font:400 13px var(--sans);
+ color:var(--ink);cursor:pointer;text-decoration:none}
+.menu button[aria-pressed="true"]{text-decoration:underline;text-underline-offset:3px}
+.menu a span{color:var(--dim)}
+.more{background:none;border:0;padding:6px 0 0;font:400 12px var(--sans);color:var(--dim);cursor:pointer}
+.more[aria-expanded="true"]{color:var(--ink)}
+/* «Розширено» — друга картка ліворуч від основної, під смугою періоду */
+.adv{position:absolute;top:62px;right:318px;z-index:1100;width:min(560px,calc(100% - 350px));
+ max-height:calc(100% - 76px);overflow:auto;background:var(--card);backdrop-filter:blur(8px);
+ -webkit-backdrop-filter:blur(8px);border-radius:6px;box-shadow:var(--card-shadow);padding:14px 16px;color:var(--ink)}
+.adv[hidden]{display:none}
+.advh{display:flex;justify-content:space-between;align-items:center;font-weight:500;margin-bottom:8px}
+.advh button{background:none;border:0;font-size:18px;color:var(--dim);cursor:pointer;line-height:1}
+.advgrid{columns:2 230px;column-gap:22px}
+.ag{break-inside:avoid;margin:0 0 12px}
+.ag h4{margin:0 0 3px;font:500 13px var(--sans);display:flex;align-items:center;gap:7px}
+.ag h4 i{width:10px;height:10px;border-radius:2px;display:block}
+.ag h5{margin:6px 0 2px;font:500 10px var(--mono);letter-spacing:.1em;text-transform:uppercase;
+ color:var(--faint);display:flex;justify-content:space-between}
+.ag h5 button{background:none;border:0;padding:0;font:inherit;color:var(--dim);cursor:pointer;
+ letter-spacing:.1em;text-transform:uppercase}
+/* клас .art уже зайнятий переліком статей у картці проблеми — тож лише всередині .adv */
+.adv .art{display:grid;grid-template-columns:12px 1fr;gap:7px;align-items:start;padding:2px 0;
+ font-size:12.5px;line-height:1.3;cursor:pointer}
+.adv .art input{margin:2px 0 0;accent-color:var(--ink)}
+.adv .art small{display:block;font:400 10px var(--mono);color:var(--faint)}
+.advfoot{border-top:1px solid var(--rule);padding-top:10px;margin-top:4px}
+aside#side button:focus-visible,.adv button:focus-visible{outline:2px solid #3d91c4;outline-offset:2px}
+@media (max-width:1000px){.adv{right:14px;left:14px;width:auto;top:auto;bottom:14px;max-height:45%}}
+/* Телефон: карта на все вікно, картка поверх неї внизу, приблизно половина
+   екрана з прокруткою всередині. Шторка, яку тягнуть пальцем, — окремо,
+   після MapLibre. */
+@media (max-width:700px){aside#side{width:auto;left:14px;top:auto;bottom:14px;max-height:55%}}
 /* ---- ПАНЕЛЬ РІШЕНЬ АДРЕСИ ---- */
 #pan{position:absolute;top:0;left:0;bottom:0;width:380px;max-width:34vw;z-index:1200;
  background:var(--panel);border-right:1px solid var(--rule);display:flex;flex-direction:column;
@@ -204,8 +235,6 @@ aside#side{width:360px;flex:0 0 360px;background:var(--panel);color:var(--ink);
 .rpop table.fx td.fv b{display:inline;font-size:12px;color:var(--ink);margin:0}
 .rpop table.fx td.fv i{font-style:normal;color:var(--faint);font-size:10.5px}
 .rpop table.fx .fr{color:var(--dim);font-size:10.5px;margin-top:1px;line-height:1.35}
-@media(max-width:900px){#wrap{flex-direction:column}#map{height:58%;flex:none}
- aside#side{width:auto;flex:1;border-left:0;border-top:1px solid var(--rule);padding:18px 16px 0}}
 /* ---- MapLibre ----
    Ті самі змінні тем, що й для Leaflet: вікно, атрибуція й кнопки масштабу
    мають виглядати однаково в обох збірках, інакше паритет не перевіриш оком.

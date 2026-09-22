@@ -43,6 +43,15 @@ function draw(){
    {maxWidth:360,autoPanPaddingTopLeft:[14,14],autoPanPaddingBottomRight:[14,14]})
   .addTo(layer)}
 }
+// ---- ПОШУК: КУДИ НАБЛИЖАТИ ----
+// Позначку після наближення перемальовано з новим множником радіуса, тож
+// шукаємо її трохи згодом — інакше відкрилося б вікно вже знятої позначки.
+function focusAddress(i){
+ const p=P[i]; map.setView([p[0],p[1]],17);
+ setTimeout(()=>{let m=null;layer.eachLayer(l=>{const ll=l.getLatLng();
+   if(ll.lat===p[0]&&ll.lng===p[1])m=l}); if(m) m.openPopup()},400);
+}
+function focusBounds(pts){map.fitBounds(L.latLngBounds(pts),{padding:[40,40],maxZoom:17})}
 // Кнопок «Теплова карта», «Скинути фільтри», «Зняти всі» й «Обрати всі» більше
 // немає: теплова стала режимом угорі, а решту робить сам перелік тем.
 // #fquiet перемальовує ШАРИ РИЗИКУ, а не позначки подій — тому його треба
@@ -54,14 +63,15 @@ document.querySelectorAll('[data-r]').forEach(x=>x.addEventListener('change',dra
 document.querySelectorAll('[data-f]').forEach(x=>x.addEventListener('change',drawFacts));
 map.on('zoomend moveend',drawFacts);
 map.on('zoomend',applyZoom);
+map.on('zoomend',paintZoomGates);
 {const fc=$('#fclear'); if(fc) fc.onclick=()=>hlayer.clearLayers();}
 // Підсвітка «Що поруч» знімається кліком по вільному місці карти.
 // Ловимо саме popupclose, а не click: клік по позначці в Leaflet теж
 // доходить до карти, і по кліку підсвітка гасла б одразу після появи.
 // Закриття вікна — це і є «користувач пішов з цього місця».
 map.on('popupclose',()=>hlayer.clearLayers());
-paintRows();draw();drawRisks();drawFacts();applyZoom();
+paintRows();draw();drawRisks();drawFacts();applyZoom();paintZoomGates();
 // Посилання виду kyiv.html#desna відкриває одразу потрібний район:
 // викладач може дати групі адресу конкретного району, а не «знайдіть самі».
 {const i=DSLUG.indexOf(decodeURIComponent(location.hash.slice(1)).toLowerCase());
- if(i>=0) enterDistrict(i,false); else if(DN.length&&!M.only) paintDistrictList();}"""
+ if(i>=0&&!M.only) enterDistrict(i,false); else paintDistrictList();}"""

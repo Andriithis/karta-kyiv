@@ -249,9 +249,12 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
     # Міська карта несе межі всіх районів, їхні переліки проблем і короткі
     # латинські ярлики для адреси сторінки. Районні файли цього не потребують:
     # вони вже обрізані.
-    if not district and ALL_BORDERS:
+    # Назви й ярлики районів потрібні й файлу окремого району: у його списку
+    # «Район» стоять усі десять, щоб між районами можна було переходити.
+    if ALL_BORDERS:
         meta['dnames'] = DNAMES
         meta['dslug'] = [SLUG.get(d, d) for d in DNAMES]
+    if not district and ALL_BORDERS:
         meta['borders'] = [ALL_BORDERS[d] for d in DNAMES]
         dcnt, dskew = [], []
         for d in DNAMES:

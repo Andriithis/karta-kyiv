@@ -17,8 +17,7 @@ JS_BASE = r"""const M=__META__, P=__PTS__;
 // входить, але без запасу %8 віддавало б йому колір громадського порядку.
 const PAL={
  svitla:['#eb6834','#1baf7a','#4a3aa7','#e34948','#2a78d6','#008300','#e87ba4','#7a6f63'],
- temna: ['#d95926','#199e70','#9085e9','#e66767','#3987e5','#008300','#d55181','#8d94a2'],
- kolir: ['#d95926','#199e70','#9085e9','#e66767','#3987e5','#008300','#d55181','#8d94a2']};
+ temna: ['#d95926','#199e70','#9085e9','#e66767','#3987e5','#008300','#d55181','#8d94a2']};
 // Ключ CARTO. Безкоштовний, без картки, до 5 млн тайлів на місяць — для
 // Академії це нескінченність. Він клієнтський і однаково лежить у коді
 // сторінки, тому ховати його немає від кого. Параметр називається саме
@@ -37,12 +36,14 @@ const TILES={
          a:'&copy; CARTO, &copy; OpenStreetMap'},
  temna:{u:'https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png'+ck_,
          a:'&copy; CARTO, &copy; OpenStreetMap'},
- kolir:{u:'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'+ck_,
-         a:'&copy; CARTO, &copy; OpenStreetMap'},
  osm:{u:'https://tile.openstreetmap.org/{z}/{x}/{y}.png', a:'&copy; OpenStreetMap'}};
-const THNAMES=[['svitla','Світла'],['temna','Темна'],['kolir','Кольорова']];
-let THEME=localStorage.getItem('karta-tema');
-if(!PAL[THEME]) THEME='svitla';
+// Тем дві. Кольорову прибрано (RISHENNYA, розд. 18); хто її колись обрав,
+// тепер бачить світлу — і в пам'яті браузера теж лишається світла, щоб
+// прибрана тема не поверталася з кожним відкриттям.
+const THNAMES=[['svitla','Світла'],['temna','Темна']];
+let THEME=null;
+try{THEME=localStorage.getItem('karta-tema')}catch(e){}
+if(!PAL[THEME]){THEME='svitla';try{localStorage.setItem('karta-tema',THEME)}catch(e){}}
 document.body.dataset.t=THEME;
 let PALA=PAL[THEME];
 // Маски, межі й гало малює JS, а кольори теми живуть у CSS. Щоб вони не
@@ -91,37 +92,14 @@ const RCOL={metro:'#38bdf8',busstop:'#7dd3fc',
 Object.keys(R.lines||{}).forEach(k=>{if(k.startsWith('risk_'))RCOL[k]=PALA[(R.lines[k].theme||0)%PALA.length]});;
 function $ify(sel,html){const el=document.querySelector(sel);if(el)el.innerHTML=html}
 {
- // --- КОНТЕКСТ: населення, потоки й один вимикач на всю інфраструктуру ---
- // Прогноз ризику звідси пішов у рядки тем (tpl_popup): ті самі сім кольорів
- // жили у двох різних блоках, і панель читалася як два переліки про одне.
- // Поділ об'єктів на «притягують / збирають людей» теж прибрано — слухачеві
- // він нічого не давав, а місця займав більше за самі об'єкти.
- const ctxRow=(k,name,col,n)=>`<div class="row" data-ctx="${k}" data-on="0">
-  <span class="sq" style="background:${col}"></span><span class="nm">${name}</span>
-  <span class="n">${n.toLocaleString('uk')}</span>
-  <span class="ln" style="visibility:hidden"></span><span class="acc"></span></div>`;
- let ch='';
- if(POP.length) ch+=ctxRow('pop','Щільність населення','#4b6fa8',POP.length);
- ['flow_school','flow_transit','flow_shop'].forEach(k=>{const v=R.lines&&R.lines[k];if(!v)return;
-  ch+=ctxRow(k,v.title,RCOL[k],v.items.length)});
- const fcnt=(F.cats||[]).reduce((a,c)=>a+c.pts.length,0);
- if(fcnt) ch+=ctxRow('facts','Об’єкти довкола','var(--dim)',fcnt);
- $ify('#fctx',ch);
- // Прапорці окремих видів об'єктів і шарів контексту лишаються схованими:
- // drawFacts() і drawRisks() читають саме їх, а вмикає їх тепер рядок вище.
+ // --- КОНТЕКСТ ---
+ // Прапорці окремих видів об'єктів, населення й потоків лишаються схованими:
+ // drawFacts() і drawRisks() читають саме їх. Вмикають їх три перемикачі в
+ // картці (tpl_core). Поділ об'єктів на «притягують / збирають людей»
+ // прибрано ще раніше — слухачеві він нічого не давав, а місця займав
+ // більше за самі об'єкти.
  (F.cats||[]).forEach((c,ci)=>c._i=ci);
  $ify('#ffact',(F.cats||[]).map(c=>`<input type="checkbox" data-f="${c._i}">`).join('')
    +['pop','flow_school','flow_transit','flow_shop'].map(k=>
      `<input type="checkbox" data-r="${k}">`).join(''));
- $ify('#fgroups',(F.groups||[]).join(' · '));
- {const box=document.querySelector('#fctx');
-  if(box) box.onclick=e=>{
-   const row=e.target.closest('[data-ctx]'); if(!row) return;
-   const k=row.dataset.ctx, on=row.dataset.on!=='0';
-   row.dataset.on=on?'0':'1';
-   if(k==='facts'){document.querySelectorAll('[data-f]').forEach(x=>x.checked=!on);
-     drawFacts(); return}
-   const inp=document.querySelector(`[data-r="${k}"]`);
-   if(inp){inp.checked=!on; drawRisks()}
-  };}
 }"""

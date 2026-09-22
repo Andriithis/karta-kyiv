@@ -80,7 +80,10 @@ const map=new maplibregl.Map({container:'map',center:[C0[1],C0[0]],zoom:M.only?1
 // © OpenMapTiles, дані © OpenStreetMap», і при запасній CARTO — рядок CARTO.
 const attrEl=document.createElement('div');
 attrEl.className='maplibregl-ctrl maplibregl-ctrl-attrib';
-function setAttr(t){attrEl.innerHTML='<div class="maplibregl-ctrl-attrib-inner">'+t+'</div>'}
+// Рядок про адреси — той самий, що й у Leaflet-збірці (причину див. у tpl_map):
+// він не залежить від підкладки, тож стоїть за будь-якою з них.
+function setAttr(t){attrEl.innerHTML='<div class="maplibregl-ctrl-attrib-inner">'+t+
+ ' · адреси — з текстів рішень ЄДРСР</div>'}
 map.addControl({onAdd:()=>attrEl,onRemove(){}},'bottom-right');
 // Помилка до того, як стиль устиг завантажитися, — це відмова підкладки.
 // Пізніші помилки (окремий тайл не прийшов) підкладку не міняють.
@@ -101,7 +104,9 @@ class ThemeCtl{
   return d}
  onRemove(){}
 }
-map.addControl(new ThemeCtl(),'top-right');
+// Тимчасово ліворуч угорі під кнопками масштабу: правий верхній кут займає
+// картка-навігатор. На кроці 8 перемикач переїде у смугу періоду.
+map.addControl(new ThemeCtl(),'top-left');
 // Після кожного завантаження стилю: сюди наступні коміти додаватимуть
 // картинки (addImage не переживає setStyle) і фарбування наших шарів у
 // кольори теми.
@@ -127,7 +132,7 @@ function bboxOf(ring){let s=90,w=180,n=-90,e=-180;
  return [[w,s],[e,n]]}
 function paintScope(){}
 function enterDistrict(i,fly){
- if(!(i>=0&&i<DN.length)) return;
+ if(M.only||!(i>=0&&i<DN.length)) return;
  CURD=i; paintScope();
  map.fitBounds(bboxOf(DBORD[i]),{padding:28,duration:fly===false?0:1150});
  if(location.hash.slice(1)!==DSLUG[i]) history.replaceState(null,'','#'+DSLUG[i]);
@@ -150,7 +155,10 @@ let heatOn=false;
 function drawRisks(){}
 function drawFacts(){}
 function showNear(){return 0}
-function showAllNear(){return 0}"""
+function showAllNear(){return 0}
+// Пошук: поки позначок немає, лише наближаємо; вікно адреси — у коміті вікна.
+function focusAddress(i){const p=P[i]; map.flyTo({center:[p[1],p[0]],zoom:17})}
+function focusBounds(pts){map.fitBounds(bboxOf(pts),{padding:40,maxZoom:17})}"""
 
 JS_GL_DRAW = r"""// Позначки адрес — коміт 4. Поки що draw() лише перераховує, що видно:
 // від цього залежать лічильники панелі, і вони мають працювати вже зараз.
@@ -160,6 +168,7 @@ document.querySelectorAll('#side input:not([data-r]):not([data-f]):not(#fquiet)'
 document.querySelectorAll('[data-r]').forEach(x=>x.addEventListener('change',drawRisks));
 {const fq=$('#fquiet'); if(fq) fq.addEventListener('change',drawRisks);}
 document.querySelectorAll('[data-f]').forEach(x=>x.addEventListener('change',drawFacts));
-paintRows();draw();drawRisks();drawFacts();
+map.on('zoomend',paintZoomGates);
+paintRows();draw();drawRisks();drawFacts();paintZoomGates();
 {const i=DSLUG.indexOf(decodeURIComponent(location.hash.slice(1)).toLowerCase());
- if(i>=0) enterDistrict(i,false); else if(DN.length&&!M.only) paintDistrictList();}"""
+ if(i>=0&&!M.only) enterDistrict(i,false); else paintDistrictList();}"""
