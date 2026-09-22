@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import labels as L
 import mech as M
 import uatext
+import podii as PD           # що рахується подією: вирок і постанова, не ухвала
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
@@ -244,6 +245,14 @@ def main():
             if ((r[4] + ', ' + r[5]) if (r[4] and r[5]) else (r[4] or '')).lower() not in excl]
     if before != len(rows):
         print(f'   вилучено подій на адресах установ: {before - len(rows):,}')
+    # Модель вчиться лише на рішеннях по суті (src/podii.py): з ухвал
+    # екстрактор брав адреси лікарень, експертиз, будь-чиї — і модель на них
+    # училася. Форма — з дампу; маркери по фабулі лише там, де форми немає.
+    formy = PD.load_formy()
+    fab = PD.load_fab(conn)
+    before = len(rows)
+    rows = [r for r in rows if PD.is_event(r[6], fab.get(r[6], ''), formy)]
+    print(f'   процесуальних документів (ухвали) відкинуто: {before - len(rows):,}')
 
     # ---- ОДНА СПРАВА = ОДНА ПОДІЯ ----
     # Перевірено 31.08.2026 на ст.286 КК: 3 560 документів — це 1 409 аварій,

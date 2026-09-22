@@ -1,0 +1,55 @@
+name: Форма рішення
+
+# Разовий прохід по дампах ЄДРСР: дописує форму рішення (вирок, постанова,
+# ухвала…) до вже відомих документів за doc_id — ZAVDANNYA-ADRESY.md, п.1.
+# Тексти рішень заново не качає і kyiv_*.csv не чіпає. Далі форму для нових
+# документів щотижня дописує сам бот «Оновлення карти» (крок 0).
+#
+# Один job, без матриці: річний дамп — 270–360 МБ, чотири роки вміщаються в
+# один запуск із великим запасом.
+
+on:
+  workflow_dispatch:
+    inputs:
+      years:
+        description: 'Роки дампів через пробіл'
+        default: '2023 2024 2025 2026'
+
+permissions:
+  contents: write
+
+# Та сама група, що й в «Оновленні карти»: обидва комітять у data/, і
+# одночасний запуск дав би конфлікт при пуші.
+concurrency:
+  group: karta-update
+  cancel-in-progress: false
+
+jobs:
+  formy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Форма рішення з дампів
+        run: python src/step0_fetch_dump.py --formy ${{ github.event.inputs.years || '2023 2024 2025 2026' }}
+
+      - name: Зберегти лише змінені дані
+        run: |
+          git config user.name  "karta-bot"
+          git config user.email "actions@github.com"
+          for f in data/formy.csv.gz data/formy_dovidnyk.csv; do
+            [ -f "$f" ] && git add -f "$f" && echo "додано $f"
+          done
+          if git diff --quiet --cached; then
+            echo "змін немає"
+          else
+            git commit -m "форма рішення з дампів ЄДРСР $(date +%Y-%m-%d)"
+            git pull --rebase --autostash origin main || true
+            git push
+          fi

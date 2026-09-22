@@ -7,7 +7,7 @@
 коли працювати справді нема з чим (жодного kyiv_*.csv). Якщо дані вже є —
 пише попередження й повертає успіх, а решта кроків іде на наявних даних.
 """
-import os, sys, io, csv, json, time, zipfile, datetime, glob
+import os, sys, io, csv, json, time, zipfile, datetime, glob, gzip
 import urllib.request, urllib.error, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import labels as L
@@ -83,53 +83,134 @@ def download(url, zpath):
             if i < TRIES: time.sleep(PAUSE)
     return False
 
-def main():
-    year = int(sys.argv[1]) if len(sys.argv) > 1 else datetime.date.today().year
-    os.makedirs(DATA, exist_ok=True)
-    print(f'=== Крок 0: дамп ЄДРСР за {year} рік ===')
+# ---- ФОРМА РІШЕННЯ (ZAVDANNYA-ADRESY.md, п.1) ----
+# Подія — лише рішення по суті: вирок (ККУ) чи постанова (КУпАП). Ухвала про
+# запобіжний захід чи про призначення засідання події не описує, а екстрактор
+# брав з неї першу-ліпшу адресу з номером. Форму рішення дамп ЄДРСР дає
+# прямо, у judgment_code, — це надійніше за будь-які маркери в тексті.
+#
+# Зберігається окремим файлом doc_id -> код, а не колонкою в events.csv.gz:
+# той файл пише й відновлює крок 1 з фіксованим переліком колонок, і нова
+# колонка зачепила б щотижневий цикл. Споживачі приєднують форму за doc_id
+# (src/podii.py).
+FORMY = os.path.join(DATA, 'formy.csv.gz')
+DOVIDNYK = os.path.join(DATA, 'formy_dovidnyk.csv')
 
-    url = find_url(year) or os.environ.get('EDRSR_URL')
-    if not url:
-        give_up('НЕ ЗНАЙДЕНО посилання на архів (портал data.gov.ua не відповідає).')
+def load_formy():
+    if not os.path.exists(FORMY): return {}
+    with gzip.open(FORMY, 'rt', encoding='utf-8', newline='') as fh:
+        rd = csv.reader(fh, delimiter='\t'); next(rd, None)
+        return {r[0]: r[1] for r in rd if len(r) >= 2}
 
-    print(f'   {url}')
-    zpath = os.path.join(DATA, f'_dump_{year}.zip')
-    if not download(url, zpath):
-        give_up('Архів не завантажився.')
+def save_formy(d):
+    with gzip.open(FORMY, 'wt', encoding='utf-8', newline='') as fh:
+        fh.write('doc_id\tjudgment_code\n')
+        for k in sorted(d, key=lambda x: int(x) if x.isdigit() else 0):
+            fh.write(f'{k}\t{d[k]}\n')
 
-    # Пишемо в тимчасовий файл і підмінюємо готовим. Якщо розбір обірветься
-    # посеред архіву, старий kyiv_YYYY.csv лишиться цілим: обрізаний файл
-    # виглядав би як робочий і тихо зменшив би кількість подій.
+def save_dovidnyk(z):
+    """Довідник форм із того самого дампу — щоб коди в src/podii.py можна
+    було звірити з першоджерелом, а не з пам'яттю."""
+    name = next((n for n in z.namelist() if n.endswith('judgment_forms.csv')), None)
+    if not name: print('   довідника judgment_forms.csv у дампі немає'); return
+    with z.open(name) as fh:
+        rows = [ln.rstrip('\r\n').split('\t') for ln in io.TextIOWrapper(fh, encoding='utf-8', errors='replace')]
+    with open(DOVIDNYK, 'w', encoding='utf-8', newline='') as o:
+        for r in rows:
+            o.write('\t'.join(x.strip('"') for x in r) + '\n')
+    print('   довідник форм рішень:')
+    for r in rows[1:]: print('      ' + ' — '.join(x.strip('"') for x in r))
+
+def column(hdr, name, default):
+    """Номер колонки за назвою з першого рядка дампу, а якщо назви немає —
+    звичний номер. Порядок колонок у дампі вже мінявся між роками."""
+    h = [x.strip().strip('"') for x in hdr]
+    return h.index(name) if name in h else default
+
+def parse(zpath, year, write_kyiv):
+    """Розбирає documents.csv дампу. Повертає doc_id -> форму рішення для
+    київських документів і, якщо треба, пише kyiv_YYYY.csv."""
     out = os.path.join(DATA, f'kyiv_{year}.csv')
     tmp = out + '.tmp'
     total = found = 0
     grp = collections.Counter()
-    try:
-        with zipfile.ZipFile(zpath) as z:
-            name = next(n for n in z.namelist() if n.endswith('documents.csv'))
-            with z.open(name) as fh, open(tmp, 'w', encoding='utf-8-sig', newline='') as o:
-                o.write('doc_id\tcourt_code\tcourt\tgroup\tcategory_code\tcause_num\tdate\tdoc_url\n')
-                txt = io.TextIOWrapper(fh, encoding='utf-8', errors='replace')
-                txt.readline()
-                for line in txt:
-                    total += 1
-                    f = line.rstrip('\n').split('\t')
-                    if len(f) < 12: continue
-                    if f[1] not in COURTS: continue
-                    lb = L.CODE.get(f[4])
-                    if not lb or lb[0] in SKIP_THEME: continue
-                    if f[10] != '1': continue
+    forms = {}
+    with zipfile.ZipFile(zpath) as z:
+        save_dovidnyk(z)
+        name = next(n for n in z.namelist() if n.endswith('documents.csv'))
+        with z.open(name) as fh:
+            txt = io.TextIOWrapper(fh, encoding='utf-8', errors='replace')
+            jc = column(txt.readline().rstrip('\n').split('\t'), 'judgment_code', 2)
+            # Пишемо в тимчасовий файл і підмінюємо готовим. Якщо розбір
+            # обірветься посеред архіву, старий kyiv_YYYY.csv лишиться цілим:
+            # обрізаний файл виглядав би як робочий і тихо зменшив би кількість подій.
+            o = open(tmp, 'w', encoding='utf-8-sig', newline='') if write_kyiv else None
+            if o: o.write('doc_id\tcourt_code\tcourt\tgroup\tcategory_code\tcause_num\tdate\tdoc_url\tjudgment_code\n')
+            for line in txt:
+                total += 1
+                f = line.rstrip('\n').split('\t')
+                if len(f) < 12: continue
+                if f[1] not in COURTS: continue
+                lb = L.CODE.get(f[4])
+                if not lb or lb[0] in SKIP_THEME: continue
+                if f[10] != '1': continue
+                code = f[jc].strip().strip('"')
+                forms[f[0]] = code
+                if o:
                     d = f[6].replace('"', '')[:10]
-                    o.write(f'{f[0]}\t{f[1]}\t{COURTS[f[1]]}\t{lb[0]}\t{f[4]}\t{f[5]}\t{d}\t{f[9]}\n')
-                    found += 1; grp[lb[0]] += 1
-    except Exception as e:
-        if os.path.exists(tmp): os.remove(tmp)
-        if os.path.exists(zpath): os.remove(zpath)
-        give_up(f'Архів пошкоджений або обірваний ({type(e).__name__}).')
-    os.remove(zpath)
-    os.replace(tmp, out)
-    print(f'   прочитано {total:,}, відібрано {found:,} -> kyiv_{year}.csv')
-    for k, v in grp.most_common(): print(f'      {L.THEMES.get(k,k):28} {v:>8,}')
+                    o.write(f'{f[0]}\t{f[1]}\t{COURTS[f[1]]}\t{lb[0]}\t{f[4]}\t{f[5]}\t{d}\t{f[9]}\t{code}\n')
+                found += 1; grp[lb[0]] += 1
+            if o: o.close()
+    if write_kyiv:
+        os.replace(tmp, out)
+        print(f'   прочитано {total:,}, відібрано {found:,} -> kyiv_{year}.csv')
+        for k, v in grp.most_common(): print(f'      {L.THEMES.get(k,k):28} {v:>8,}')
+    else:
+        print(f'   прочитано {total:,}, київських документів {found:,}')
+    fc = collections.Counter(forms.values())
+    print('   форми рішень: ' + ', '.join(f'{k}: {v:,}' for k, v in fc.most_common()))
+    return forms
+
+def fetch(year):
+    url = find_url(year) or os.environ.get('EDRSR_URL')
+    if not url:
+        return None, 'НЕ ЗНАЙДЕНО посилання на архів (портал data.gov.ua не відповідає).'
+    print(f'   {url}')
+    zpath = os.path.join(DATA, f'_dump_{year}.zip')
+    if not download(url, zpath):
+        return None, 'Архів не завантажився.'
+    return zpath, None
+
+def main():
+    os.makedirs(DATA, exist_ok=True)
+    args = sys.argv[1:]
+    # Разовий прохід «лише форми» (workflow «Форма рішення»): дампи кількох
+    # років, kyiv_*.csv не чіпаємо й тексти заново не качаємо — лише
+    # дописуємо форму рішення до вже відомих документів.
+    only_forms = '--formy' in args
+    years = [int(a) for a in args if a.isdigit()] or [datetime.date.today().year]
+    formy = load_formy()
+    for year in years:
+        print(f'=== Крок 0: дамп ЄДРСР за {year} рік' + (' — лише форми рішень' if only_forms else '') + ' ===')
+        zpath, err = fetch(year)
+        if err:
+            if only_forms:
+                print('   ' + err + ' Рік пропущено.'); continue
+            give_up(err)
+        try:
+            forms = parse(zpath, year, write_kyiv=not only_forms)
+        except Exception as e:
+            tmp = os.path.join(DATA, f'kyiv_{year}.csv.tmp')
+            if os.path.exists(tmp): os.remove(tmp)
+            os.remove(zpath)
+            if only_forms:
+                print(f'   Архів пошкоджений або обірваний ({type(e).__name__}). Рік пропущено.'); continue
+            give_up(f'Архів пошкоджений або обірваний ({type(e).__name__}).')
+        os.remove(zpath)
+        before = len(formy)
+        formy.update(forms)
+        print(f'   formy.csv.gz: {before:,} -> {len(formy):,} документів')
+    save_formy(formy)
 
 if __name__ == '__main__':
     main()

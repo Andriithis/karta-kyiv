@@ -23,6 +23,7 @@ import os, sys, json, math, gzip, csv, sqlite3, collections, datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import labels as L
+import podii as PD           # що рахується подією: вирок і постанова, не ухвала
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
@@ -111,22 +112,31 @@ def load():
     return D
 
 def load_events():
-    """(court, cat, date, street, house, tm) — з бази, а якщо її нема, зі знімка"""
+    """(court, cat, date, street, house, tm) — з бази, а якщо її нема, зі знімка.
+
+    Лише рішення по суті (src/podii.py): звіти рахують ті самі події, що й
+    карта, інакше їхні числа з картою розходилися б."""
+    formy = PD.load_formy()
     db = os.path.join(DATA, 'events.db')
     if os.path.exists(db):
         try:
             c = sqlite3.connect(db)
-            rows = c.execute('SELECT court, cat, date, street, house, tm '
-                             'FROM events').fetchall()
+            fab = PD.load_fab(c)
+            rows = [r[1:] for r in c.execute('SELECT doc_id, court, cat, date, street, house, tm '
+                                             'FROM events')
+                    if PD.is_event(r[0], fab.get(r[0], ''), formy)]
             c.close()
             if rows: return rows
         except Exception as e:
             print('   базу подій не прочитано:', e)
     snap = os.path.join(DATA, 'events.csv.gz')
     if not os.path.exists(snap): return []
+    fab = PD.load_fab()
     out = []
     with gzip.open(snap, 'rt', encoding='utf-8', newline='') as f:
         for r in csv.DictReader(f, delimiter='\t'):
+            if not PD.is_event(r.get('doc_id', ''), fab.get(r.get('doc_id', ''), ''), formy):
+                continue
             out.append((r.get('court', ''), r.get('cat', ''), r.get('date', ''),
                         r.get('street', ''), r.get('house', ''), r.get('tm', '')))
     return out

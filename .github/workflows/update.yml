@@ -105,7 +105,7 @@ jobs:
         run: |
           git config user.name  "karta-bot"
           git config user.email "actions@github.com"
-          for f in data/events.csv.gz data/risks.json data/network.json data/vykluchennya.txt data/borders.json data/engine_report.json data/risk.json; do
+          for f in data/events.csv.gz data/formy.csv.gz data/formy_dovidnyk.csv data/risks.json data/network.json data/vykluchennya.txt data/borders.json data/engine_report.json data/risk.json; do
             [ -f "$f" ] && git add -f "$f" && echo "додано $f"
           done
           if git diff --quiet --cached; then

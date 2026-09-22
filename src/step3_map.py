@@ -21,6 +21,7 @@ GL_DISTRICTS = False
 from map_excl import load_excl, detect_institutional
 import map_layers
 import map_problems
+import podii as PD           # що рахується подією: вирок і постанова, не ухвала
 from map_problems import COURTS, SLUG
 
 LAST_META = {}          # meta останньої збірки — читає крок 5
@@ -74,17 +75,10 @@ def main(district=None, out=None):
     # саме так це відбувається в GitHub Actions, де база збирається наново з
     # events.csv.gz і жодного витягу в ній немає. Без цього на живому сайті
     # панель була б без обставин, хоча вони давно зібрані й лежать поруч.
-    fab = {}
-    if c.execute("SELECT name FROM sqlite_master WHERE name='fab'").fetchone():
-        fab = {r[0]: r[1] for r in c.execute("SELECT doc_id, txt FROM fab WHERE txt<>''")}
-        if fab: print(f'витяги обставин: {len(fab):,} (з бази)')
-    if not fab and os.path.exists(FABSNAP):
-        with gzip.open(FABSNAP, 'rt', encoding='utf-8', newline='') as fh:
-            rd = csv.reader(fh, delimiter='\t')
-            next(rd, None)
-            fab = {r[0]: r[1] for r in rd if len(r) >= 2 and r[1]}
-        if fab: print(f'витяги обставин: {len(fab):,} (зі знімка)')
-    if not fab:
+    fab = PD.load_fab(c)
+    if fab:
+        print(f'витяги обставин: {len(fab):,}')
+    else:
         print('витягів обставин немає — панель покаже перелік рішень без опису')
 
     print('перевірка на адреси установ:')
@@ -102,24 +96,41 @@ def main(district=None, out=None):
     #
     # Папери справи не викидаємо, а лишаємо при представнику: панель показує
     # усі рішення справи, і саме заради цього тут не просто відсів.
+    #
+    # Подією справи може бути лише рішення по суті (src/podii.py). Ухвали
+    # лишаються в справі — панель показує й їх, — але представником не
+    # стають: з ухвали екстрактор брав чужу адресу. Справа, де самі ухвали,
+    # події не дає зовсім.
+    formy = PD.load_formy()
+    isev = {r[0]: PD.is_event(r[0], fab.get(r[0], ''), formy) for r in rows}
+    nproc = sum(1 for v in isev.values() if not v)
+    print(f'   процесуальних документів (ухвали): {nproc:,} з {len(rows):,}; '
+          f'форма з дампу є для {sum(1 for d in isev if formy.get(d)):,}')
     cause = {d: v[0] for d, v in extra.items() if v[0]}
     groups = collections.defaultdict(list)
     for r in rows:
         cn = cause.get(r[0])
         groups[(cn, r[2]) if cn else ('#' + r[0], r[2])].append(r)
     reps, case_docs = [], {}
+    no_event = 0
     for _k, g in groups.items():
-        if len(g) > 1:
-            # серед документів однієї справи беремо найчастішу адресу,
+        evs = [x for x in g if isev[x[0]]]
+        if not evs:
+            no_event += 1
+            continue
+        if len(evs) > 1:
+            # серед рішень по суті однієї справи беремо найчастішу адресу,
             # за рівності — найранішу подію (те саме правило, що у двигуні)
-            addr_n = collections.Counter((x[5] or '') + ', ' + (x[6] or '') for x in g)
+            addr_n = collections.Counter((x[5] or '') + ', ' + (x[6] or '') for x in evs)
             top = addr_n.most_common(1)[0][0]
-            same = [x for x in g if (x[5] or '') + ', ' + (x[6] or '') == top]
+            same = [x for x in evs if (x[5] or '') + ', ' + (x[6] or '') == top]
             rep = sorted(same, key=lambda x: x[3] or '')[0]
         else:
-            rep = g[0]
+            rep = evs[0]
         reps.append(rep)
         case_docs[rep[0]] = [x[0] for x in sorted(g, key=lambda x: x[3] or '')]
+    if no_event:
+        print(f'   справ без рішення по суті (лише ухвали) — подій не дають: {no_event:,}')
     if len(reps) < len(rows):
         print(f'   одна справа = одна подія: {len(rows):,} -> {len(reps):,}')
     rows = reps
