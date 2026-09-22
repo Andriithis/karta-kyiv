@@ -115,12 +115,12 @@ def main(sample=False):
     # Одна подія на (справа, вид), як на карті — тим самим src/podii.py.
     merged = PD.merge_cases(ev, doc=lambda e: e['doc'], cat=lambda e: e['cat'],
                             date=lambda e: e['date'], cause=cause, event=lambda e: e['k'] != 'A')
-    reps = [rep for rep, _g, _l in merged]
+    reps = [rep for rep, _g, _l, _c in merged]
     print('\nодна подія на (справа, вид):')
     print(f'{"тема":<5}{"рішень по суті":>16}{"подій":>8}{"дублів":>8}{"різні адреси":>14}')
     for th in THEMES:
         nd = sum(1 for e in ev if e['th'] == th and e['k'] != 'A')
-        grp_th = [(r, g) for r, g, _l in merged if r['th'] == th]
+        grp_th = [(r, g) for r, g, _l, _c in merged if r['th'] == th]
         # справа, де кілька рішень по суті стоять на різних адресах: саме тут
         # вибір представника міняє точку на карті
         split = sum(1 for _r, g in grp_th

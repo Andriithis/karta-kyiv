@@ -108,11 +108,17 @@ def main(district=None, out=None):
     cause = {d: v[0] for d, v in extra.items() if v[0]}
     merged = PD.merge_cases(rows, doc=lambda r: r[0], cat=lambda r: r[2], date=lambda r: r[3],
                             cause=cause, event=lambda r: isev[r[0]])
-    reps, case_docs = [], {}
-    for rep, g, lab in merged:
+    reps, case_docs, arts = [], {}, {}
+    for rep, g, lab, cats in merged:
         # підпис події — стаття, найтяжча в цьому виді справи (podii.label_cat)
         reps.append(rep[:2] + (lab,) + rep[3:])
         case_docs[rep[0]] = [x[0] for x in sorted(g, key=lambda x: x[3] or '')]
+        # решта статей справи — окремим полем: ст.130 у справі про ДТП
+        # підпис не бере, але для відбору проблем вона є фактом про місце
+        own = PD.article(lab)
+        arts[rep[0]] = sorted({PD.article(c) for c in cats} - {own, ''})
+    nmulti = sum(1 for v in arts.values() if v)
+    print(f'   подій із кількома статтями: {nmulti:,}')
     print(f'   одна подія на (справа, вид): {len(rows):,} документів -> {len(reps):,} подій')
     rows = reps
 
@@ -150,7 +156,8 @@ def main(district=None, out=None):
              *extra.get(doc, ('', '')),
              [extra.get(x, ('', ''))[1] for x in case_docs.get(doc, [doc])
               if extra.get(x, ('', ''))[1]],
-             next((fab[x] for x in case_docs.get(doc, [doc]) if fab.get(x)), '')))
+             next((fab[x] for x in case_docs.get(doc, [doc]) if fab.get(x)), ''),
+             arts.get(doc, [])))
 
     # ---- ЧЕСНА НАЗВА ТОЧКИ (виправлено 01.09.2026) ----
     # Крок 2 має два режими прив'язки. Коли будинок є в OpenStreetMap, подія
@@ -184,7 +191,8 @@ def main(district=None, out=None):
         # відкривають. Порядок справ у тому файлі той самий, що тут.
         ev_sorted = sorted(evs, key=lambda x: x[5], reverse=True)
         P.append([la, lo, a, prec,
-                  [[e_[0], e_[1], e_[2], e_[3]] for e_ in evs],
+                  # п'ятий елемент — інші статті справи, лише коли вони є
+                  [[e_[0], e_[1], e_[2], e_[3]] + ([e_[12]] if e_[12] else []) for e_ in evs],
                   len(ev_sorted)])
         # DOCS — те, що показує панель: справа, дата, година, номер справи,
         # папери справи. Порядок збігається з порядком у p[4] за датою.

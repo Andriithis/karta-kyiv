@@ -271,7 +271,7 @@ def main():
         # рішення по суті; представник — підсумкове, найпізніше.
         merged = PD.merge_cases(rows, doc=lambda r: r[6], cat=lambda r: r[0], date=lambda r: r[1],
                                 cause=cause, event=lambda r: True)
-        keep = [(lab,) + rep[1:] for rep, _g, lab in merged]
+        keep = [(lab,) + rep[1:] for rep, _g, lab, _cats in merged]
         print(f'   одна подія на (справа, вид): {len(rows):,} -> {len(keep):,}')
         rows = keep
     else:
