@@ -188,6 +188,8 @@ aside#side button:focus-visible,.adv button:focus-visible{outline:2px solid #3d9
 .lp a{color:var(--ink);text-decoration:none}.lp a:hover{text-decoration:underline}
 .lp li{margin-bottom:4px;font-size:11.5px}.lp ul{padding-left:15px;margin:3px 0}
 .lp .tt{color:var(--dim);font-size:11.5px;margin-bottom:7px}
+/* застереження про дані — дрібно й блідо, як рядок в атрибуції */
+.lp .an{color:var(--faint);font-size:10.5px;margin:-3px 0 5px}
 .cbadge{display:inline-block;padding:1px 7px;border-radius:99px;font-size:10.5px;
  text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
 .bd{width:100%;border-collapse:collapse;margin-bottom:8px}

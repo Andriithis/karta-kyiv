@@ -32,36 +32,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
 THEMES = ['МАЙ', 'НАР', 'НАС', 'СЕР', 'ДОР', 'ГП', 'АЛК']
 
-# Тип вулиці на початку назви й службові слова — не ознака конкретної вулиці.
-STREET_TYPES = r'^(?:вул|вулиця|просп|проспект|бульв|бульвар|пл|площа|пров|провулок|' \
-               r'наб|набережна|шосе|узвіз|туп|тупик|алея|дорога|майдан|проїзд)\.?\s+'
-STOP = {'вулиця', 'вулиці', 'проспект', 'бульвар', 'площа', 'провулок', 'шосе',
-        'академіка', 'героїв', 'гетьмана', 'генерала', 'маршала', 'полку', 'дорога',
-        'набережна', 'київська', 'києва', 'міста', 'сім', 'року'}
-
-
-def norm(s):
-    return re.sub(r"['’ʼ`«»\"]", '', (s or '').lower())
-
-
-def street_stems(street):
-    """Основи слів назви вулиці, за якими її можна знайти у відмінках."""
-    name = re.sub(STREET_TYPES, '', norm(street).strip())
-    words = [w for w in re.findall(r'[а-яіїєґa-z]+', name) if len(w) >= 4 and w not in STOP]
-    # основа — без останніх двох літер: «Берестейський» -> «берестейсь»
-    # ловить і «Берестейському», і «Берестейського»
-    return [w[:max(4, len(w) - 2)] for w in words]
-
-
 def classify(doc, fab, street, formy):
+    # B / C / D — тим самим правилом, що й карта (podii.addr_class)
     if not PD.is_event(doc, fab, formy):
         return 'A'
-    if not fab:
-        return 'D'
-    stems = street_stems(street)
-    if not stems:
-        return 'C'
-    return 'B' if any(s in norm(fab) for s in stems) else 'C'
+    return PD.addr_class(fab, street)
 
 
 def institutions():

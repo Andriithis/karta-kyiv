@@ -165,8 +165,12 @@ function advOpen(v){$('#adv').hidden=!v; $('#advbtn').setAttribute('aria-expande
 $('#advbtn').onclick=()=>advOpen($('#adv').hidden);
 $('#advx').onclick=()=>advOpen(false);
 // Лише точні адреси: центр вулиці (p[3]=0) збирає події всієї вулиці, для
-// яких будинку не знайшлося, і місцем, куди можна приїхати, не є.
+// яких будинку не знайшлося, і місцем, куди можна приїхати, не є. І лише
+// події класу B (e[4]===0): вулицю адреси названо в описі самої події
+// (ZAVDANNYA-ADRESY.md, п.5). Решта могла взяти адресу з чужого речення.
 let PRECISE=false;
+const evOn=(e,C,A,Y,H)=>C.has(e[0])&&A.has(e[1])&&Y.has(e[2])&&(!H.size||H.has(e[3]))
+  &&(!PRECISE||e[4]===0);
 $('#fprec').onclick=()=>{PRECISE=!PRECISE; swSet($('#fprec'),PRECISE); draw()};
 // ---- ПОШУК АДРЕСИ ----
 // Без урахування регістру й апострофів: «Солом'янську» пишуть і з ', і з ’,
@@ -363,7 +367,7 @@ function computeVis(){
   const visProbs=ownProbs.filter(pr=>pr.thi===undefined||pr.thi<0||GVIS.has(pr.thi));
   if(CF>=0&&!visProbs.length) continue;
   let n=0;const cnt={};
-  for(const e of p[4]) if(C.has(e[0])&&A.has(e[1])&&Y.has(e[2])&&(!H.size||H.has(e[3]))){
+  for(const e of p[4]) if(evOn(e,C,A,Y,H)){
    n++;const t_=CATTH[e[1]];cnt[t_]=(cnt[t_]||0)+1}
   if(!n) continue;
   // Напрямок адреси-проблеми: тема, за якою епізодів більше. Рахується з
@@ -400,7 +404,11 @@ function computeVis(){
 // Рушій лише показує його — у Leaflet це bindPopup, у MapLibre setDOMContent.
 function popupHTML(p,n,th,byProblem,cnt,thMaj,st){
    const C=st.C,A=st.A,Y=st.Y,H=st.H,GVIS=st.GVIS;
-   const ev=p[4].filter(e=>C.has(e[0])&&A.has(e[1])&&Y.has(e[2])&&(!H.size||H.has(e[3])));
+   const ev=p[4].filter(e=>evOn(e,C,A,Y,H));
+   // Застереження про дані, не пояснення інтерфейсу: адресу більшості
+   // показаних подій опис самої події не називає (клас C чи D).
+   const nB=ev.filter(e=>e[4]===0).length;
+   const anote=2*nB<ev.length?'<div class="an">адресу не підтверджено описом події</div>':'';
    const bc={},hh=new Array(24).fill(0);let nk=0;
    ev.forEach(e=>{bc[e[1]]=(bc[e[1]]||0)+1;if(e[3]>=0){hh[e[3]]++;nk++}});
    const rows=Object.entries(bc).sort((a,b)=>b[1]-a[1]);
@@ -469,7 +477,7 @@ function popupHTML(p,n,th,byProblem,cnt,thMaj,st){
      `За поточним фільтром тут переважає ${nm(thMaj)}, ${cnt[thMaj]} із ${n}.</div>`:'';
    const html=`<div class="lp">
    ${cinf?`<span class="cbadge" style="background:var(--sunk);color:${cinf[1]}">${cinf[0]}</span>`:''}
-   <b>${p[2]||'адреса не визначена'}</b>
+   <b>${p[2]||'адреса не визначена'}</b>${anote}
    <div class="tt">${n} ${n%10===1&&n%100!==11?'подія':'подій'} за поточним фільтром</div>
    ${majTxt}
    <table class="bd">`+rows.map(([i,c])=>

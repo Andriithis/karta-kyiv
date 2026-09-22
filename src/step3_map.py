@@ -38,6 +38,9 @@ FACTF = os.path.join(DATA, 'factors.json')             # шар чинників
 EXCL = os.path.join(DATA, 'vykluchennya.txt')          # формується автоматично
 MANUAL = os.path.join(DATA, 'vykluchennya_moyi.txt')    # ваш список, ніколи не перезаписується
 REVIEW = os.path.join(DATA, 'top100_dlya_pereviryky.txt')
+# Класи адреси події (podii.addr_class). На карту йде індекс, не літера: на
+# 57 тисячах подій це пів сотні кілобайтів. 0 — B, адресу названо в описі.
+ACLS = ['B', 'C', 'D']
 
 # Усі 228 632 посилання починаються однаково: .../files/XX/<32 шістнадцяткові>.rtf
 # Зберігаємо лише XX і хеш — решту складає сторінка. Це 34 знаки замість 70.
@@ -148,6 +151,7 @@ def main(district=None, out=None):
     agg = collections.defaultdict(list)
     for doc, court, cat, date, tm, street, house, la, lo, prec in rows:
         lb = L.CODE.get(cat) or ('СЕР', 'інші (код ' + cat + ')')
+        f = next((fab[x] for x in case_docs.get(doc, [doc]) if fab.get(x)), '')
         agg[(round(la, 5), round(lo, 5))].append(
             (ci[court], li[lb], yi.get(date[:4], yi.get('раніше', 0)),
              int(tm[:2]) if tm and tm[:2].isdigit() else -1,
@@ -155,8 +159,11 @@ def main(district=None, out=None):
              *extra.get(doc, ('', '')),
              [extra.get(x, ('', ''))[1] for x in case_docs.get(doc, [doc])
               if extra.get(x, ('', ''))[1]],
-             next((fab[x] for x in case_docs.get(doc, [doc]) if fab.get(x)), ''),
-             arts.get(doc, [])))
+             f, arts.get(doc, []),
+             # клас адреси — з опису тієї самої справи, що й показує панель
+             ACLS.index(PD.addr_class(f, street))))
+    ncls = collections.Counter(ACLS[e[13]] for evs in agg.values() for e in evs)
+    print('   клас адреси подій: ' + ', '.join(f'{k} {ncls[k]:,}' for k in ACLS))
 
     # ---- ЧЕСНА НАЗВА ТОЧКИ (виправлено 01.09.2026) ----
     # Крок 2 має два режими прив'язки. Коли будинок є в OpenStreetMap, подія
@@ -190,8 +197,10 @@ def main(district=None, out=None):
         # відкривають. Порядок справ у тому файлі той самий, що тут.
         ev_sorted = sorted(evs, key=lambda x: x[5], reverse=True)
         P.append([la, lo, a, prec,
-                  # п'ятий елемент — інші статті справи, лише коли вони є
-                  [[e_[0], e_[1], e_[2], e_[3]] + ([e_[12]] if e_[12] else []) for e_ in evs],
+                  # подія: суд, стаття, рік, година, клас адреси (індекс у
+                  # ACLS, 0 — B), далі інші статті справи — лише коли вони є
+                  [[e_[0], e_[1], e_[2], e_[3], e_[13]] + ([e_[12]] if e_[12] else [])
+                   for e_ in evs],
                   len(ev_sorted)])
         # DOCS — те, що показує панель: справа, дата, година, номер справи,
         # папери справи. Порядок збігається з порядком у p[4] за датою.
