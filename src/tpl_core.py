@@ -423,6 +423,11 @@ function popupHTML(p,n,th,byProblem,cnt,thMaj,st){
    const aB=p[4].filter(e=>e[4]===0).length;
    const anote=nB<ev.length&&(2*nB<ev.length||2*aB<p[4].length)
     ?'<div class="an">адресу не підтверджено описом події</div>':'';
+   // Будинку немає в адресній базі OSM — точка приблизна (PLAN-TEKSTY.md,
+   // 4б; step2_geocode.nearby). Застереження про дані, як і рядок вище.
+   const bn=((p[2]||'').match(/,\s*(\d+)/)||[])[1];
+   const approx=p[3]===3?`<div class="an">будинку немає в адресній базі — точку поставлено біля № ${bn}</div>`
+    :p[3]===4?'<div class="an">будинку немає в адресній базі — точку поставлено між сусідніми номерами</div>':'';
    const bc={},hh=new Array(24).fill(0);let nk=0;
    ev.forEach(e=>{bc[e[1]]=(bc[e[1]]||0)+1;if(e[3]>=0){hh[e[3]]++;nk++}});
    const rows=Object.entries(bc).sort((a,b)=>b[1]-a[1]);
@@ -496,7 +501,7 @@ function popupHTML(p,n,th,byProblem,cnt,thMaj,st){
      `За поточним фільтром тут переважає ${nm(thMaj)}, ${cnt[thMaj]} із ${n}.</div>`:'';
    const html=`<div class="lp">
    ${cinf?`<span class="cbadge" style="background:var(--sunk);color:${cinf[1]}">${cinf[0]}</span>`:''}
-   <b>${p[2]||'адреса не визначена'}</b>${anote}
+   <b>${p[2]||'адреса не визначена'}</b>${anote}${approx}
    <div class="tt">${n} ${pl(n,'подія','події','подій')} за поточним фільтром</div>
    ${majTxt}
    <table class="bd">`+rows.map(([i,c])=>

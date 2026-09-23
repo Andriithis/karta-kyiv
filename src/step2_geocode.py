@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Крок 2. Адресна база СУВОРО в межах міста Києва + зіставлення."""
 import os, re, sys, json, time, sqlite3, math, urllib.request, urllib.parse, urllib.error, collections
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import step1c_teksty as TK      # частини проходу по текстах (крок 6)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
@@ -119,6 +121,35 @@ def cross_point(s1, s2, streets, centro, tail):
     k = k1 if k1 in centro else None
     return (*centro[k], 'street') if k else None
 
+# ---- БУДИНКИ, ЯКИХ НЕМАЄ В OSM (PLAN-TEKSTY.md, 4б) ----
+# Лише для подій класу B — чужу адресу розстановка зробила б точнішою, ніж
+# вона є. Перевірка на установи — далі, у step3_map, як для всіх адрес.
+NEIGHBOUR = 8           # сусід того самого боку — не далі за 8 номерів
+# «20Б» стає поруч із будинком 20, а не на ньому: інакше точка злилася б з
+# подіями самого будинку 20 і його підпис став би чужим. ~4 м на північ.
+BESIDE = 0.00004
+
+
+def nearby(ns, h, exact, nums):
+    """(lat, lon, 'base' | 'interp') або None."""
+    m = re.match(r'^(\d+)', h)
+    if not m:
+        return None
+    n = int(m.group(1))
+    if h != str(n) and (ns, str(n)) in exact:
+        la, lo = exact[(ns, str(n))]
+        return (round(la + BESIDE, 6), lo, 'base')
+    nn = nums.get(ns) or {}
+    lo_ = [x for x in nn if x < n and x % 2 == n % 2 and n - x <= NEIGHBOUR]
+    hi_ = [x for x in nn if x > n and x % 2 == n % 2 and x - n <= NEIGHBOUR]
+    if not (lo_ and hi_):
+        return None
+    a, b = max(lo_), min(hi_)
+    f = (n - a) / (b - a)
+    (la1, lo1), (la2, lo2) = nn[a], nn[b]
+    return (round(la1 + f * (la2 - la1), 6), round(lo1 + f * (lo2 - lo1), 6), 'interp')
+
+
 def main():
     if not os.path.exists(DB): print('спочатку крок 1'); sys.exit(1)
     print('1) адресна база OpenStreetMap, тільки місто Київ')
@@ -146,16 +177,33 @@ def main():
     conn.execute('CREATE TABLE geo(doc_id TEXT PRIMARY KEY, lat REAL, lon REAL, precision TEXT)')
     conn.commit()
 
-    todo = list(conn.execute("SELECT doc_id, street, house FROM events WHERE street IS NOT NULL"))
-    print(f'2) зіставлення заново: {len(todo):,} записів')
+    # Адреса з проходу по текстах (крок 6, data/teksty) перемагає адресу
+    # кроку 1: її взято чинним addr.extract() з повного тексту. Документ,
+    # у якого прохід адреси не знайшов або вона прихована (АДРЕСА_N), на
+    # карту вже не йде, хоч би що колись знайшов старий витяг.
+    tk = TK.load_done()
+    todo = []
+    for doc, street, house in conn.execute("SELECT doc_id, street, house FROM events"):
+        r = tk.get(doc)
+        if r is not None:
+            street, house = r['street'] or None, r['house'] or None
+        if street:
+            todo.append((doc, street, house, r['klass'] if r else ''))
+    print(f'2) зіставлення заново: {len(todo):,} записів (з проходу по текстах: {len(tk):,})')
 
     tail = collections.defaultdict(list)
     for k in centro:
         p = k.split()
         if len(p) > 1: tail[p[-1]].append(k)
 
+    # Номери будинків вулиці цифрою — для «20Б → 20» і розстановки між
+    # сусідами (PLAN-TEKSTY.md, 4б; RISHENNYA, розд. 21).
+    nums = collections.defaultdict(dict)
+    for (k, h), ll in exact.items():
+        if h.isdigit(): nums[k].setdefault(int(h), ll)
+
     out = []; st = collections.Counter()
-    for doc, street, house in todo:
+    for doc, street, house, klass in todo:
         ns, h = norm(street), nh(house)
         hit = None
         if ' / ' in street:
@@ -163,6 +211,8 @@ def main():
             hit = cross_point(*street.split(' / ', 1), streets, centro, tail)
         elif h and (ns, h) in exact:
             hit = (*exact[(ns, h)], 'house')
+        elif h and klass == 'B' and (near := nearby(ns, h, exact, nums)):
+            hit = near
         elif ns in centro:
             hit = (*centro[ns], 'street')
         else:

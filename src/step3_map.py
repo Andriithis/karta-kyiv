@@ -22,6 +22,8 @@ from map_excl import load_excl, detect_institutional, drop_excluded
 import map_layers
 import map_problems
 import podii as PD           # що рахується подією: вирок і постанова, не ухвала
+import step1c_teksty as TK   # частини проходу по текстах (крок 6)
+from step2_geocode import BESIDE
 from map_problems import COURTS, SLUG
 
 LAST_META = {}          # meta останньої збірки — читає крок 5
@@ -42,6 +44,12 @@ REVIEW = os.path.join(DATA, 'top100_dlya_pereviryky.txt')
 # 57 тисячах подій це пів сотні кілобайтів. 0 — B, адресу названо в описі.
 ACLS = ['B', 'C', 'D']
 INITIAL = re.compile(r'\b([А-ЯІЇЄҐ])\.([А-ЯІЇЄҐ])')
+# Точність точки (step2_geocode) -> p[3] на карті. 0 — центр вулиці (на
+# карту не йде), 1 — будинок з OSM, 2 — перехрестя, 3 — «20Б» біля
+# будинку 20, 4 — між сусідніми номерами. Усе, крім 0, — справжнє місце;
+# 3 і 4 вікно адреси позначає як приблизні.
+PREC = {'house': 1, 'cross': 2, 'base': 3, 'interp': 4}
+POINT = {'house', 'base', 'interp'}
 
 # Посилання стиснуте до 34 знаків — правило одне з кроком 0 (podii.docref).
 docref = PD.docref
@@ -67,7 +75,13 @@ def main(district=None, out=None):
 
     rows = list(c.execute("""SELECT e.doc_id,e.court,e.cat,e.date,e.tm,e.street,e.house,
         g.lat,g.lon,g.precision FROM events e JOIN geo g ON g.doc_id=e.doc_id"""))
-    print(f'подій з координатами: {len(rows):,}')
+    # Прохід по текстах (крок 6): адреса документа — з проходу, так само як
+    # у step2_geocode, інакше підпис точки й перевірка на установи брали б
+    # стару адресу при новій точці.
+    TKD = TK.load_done()
+    rows = [(r[:5] + (TKD[r[0]]['street'], TKD[r[0]]['house'] or None) + r[7:]) if r[0] in TKD else r
+            for r in rows]
+    print(f'подій з координатами: {len(rows):,} (з проходу по текстах: {len(TKD):,})')
     if not rows: return
 
     # витяги обставин (крок 1b). Може не бути зовсім або бути частково —
@@ -85,8 +99,12 @@ def main(district=None, out=None):
 
     print('перевірка на адреси установ:')
     excl = detect_institutional(rows, load_excl())
+    # «20Б» біля будинку 20 стоїть на BESIDE північніше — для перевірки за
+    # точкою беремо сам будинок: «пл. Вокзальна, 1В» біля вокзалу, що в
+    # переліку установ, мусить піти разом із ним.
     rows = drop_excluded(rows, excl, street=lambda r: r[5], house=lambda r: r[6],
-                         lat=lambda r: r[7], lon=lambda r: r[8], exact=lambda r: r[9] == 'house')
+                         lat=lambda r: r[7] - (BESIDE if r[9] == 'base' else 0),
+                         lon=lambda r: r[8], exact=lambda r: r[9] in POINT)
     print(f'   залишилось {len(rows):,}')
 
     # ---- ОДНА СПРАВА = ОДНА ПОДІЯ (борг 5.7) ----
@@ -109,8 +127,19 @@ def main(district=None, out=None):
     cause = {d: v[0] for d, v in extra.items() if v[0]}
     merged = PD.merge_cases(rows, doc=lambda r: r[0], cat=lambda r: r[2], date=lambda r: r[3],
                             cause=cause, event=lambda r: isev[r[0]])
+    # Справа, представника якої розібрав прохід по текстах, бере адресу лише
+    # з нього. Якщо його самого серед подій з координатами немає (адреса
+    # прихована чи місця в тексті не названо), представником став би інший
+    # документ справи зі старою адресою — і на карту повернулося б саме те,
+    # що прохід прибрав. Такі справи пропускаємо.
+    cat_of = dict(c.execute('SELECT doc_id, cat FROM events'))
+    tk_cases = {(cause[d], PD.theme(cat_of[d])) for d in TKD if d in cause and d in cat_of}
     reps, case_docs, arts = [], {}, {}
+    n_tk_gone = 0
     for rep, g, lab, cats in merged:
+        if rep[0] not in TKD and (cause.get(rep[0]), PD.theme(rep[2])) in tk_cases:
+            n_tk_gone += 1
+            continue
         # підпис події — стаття, найтяжча в цьому виді справи (podii.label_cat)
         reps.append(rep[:2] + (lab,) + rep[3:])
         case_docs[rep[0]] = [x[0] for x in sorted(g, key=lambda x: x[3] or '')]
@@ -121,6 +150,8 @@ def main(district=None, out=None):
     nmulti = sum(1 for v in arts.values() if v)
     print(f'   подій із кількома статтями: {nmulti:,}')
     print(f'   одна подія на (справа, вид): {len(rows):,} документів -> {len(reps):,} подій')
+    if n_tk_gone:
+        print(f'   справ, яким прохід по текстах прибрав адресу: {n_tk_gone:,}')
     rows = reps
 
     # ---- злиття кодів у назви ----
@@ -150,17 +181,24 @@ def main(district=None, out=None):
     agg = collections.defaultdict(list)
     for doc, court, cat, date, tm, street, house, la, lo, prec in rows:
         lb = L.CODE.get(cat) or ('СЕР', 'інші (код ' + cat + ')')
-        f = next((fab[x] for x in case_docs.get(doc, [doc]) if fab.get(x)), '')
+        tk = TKD.get(doc)
+        if tk is not None:
+            # фабула й клас — з проходу; шкідлива фабула на сайт не йде
+            # (панель покаже рішення з посиланням, без опису), клас у неї D
+            f = '' if tk['vada'] == 'шкідлива' else tk['fab']
+            kl = tk['klass']
+        else:
+            f = next((fab[x] for x in case_docs.get(doc, [doc]) if fab.get(x)), '')
+            # клас адреси — з опису тієї самої справи, що й показує панель
+            kl = PD.addr_class(f, street)
         agg[(round(la, 5), round(lo, 5))].append(
             (ci[court], li[lb], yi.get(date[:4], yi.get('раніше', 0)),
              int(tm[:2]) if tm and tm[:2].isdigit() else -1,
-             1 if prec == 'house' else 0, date, street or '', house or '',
+             PREC.get(prec, 0), date, street or '', house or '',
              *extra.get(doc, ('', '')),
              [extra.get(x, ('', ''))[1] for x in case_docs.get(doc, [doc])
               if extra.get(x, ('', ''))[1]],
-             f, arts.get(doc, []),
-             # клас адреси — з опису тієї самої справи, що й показує панель
-             ACLS.index(PD.addr_class(f, street))))
+             f, arts.get(doc, []), ACLS.index(kl)))
     ncls = collections.Counter(ACLS[e[13]] for evs in agg.values() for e in evs)
     print('   клас адреси подій: ' + ', '.join(f'{k} {ncls[k]:,}' for k in ACLS))
 
@@ -180,7 +218,7 @@ def main(district=None, out=None):
         if hs:
             e = hs[0]
             a = f"{e[6]}, {e[7]}" if e[7] else e[6]
-            prec = 1
+            prec = e[4]            # PREC: будинок, перехрестя, біля будинку, між сусідами
         else:
             e = next((e for e in evs if e[6]), None)
             # Перехрестя (addr.extract, level='cross') — це вже точка, а не
