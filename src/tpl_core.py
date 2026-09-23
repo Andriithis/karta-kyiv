@@ -244,8 +244,8 @@ function openPanel(i){
     && (Y.has((c[1]||'').slice(0,4))||Y.has('раніше'))
     && (!H.size||H.has(c[2])));
   $('#panh').querySelector('.ps').textContent =
-    vis.length===cs.length ? `${cs.length} ${cs.length===1?'справа':'справ'}`
-    : `${vis.length} з ${cs.length} справ за поточним фільтром`;
+    vis.length===cs.length ? `${cs.length} ${pl(cs.length,'справа','справи','справ')}`
+    : `${vis.length} з ${cs.length} ${pl(cs.length,'справи','справ','справ')} за поточним фільтром`;
   $('#panb').innerHTML = vis.length ? vis.map(c=>{
    // повну назву статті тут не повторюємо на кожному рядку — вона є в картці
    // проблеми й у підказці таблиці; тут важать дата, стаття й обставини
@@ -315,8 +315,8 @@ function buildPassport(p,pr){
  // першого ж питання «з чого ви це взяли».
  if(pr.analysis){
   t+=`Вулиця, на якій стоїть адреса, входить у верхні ${100-pr.analysis.pc}% міста за `+
-     `прогнозом моделі для цієї теми. Модель навчена на ${pr.analysis.train} подіях `+
-     `і перевірена на ${pr.analysis.test} подіях наступних років: у верхні 10% вулиць `+
+     `прогнозом моделі для цієї теми. Модель навчена на ${pr.analysis.train} ${pl(pr.analysis.train,'події','подіях','подіях')} `+
+     `і перевірена на ${pr.analysis.test} ${pl(pr.analysis.test,'події','подіях','подіях')} наступних років: у верхні 10% вулиць `+
      `за прогнозом потрапляє ${pr.analysis.hit}% подій тих років.\n\n`;
   t+=`Які саме умови підняті на цьому відрізку — у вікні вулиці на карті, шар `+
      `«Прогноз ризику». Сюди їх свідомо не переписано: модель міряє умови ВУЛИЦІ, `+
@@ -430,8 +430,13 @@ function popupHTML(p,n,th,byProblem,cnt,thMaj,st){
    // ---- КАРТКИ ПРОБЛЕМ (п.7.4): по одній на кожен відібраний напрямок адреси ----
    let pblock='';
    const allp=probsOf(p);
-   const probs=allp.filter(pr=>pr.thi===undefined||pr.thi<0||GVIS.has(pr.thi));
-   const hidden=allp.length-probs.length;
+   const gvis=allp.filter(pr=>pr.thi===undefined||pr.thi<0||GVIS.has(pr.thi));
+   const hidden=allp.length-gvis.length;
+   // Картка без жодної показаної події своєї проблеми — порожня: рік, година
+   // чи «Лише точні адреси» відсіяли все, про що вона говорить. Таку ховаємо
+   // мовчки; підказку «увімкніть напрямок» лишаємо лише для прихованої теми.
+   const shownArts=new Set(ev.map(e=>M.cats[e[1]]));
+   const probs=gvis.filter(pr=>pr.arts.some(a=>shownArts.has(a[0])));
    if(!probs.length&&hidden)
     pblock=`<div class="hn">Ця адреса — у списку проблем, але за іншим напрямком `+
      `(${allp.map(x=>x.theme).join(', ')}). Увімкніть відповідні правопорушення, щоб побачити картку.</div>`;
@@ -445,8 +450,8 @@ function popupHTML(p,n,th,byProblem,cnt,thMaj,st){
         pr.arts.map(a=>{const ln=LAW(a[0]);
          return `<li><span class="sh">${a[0]} — <b>${a[1]}</b></span>`+
                 (ln?`<span class="ln">${ln}</span>`:'')+`</li>`}).join('')+`</ul>`;
-     h+=`<div class="pm"><b>Чому проблема:</b> ${pr.n} однорідних подій за ${pr.years.length} `+
-        `${pr.years.length===1?'рік':'роки'} (${pr.years.join(', ')}), `+
+     h+=`<div class="pm"><b>Чому проблема:</b> ${pr.n} ${pl(pr.n,'однорідна подія','однорідні події','однорідних подій')} за ${pr.years.length} `+
+        `${pl(pr.years.length,'рік','роки','років')} (${pr.years.join(', ')}), `+
         `${Math.round(100*pr.n/Math.max(pr.core_n,1))}% усіх подій адреси цього роду.</div>`;
      // Раніше тут стояв перелік ознак моделі — «ринки_100м, ринки_250м ×
      // школи_500м». Це були коефіцієнти ШАРУ, однакові для всіх адрес теми:
@@ -486,7 +491,7 @@ function popupHTML(p,n,th,byProblem,cnt,thMaj,st){
    const html=`<div class="lp">
    ${cinf?`<span class="cbadge" style="background:var(--sunk);color:${cinf[1]}">${cinf[0]}</span>`:''}
    <b>${p[2]||'адреса не визначена'}</b>${anote}
-   <div class="tt">${n} ${n%10===1&&n%100!==11?'подія':'подій'} за поточним фільтром</div>
+   <div class="tt">${n} ${pl(n,'подія','події','подій')} за поточним фільтром</div>
    ${majTxt}
    <table class="bd">`+rows.map(([i,c])=>
      `<tr><td title="${LAW(M.cats[i])}">${M.cats[i]}</td><td><b>${c}</b></td></tr>`).join('')+`</table>
