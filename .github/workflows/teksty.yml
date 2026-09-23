@@ -1,0 +1,67 @@
+name: Прохід по текстах
+
+# Крок 6 (ZAVDANNYA-TEKSTY.md): один прохід по текстах рішень — фабула з
+# логічними межами, дата й час події, речення адреси, адреса й клас B/C/D.
+# Щодня бере наступну порцію черги (МАЙ, НАР, НАС → ГП, АЛК, СЕР → ДОР) і
+# кладе її окремою частиною в data/teksty. Коли черга пройде, той самий
+# щоденний запуск підбирає нові документи тижня.
+
+on:
+  # Щоденний розклад вмикається після другої зупинки на перевірку — звіту
+  # першого запуску на 2 000 документів МАЙ (RISHENNYA, розд. 21). До того —
+  # лише кнопка.
+  #   schedule:
+  #     - cron: '0 22 * * *'   # щодня о 22:00 UTC — між запусками «Оновлення карти»
+  workflow_dispatch:
+    inputs:
+      max_docs:
+        description: 'Бюджет документів на цей запуск'
+        default: '2000'
+
+permissions:
+  contents: write
+
+# Та сама група, що й в «Оновленні карти» та «Формі рішення»: усі комітять у
+# data/, і одночасний запуск дав би конфлікт при пуші.
+concurrency:
+  group: karta-update
+  cancel-in-progress: false
+
+jobs:
+  teksty:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Посилання на тексти: поточний рік — із свіжого дампу, минулі — з
+      # data/posylannya (докачує лише відсутні роки).
+      - name: Посилання на тексти рішень
+        run: |
+          python src/step0_fetch_dump.py $(date +%Y) || true
+          python src/step0_fetch_dump.py --posylannya || true
+
+      - name: Прохід по текстах
+        env:
+          MAX_DOCS: ${{ github.event.inputs.max_docs || '2000' }}
+        run: python src/step1c_teksty.py
+
+      - name: Зберегти частину
+        run: |
+          git config user.name  "karta-bot"
+          git config user.email "actions@github.com"
+          [ -d data/teksty ] && git add -f data/teksty && echo "додано data/teksty"
+          [ -d data/posylannya ] && git add -f data/posylannya && echo "додано data/posylannya"
+          [ -f data/formy.csv.gz ] && git add -f data/formy.csv.gz
+          if git diff --quiet --cached; then
+            echo "змін немає"
+          else
+            git commit -m "прохід по текстах $(date +%Y-%m-%d)"
+            git pull --rebase --autostash origin main || true
+            git push
+          fi

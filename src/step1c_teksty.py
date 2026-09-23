@@ -9,13 +9,23 @@
 Тут поки лише розбір одного тексту. Черга, бюджет запуску й частини
 data/teksty/<дата>.csv.gz — після того, як затвердять 20 прикладів фабул
 (перша зупинка на перевірку, RISHENNYA, розд. 21).
+
+Прохід (main): черга представників справ — МАЙ, НАР, НАС → ГП, АЛК, СЕР →
+ДОР, усередині виду від найгустіших адрес; бюджет документів на запуск
+(MAX_DOCS); результат — частина data/teksty/<дата>.csv.gz лише з
+документами цього запуску. Наступний запуск продовжує з того самого місця:
+зроблене — це все, що вже лежить у частинах з тим самим правилом RULE.
+
+Запуск: py -3 src\\step1c_teksty.py          (MAX_DOCS=2000 — бюджет)
 """
-import os, re, sys
+import os, re, sys, csv, gzip, glob, time, datetime, threading, queue, collections
+import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import addr as A
 import labels as L
 import podii as PD
 import step1b_fabula as F
+from step1_download import rtf_to_text, UA, WORKERS, DELAY
 
 # ---- СТЕЛЯ ФАБУЛИ (затверджено 23.09) ----
 # Виміряно на 140 текстах: логічна фабула — медіана 619 знаків, але вироки
@@ -57,6 +67,9 @@ SHORT_VERDICT = re.compile(r'(?:вступн\w*\s+(?:та|і)\s+резолюти
 LEAD_JUNK = re.compile(r'надійш|обвинувальн\w*\s+акт|ЄРДР|Єдиного\s+реєстру|клопотан|'
                        r'в\s+порядку\s+ст|спрощен\w*\s+провадж|прокуратур|роз.?яснено|'
                        r'Указ\w*\s+Президента|воєнн\w+\s+стан|Закон\w*\s+України|'
+                       # хвости абзацу про воєнний стан: «14.05.2024 строком на
+                       # 90 діб тобто до 12.08.2024» — ні указу, ні учасника
+                       r'строком\s+на\s+\d+\s+діб|продовж\w+\s+(?:строк|дію|з\s+05)|'
                        # вступ до фабули: «вчинив проступок за таких обставин»,
                        # «встановлено наступні обставини, які не оспорюються»
                        r'за\s+(?:таких|наступних)\s+(?:\S+\s+){0,4}?обставин|'
@@ -187,8 +200,11 @@ def _bounds(t):
     b = set(F._bounds(t))
     for m in EXTRA_BOUND.finditer(t):
         b.add(m.start() + m.group(0).index('.') + 1)
-    # лише «2023р.»: «…до 15 листопада 2023. ОСОБА_3…» — справжня межа
-    return sorted(x for x in b if not re.search(r'\d{4}\s?р\.$', t[:x].rstrip()))
+    # лише «2023р.»: «…до 15 листопада 2023. ОСОБА_3…» — справжня межа.
+    # «пр-т.», «б-р.» — скорочення типу вулиці, крок 1b їх не знає: «за
+    # адресою: м. Київ, пр-т. Степана Бандери» рвалося на «пр-т.»
+    return sorted(x for x in b if not re.search(r'\d{4}\s?р\.$|\b(?:пр-т|б-р|пр|вул|просп|бульв)\.$',
+                                                t[:x].rstrip()))
 
 
 def _start(text):
@@ -225,8 +241,10 @@ def _is_junk(s):
 
 
 def _drop_lead(t):
-    """Відкидає процедурні речення й абзац про воєнний стан на початку."""
-    for _ in range(8):
+    """Відкидає процедурні речення й абзац про воєнний стан на початку.
+    Абзац про воєнний стан з переліком усіх продовжень буває на десяток
+    речень, тож межа — 15."""
+    for _ in range(15):
         b = _bounds(t)
         first = t[:b[0]] if b else t
         junk = _is_junk(first)
@@ -334,7 +352,7 @@ def _ends(t):
         b = _bounds(t)
         if b and len(t) - b[-1] < STUB:
             t = t[:b[-1]]
-    t = t.rstrip(' ,.;:—-')
+    t = t.rstrip(' ,.;:—-(')
     # «…крововилив в кон'юнктиві лівого ока, які [згідно висновку]» — маркер
     # відрізав підрядне речення, від нього лишилося сполучне слово
     t = re.sub(r'[,\s]+(?:які|який|яка|яке|що|та|і|й|а|де)$', '', t)
@@ -379,13 +397,20 @@ def event_date(fab):
         before = fab[max(0, pos - 300):pos]
         # лише в межах того самого речення: указ у попередньому реченні дату
         # події вже не зачіпає
-        sb = list(re.finditer(r'\.\s+(?=[А-ЯІЇЄҐ])', before))
+        sb = list(re.finditer(r'\.\s+(?=[А-ЯІЇЄҐ\d])', before))
         if sb:
             before = before[sb[-1].end():]
+        after = fab[pos:pos + 150]
         mm = list(MARTIAL.finditer(before))
         if iso == '2022-02-24' or (mm and not ACTOR.search(before[mm[-1].end():])):
-            if mm or MARTIAL.search(fab[pos:pos + 150]):
+            if mm or MARTIAL.search(after):
                 continue
+        # «14.05.2024 строком на 90 діб» — продовження воєнного стану;
+        # «засуджений з 07.04.2021 відбував покарання», «судимим, а саме 30
+        # травня 2023» — дата старого вироку, а не цієї події
+        if re.match(r'[^.]{0,30}?строком\s+на\s+\d+\s+діб', after) or \
+                PRIOR_CASE.search(before[-150:]) or re.search(r'відбува\w+\s+покаранн', after[:80]):
+            continue
         return iso
     return ''
 
@@ -454,3 +479,154 @@ def rozbir(text, cat):
         # клас — на логічній фабулі до стелі: так межа B/C не залежить від
         # обрізу. Шкідлива фабула підтвердити адресу не може — D.
         klass='D' if v == 'шкідлива' else PD.addr_class(full, res['street'], res['level']))
+
+
+# ============================================================ ПРОХІД
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA = os.path.join(ROOT, 'data')
+TEKSTY = os.path.join(DATA, 'teksty')
+REESTR = 'https://od.reyestr.court.gov.ua/files/'
+# Версія правил розбору. Частини зі старою версією в зроблене не рахуються —
+# зміна правил означає новий прохід, а старі частини лишаються як історія.
+RULE = 'v1'
+ORDER = ['МАЙ', 'НАР', 'НАС', 'ГП', 'АЛК', 'СЕР', 'ДОР']
+COLS = ['doc_id', 'rule', 'vada', 'klass', 'date', 'time', 'street', 'house', 'level',
+        'addr_sentence', 'fab_len', 'end_found', 'fab']
+SAVE_EVERY = 1000          # частину переписуємо по ходу: обрив запуску не губить зроблене
+
+
+def load_done():
+    """doc_id -> рядок останньої частини з поточним правилом (пізніша перемагає)."""
+    done = {}
+    for fp in sorted(glob.glob(os.path.join(TEKSTY, '*.csv.gz'))):
+        with gzip.open(fp, 'rt', encoding='utf-8', newline='') as fh:
+            for r in csv.DictReader(fh, delimiter='\t'):
+                if r.get('rule') == RULE:
+                    done[r['doc_id']] = r
+    return done
+
+
+def queue_docs():
+    """Представники справ (вирок, постанова) з посиланням на текст, у порядку
+    черги. Повертає (список записів events, doc_id -> посилання)."""
+    with gzip.open(os.path.join(DATA, 'events.csv.gz'), 'rt', encoding='utf-8', newline='') as fh:
+        rows = [r for r in csv.DictReader(fh, delimiter='\t') if r.get('doc_id', '').isdigit()]
+    formy = PD.load_formy()
+    links = PD.load_links()
+    for fp in glob.glob(os.path.join(DATA, 'kyiv_*.csv')):
+        with open(fp, encoding='utf-8-sig') as fh:
+            for r in csv.DictReader(fh, delimiter='\t'):
+                links[r['doc_id']] = (r['cause_num'], PD.docref(r['doc_url']))
+    cause = {d: c for d, (c, _r) in links.items() if c}
+    reps = [rep for rep, *_ in PD.merge_cases(
+        rows, doc=lambda r: r['doc_id'], cat=lambda r: r['cat'], date=lambda r: r['date'],
+        cause=cause, event=lambda r: formy.get(r['doc_id']) in PD.EVENT_FORMS)]
+    # усередині виду — від найгустіших адрес: так проблемні місця
+    # з'являються першими, а не наприкінці тижня
+    dens = collections.Counter((r['street'] or '') + '|' + (r['house'] or '') for r in reps)
+    rank = {t: i for i, t in enumerate(ORDER)}
+    reps.sort(key=lambda r: (rank.get(PD.theme(r['cat']), 99),
+                             -dens[(r['street'] or '') + '|' + (r['house'] or '')], r['doc_id']))
+    return reps, {d: v[1] for d, v in links.items() if v[1]}
+
+
+def _write(fp, out):
+    """Частина: відсортовано, без часу в gzip — однаковий вміст дає однаковий файл."""
+    os.makedirs(TEKSTY, exist_ok=True)
+    with open(fp + '.tmp', 'wb') as raw, \
+         gzip.GzipFile(filename='', mode='wb', fileobj=raw, mtime=0) as gz:
+        w = csv.writer(_Utf8(gz), delimiter='\t', lineterminator='\n')
+        w.writerow(COLS)
+        for d in sorted(out, key=int):
+            w.writerow([out[d].get(c, '') for c in COLS])
+    os.replace(fp + '.tmp', fp)
+
+
+class _Utf8:
+    def __init__(self, b): self.b = b
+    def write(self, s): self.b.write(s.encode('utf-8'))
+
+
+def part_path():
+    """data/teksty/<дата>-NN.csv.gz. Номер завжди є: «2026-09-24-02» мусить
+    сортуватися після «2026-09-24-01» — пізніша частина перемагає."""
+    day = datetime.date.today().isoformat()
+    k = 1
+    while os.path.exists(os.path.join(TEKSTY, f'{day}-{k:02d}.csv.gz')):
+        k += 1
+    return os.path.join(TEKSTY, f'{day}-{k:02d}.csv.gz')
+
+
+def main():
+    budget = int(os.environ.get('MAX_DOCS', '30000') or 0)
+    done = load_done()
+    reps, refs = queue_docs()
+    todo = [r for r in reps if r['doc_id'] not in done and r['doc_id'] in refs]
+    no_ref = sum(1 for r in reps if r['doc_id'] not in done and r['doc_id'] not in refs)
+    print(f'представників справ: {len(reps):,}; уже розібрано: {len(done):,}; '
+          f'у черзі: {len(todo):,}; без посилання на текст: {no_ref:,}')
+    if budget and len(todo) > budget:
+        todo = todo[:budget]
+    if not todo:
+        print('черга порожня'); return
+    print('цього запуску: ' + ', '.join(f'{t} {n:,}' for t, n in
+                                       collections.Counter(PD.theme(r['cat']) for r in todo).most_common()))
+    fp = part_path()
+    q = queue.Queue(); [q.put(r) for r in todo]
+    out, lock, err = {}, threading.Lock(), [0]
+    t0 = time.time()
+
+    def worker():
+        while True:
+            try: r = q.get_nowait()
+            except queue.Empty: return
+            ref = refs[r['doc_id']]
+            res = None
+            for attempt in range(3):
+                try:
+                    rq = urllib.request.Request(REESTR + ref[:2] + '/' + ref[2:] + '.rtf',
+                                                headers={'User-Agent': UA})
+                    with urllib.request.urlopen(rq, timeout=45) as resp:
+                        res = rozbir(rtf_to_text(resp.read()), r['cat'])
+                    break
+                except Exception:
+                    time.sleep(1.5 * (attempt + 1))
+            with lock:
+                if res is None:
+                    err[0] += 1          # не записуємо: наступний запуск спробує знову
+                else:
+                    res = {k: ('1' if v is True else '0' if v is False else v) for k, v in res.items()}
+                    res.update(doc_id=r['doc_id'], rule=RULE)
+                    out[r['doc_id']] = res
+                n = len(out) + err[0]
+                if n % 200 == 0:
+                    sp = n / max(time.time() - t0, 1)
+                    print(f'   {n:,} з {len(todo):,} · {sp:.1f}/с · помилок {err[0]}', flush=True)
+                if len(out) % SAVE_EVERY == 0 and out:
+                    _write(fp, out)
+            time.sleep(DELAY)
+
+    ths = [threading.Thread(target=worker, daemon=True) for _ in range(WORKERS)]
+    for t in ths: t.start()
+    try:
+        for t in ths: t.join()
+    except KeyboardInterrupt:
+        print('перервано — зроблене збережено')
+    with lock:
+        if out:
+            _write(fp, out)
+    mins = (time.time() - t0) / 60
+    print(f'\n=== ГОТОВО за {mins:.0f} хв: {len(out):,} розібрано, помилок {err[0]} ===')
+    if out:
+        print(f'   {os.path.relpath(fp, ROOT)} — {os.path.getsize(fp) / 1048576:.1f} МБ')
+        th = {r['doc_id']: PD.theme(r['cat']) for r in todo}
+        by = collections.defaultdict(collections.Counter)
+        for d, v in out.items():
+            by[th[d]][v['vada'] or 'добра'] += 1
+            by[th[d]]['клас ' + v['klass']] += 1
+        for t in ORDER:
+            if t in by: print(f'   {t}: ' + ', '.join(f'{k} {n:,}' for k, n in sorted(by[t].items())))
+
+
+if __name__ == '__main__':
+    main()
