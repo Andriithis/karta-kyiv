@@ -156,9 +156,13 @@ def street_stems(street):
     return [w[:max(4, len(w) - 2)] for w in words]
 
 
-def addr_class(fab, street):
-    """Клас адреси події, що вже є рішенням по суті: 'B', 'C' чи 'D'."""
-    if not fab:
+def addr_class(fab, street, level=None):
+    """Клас адреси події, що вже є рішенням по суті: 'B', 'C' чи 'D'.
+
+    Знеособлена адреса (АДРЕСА_N, level='hidden') — D «місце приховане»
+    (рішення 22.09, п.2): вулиці в описі немає, перевіряти нічим, хоч опис і є.
+    Раніше такі події діставали C, ніби адреса була, але чужа."""
+    if not fab or level == 'hidden':
         return 'D'
     stems = street_stems(street)
     return 'B' if stems and any(s in _norm(fab) for s in stems) else 'C'
