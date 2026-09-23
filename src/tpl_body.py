@@ -14,7 +14,7 @@ BODY = r"""<body data-t="svitla"><div id="wrap"><div id="map"></div>
 <div class="adv" id="adv" hidden>
  <div class="advh"><span>Статті</span><button id="advx" aria-label="Закрити">×</button></div>
  <div class="advgrid" id="advgrid"></div>
- <div class="advfoot"><button class="sw" id="fprec" aria-pressed="false"><span>Лише точні адреси, без центрів вулиць</span><span class="tog"></span></button></div>
+ <div class="advfoot"><button class="sw" id="fprec" aria-pressed="false"><span>Лише точні адреси</span><span class="tog"></span></button></div>
 </div>
 <aside id="side">
  <label class="search"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg><input id="q" type="search" placeholder="Адреса або вулиця" autocomplete="off" spellcheck="false"></label>

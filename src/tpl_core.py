@@ -164,10 +164,10 @@ function advOpen(v){$('#adv').hidden=!v; $('#advbtn').setAttribute('aria-expande
  $('#advbtn').textContent=v?'Розширено ‹':'Розширено ›'}
 $('#advbtn').onclick=()=>advOpen($('#adv').hidden);
 $('#advx').onclick=()=>advOpen(false);
-// Лише точні адреси: центр вулиці (p[3]=0) збирає події всієї вулиці, для
-// яких будинку не знайшлося, і місцем, куди можна приїхати, не є. І лише
-// події класу B (e[4]===0): вулицю адреси названо в описі самої події
-// (ZAVDANNYA-ADRESY.md, п.5). Решта могла взяти адресу з чужого речення.
+// Лише точні адреси: лише події класу B (e[4]===0) — вулицю адреси названо
+// в описі самої події (ZAVDANNYA-ADRESY.md, п.5). Решта могла взяти адресу з
+// чужого речення. Центрів вулиць на карті немає й без перемикача
+// (computeVis). Сам перемикач тимчасовий — до кінця кроку 6 (RISHENNYA, 19).
 let PRECISE=false;
 const evOn=(e,C,A,Y,H)=>C.has(e[0])&&A.has(e[1])&&Y.has(e[2])&&(!H.size||H.has(e[3]))
   &&(!PRECISE||e[4]===0);
@@ -188,17 +188,21 @@ function suggest(){
   const byN=(a,b)=>P[b][4].length-P[a][4].length;
   SUG=pre.sort(byN).concat(mid.sort(byN)).slice(0,8);
  }
- sg.innerHTML=SUG.map((i,k)=>`<button data-k="${k}">${esc(P[i][2])}</button>`).join('');
+ sg.innerHTML=SUG.map((i,k)=>`<button data-k="${k}">${esc(P[i][3]?P[i][2]:streetName(P[i])+' — без номера будинку')}</button>`).join('');
  sg.hidden=!SUG.length;
 }
-// Адреса — наближення й відкрите вікно адреси. Центр вулиці — наближення до
-// меж усіх точок цієї вулиці: одна точка в її центрі нічого не показує.
+// Адреса — наближення й відкрите вікно адреси. Вулиця — наближення до меж
+// її будинків і вікно подій без номера: позначки в центрі вулиці на карті
+// більше немає, це вигадане місце (сотні подій в одній точці).
+const streetName=p=>(p[2]||'').replace(/ · вся вулиця$/,'');
 function pick(i){
- const p=P[i]; sg.hidden=true; qEl.value=p[2]; qEl.blur();
+ const p=P[i]; sg.hidden=true; qEl.value=p[3]?p[2]:streetName(p); qEl.blur();
  if(p[3]) return focusAddress(i);
- const st=p[2].replace(/ · вся вулиця$/,'');
- const pts=P.filter(x=>x[2]===p[2]||(x[2]||'').startsWith(st+', ')).map(x=>[x[0],x[1]]);
- focusBounds(pts.length?pts:[[p[0],p[1]]]);
+ // «вул. Г.Хоткевича» і «вул. Г. Хоткевича» — одна вулиця: порівнюємо без
+ // крапок і пробілів
+ const key=s=>norm(s).replace(/[\s.]/g,''), st=key(streetName(p))+',';
+ const pts=P.filter(x=>x[3]&&key(x[2]).startsWith(st)).map(x=>[x[0],x[1]]);
+ focusStreet(i,pts.length?pts:[[p[0],p[1]]]);
 }
 qEl.addEventListener('input',suggest);
 qEl.addEventListener('keydown',e=>{
@@ -222,7 +226,7 @@ function openPanel(i){
  const p=P[i]; if(!p) return;
  $('#pan').classList.add('on');
  $('#panh').innerHTML='<button id="panx" title="Закрити">&times;</button>'+
-  `<div class="pa">${esc(p[2]||'адреса не визначена')}</div>`+
+  `<div class="pa">${esc(p[3]?(p[2]||'адреса не визначена'):streetName(p)+' — події без номера будинку')}</div>`+
   '<div class="ps">завантажую…</div>';
  $('#panx').onclick=closePanel;
  $('#panb').innerHTML='';
@@ -359,7 +363,9 @@ function computeVis(){
  let tot=0;const vis=[];
  for(const p of P){
   if(!inScope(p)) continue;
-  if(PRECISE&&!p[3]) continue;           // «Лише точні адреси» — без центрів вулиць
+  // Центр вулиці на карту не йде зовсім — ні позначкою, ні в теплову: події
+  // з вулицею без номера стоять у вигаданій точці. Вони є лише в пошуку.
+  if(!p[3]) continue;
   const ownProbs=probsOf(p);
   // проблема за прихованим напрямком — не проблема для поточного вигляду:
   // саме звідси в переліку бралися адреси з трьома подіями. У вікні підпис
@@ -508,5 +514,45 @@ function popupHTML(p,n,th,byProblem,cnt,thMaj,st){
     const q=showAllNear(p[0],p[1],250);
     b.textContent=q?`Показано об’єктів: ${q}`:'Поруч нічого не знайдено'});
    return wrap;
+}
+// ---- ВІКНА З ПОШУКУ, КОЛИ ПОЗНАЧКИ НЕМАЄ ----
+// Людина обрала адресу — вікно мусить відкритися, навіть якщо фільтр
+// (вид, рік, година, «Лише точні адреси») позначку сховав. Інакше пошук
+// виглядає зламаним: карта наблизилась, а нічого не сталося.
+function lpWrap(html,p){
+ const w=document.createElement('div');w.innerHTML=html;
+ w.querySelectorAll('[data-all]').forEach(b=>b.onclick=()=>openPanel(P.indexOf(p)));
+ return w;
+}
+function hiddenHTML(p){
+ const N=p[4].length, ncase=typeof p[5]==='number'?p[5]:(p[5]||[]).length;
+ return lpWrap(`<div class="lp"><b>${esc(p[2]||'адреса не визначена')}</b>
+  <div class="tt">за поточним фільтром подій тут немає</div>
+  <div class="tt">усього тут ${N} ${pl(N,'подія','події','подій')}</div>
+  <button class="pbtn2" data-all="1">Усі рішення (${ncase})</button></div>`,p);
+}
+// Вулиця без номера: не місце, а перелік. Той самий склад статей за фільтром,
+// що й у вікні адреси, і той самий шлях до рішень.
+// Статей на довгій вулиці буває півтора десятка, і кнопка «Усі рішення»
+// опинялася під прокруткою. Тому показуємо вісім найчастіших, решту — одним
+// рядком: головний шлях звідси — саме до переліку рішень.
+const STREET_ROWS=8;
+function streetHTML(p,st){
+ const N=p[4].length, ncase=typeof p[5]==='number'?p[5]:(p[5]||[]).length;
+ const ev=p[4].filter(e=>evOn(e,st.C,st.A,st.Y,st.H));
+ const bc={};ev.forEach(e=>{bc[e[1]]=(bc[e[1]]||0)+1});
+ const rows=Object.entries(bc).sort((a,b)=>b[1]-a[1]);
+ const top=rows.slice(0,STREET_ROWS), rest=rows.slice(STREET_ROWS);
+ const nrest=rest.reduce((s,r)=>s+r[1],0);
+ const flt=ev.length===N?'':ev.length
+   ?`<div class="tt">${ev.length} за поточним фільтром</div>`
+   :'<div class="tt">за поточним фільтром подій немає</div>';
+ return lpWrap(`<div class="lp"><b>${esc(streetName(p))}</b>
+  <div class="tt">${N} ${pl(N,'подія','події','подій')} без номера будинку</div>
+  ${flt}
+  <table class="bd">`+top.map(([i,c])=>
+   `<tr><td title="${LAW(M.cats[i])}">${M.cats[i]}</td><td><b>${c}</b></td></tr>`).join('')+
+  (rest.length?`<tr><td>інші статті (${rest.length})</td><td><b>${nrest}</b></td></tr>`:'')+`</table>
+  <button class="pbtn2" data-all="1">Усі рішення (${ncase})</button></div>`,p);
 }
 """

@@ -272,7 +272,9 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
         dth = [collections.Counter() for _ in DNAMES]
         for pt in P:
             di = pt[8] if len(pt) > 8 else -1
-            if di < 0: continue
+            # центр вулиці на карті не показано — у плитці його теж немає,
+            # інакше плитка розходилася б із картою на третину
+            if di < 0 or not pt[3]: continue
             for e in pt[4]: dth[di][labels[e[1]][0]] += 1
         meta['dtheme'] = [dict(x) for x in dth]
         thin = [f'{DNAMES[i]} — {n}' for i, n in enumerate(dcnt) if n < DISTRICT_TOP]
@@ -340,6 +342,7 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
     # раніше плитка рахувала за судом, а карта — за географією району.
     theme_cnt = collections.Counter()
     for p in P:
+        if not p[3]: continue        # центри вулиць на карті не показано
         for e in p[4]: theme_cnt[labels[e[1]][0]] += 1
 
     return P, POP, meta, theme_cnt

@@ -26,6 +26,9 @@ function applyZoom(){
 function draw(){
  const st=computeVis(), vis=st.vis;
  heatOn=(MODE==='heat');
+ // MK чистимо до виходу теплової: інакше пошук знаходив би позначку з
+ // попереднього режиму, якої на карті вже немає, і вікно не відкривалося.
+ MK.clear();
  layer.clearLayers();if(heat){map.removeLayer(heat);heat=null}
  if(heatOn){heat=L.heatLayer(vis.flatMap(v=>Array(Math.min(v[1],20)).fill([v[0][0],v[0][1],1])),
   {radius:18,blur:24,maxZoom:16}).addTo(map);return}
@@ -33,25 +36,40 @@ function draw(){
  // Обвідка тепер світла (гало), а не темна: вона відділяє точку від підкладки,
  // не забруднюючи сам колір теми. Радіус із макета — удвічі менший за
  // колишній на максимумі, бо щільний центр колами зливався в суцільну пляму.
- const HALO=cssv('--halo'), FAINT=cssv('--faint'), zm=zoomMul(map.getZoom());
+ const HALO=cssv('--halo'), zm=zoomMul(map.getZoom());
  lastMul=zm;
  for(const [p,n,th,byProblem,cnt,thMaj] of vis){
   const r=(Math.max(2.8,Math.min(14,2.8+9.5*Math.pow(n/Math.max(mx,1),.42))))*zm;
-  L.circleMarker([p[0],p[1]],{radius:r,weight:p[3]?1.5:0,color:HALO,
-   fillColor:p[3]?(PALA[th%PALA.length]):FAINT,fillOpacity:p[3]?.94:.45})
-  .bindPopup(()=>popupHTML(p,n,th,byProblem,cnt,thMaj,st),
-   {maxWidth:360,autoPanPaddingTopLeft:[14,14],autoPanPaddingBottomRight:[14,14]})
-  .addTo(layer)}
+  MK.set(p,L.circleMarker([p[0],p[1]],{radius:r,weight:1.5,color:HALO,
+   fillColor:PALA[th%PALA.length],fillOpacity:.94})
+  .bindPopup(()=>popupHTML(p,n,th,byProblem,cnt,thMaj,st),POPOPT)
+  .addTo(layer))}
 }
+const POPOPT={maxWidth:360,autoPanPaddingTopLeft:[14,14],autoPanPaddingBottomRight:[14,14]};
+const MK=new Map();      // адреса -> її позначка в поточному перемальовуванні
 // ---- ПОШУК: КУДИ НАБЛИЖАТИ ----
-// Позначку після наближення перемальовано з новим множником радіуса, тож
-// шукаємо її трохи згодом — інакше відкрилося б вікно вже знятої позначки.
-function focusAddress(i){
- const p=P[i]; map.setView([p[0],p[1]],17);
- setTimeout(()=>{let m=null;layer.eachLayer(l=>{const ll=l.getLatLng();
-   if(ll.lat===p[0]&&ll.lng===p[1])m=l}); if(m) m.openPopup()},400);
+// Вікно відкриваємо, коли карта ВЖЕ стала на місце і позначки перемальовано
+// під новий масштаб, — а не через 400 мс навмання. На повільному комп'ютері
+// перемальовка займає понад секунду, і таймер відкривав вікно на позначці,
+// яку за мить знімали.
+function afterMove(go){
+ map.once('moveend',()=>{clearTimeout(zTimer);draw();go()});
 }
-function focusBounds(pts){map.fitBounds(L.latLngBounds(pts),{padding:[40,40],maxZoom:17})}
+function openAt(i,ll){
+ const p=P[i], m=MK.get(p);
+ if(m) return m.openPopup();
+ // Позначки немає: сховав фільтр, теплова карта або це вулиця без номера.
+ const st=computeVis(), v=st.vis.find(x=>x[0]===p);
+ const node=!p[3]?streetHTML(p,st):v?popupHTML(...v,st):hiddenHTML(p);
+ L.popup(POPOPT).setLatLng(ll||[p[0],p[1]]).setContent(node).openOn(map);
+}
+function focusAddress(i){
+ const p=P[i]; afterMove(()=>openAt(i)); map.setView([p[0],p[1]],17);
+}
+function focusStreet(i,pts){
+ afterMove(()=>openAt(i,map.getCenter()));
+ map.fitBounds(L.latLngBounds(pts),{padding:[40,40],maxZoom:17});
+}
 // Кнопок «Теплова карта», «Скинути фільтри», «Зняти всі» й «Обрати всі» більше
 // немає: теплова стала режимом угорі, а решту робить сам перелік тем.
 // #fquiet перемальовує ШАРИ РИЗИКУ, а не позначки подій — тому його треба

@@ -158,7 +158,8 @@ function showNear(){return 0}
 function showAllNear(){return 0}
 // Пошук: поки позначок немає, лише наближаємо; вікно адреси — у коміті вікна.
 function focusAddress(i){const p=P[i]; map.flyTo({center:[p[1],p[0]],zoom:17})}
-function focusBounds(pts){map.fitBounds(bboxOf(pts),{padding:40,maxZoom:17})}"""
+function focusBounds(pts){map.fitBounds(bboxOf(pts),{padding:40,maxZoom:17})}
+function focusStreet(i,pts){focusBounds(pts)}"""
 
 JS_GL_DRAW = r"""// Позначки адрес — коміт 4. Поки що draw() лише перераховує, що видно:
 // від цього залежать лічильники панелі, і вони мають працювати вже зараз.
