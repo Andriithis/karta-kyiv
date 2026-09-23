@@ -261,12 +261,27 @@ def extract(text):
         # місце події. Краще чесне «адреси немає», ніж хибна точність.
         ms = mentions(text, 0)
     if not ms:
-        return dict(street=None, house=None, level='none', time=None)
+        return dict(street=None, house=None, level='none', time=None, pos=None)
     p0 = ms[0][0]
     end = sentence_end(text, p0)
     same = [m for m in ms if m[0] <= end]
     p, lvl, st, h = min(same, key=lambda m: (RANK[m[1]], m[0]))
-    return dict(street=st, house=h, level=lvl, time=find_time(text, p))
+    # pos — де саме в тексті названо місце: прохід по текстах (крок 6) бере
+    # звідси речення адреси, щоб було видно, з чого її взято
+    return dict(street=st, house=h, level=lvl, time=find_time(text, p), pos=p)
+
+
+def sentence_start(text, pos, cap=400):
+    """Початок речення, в якому стоїть pos (дзеркало sentence_end)."""
+    lo = max(0, pos - cap)
+    best = lo
+    for m in re.finditer(r"\.\s+(?=[А-ЯІЇЄҐ])|;|\n", text[lo:pos]):
+        if m.group(0).startswith('.'):
+            w = re.search(r"([\w\-]+)$", text[lo:lo + m.start()])
+            if w and (w.group(1).lower() in ABBR or len(w.group(1)) <= 1):
+                continue
+        best = lo + m.end()
+    return best
 
 def find_time(text, pos=None):
     seg = text[max(0,(pos or 0)-320):(pos or 0)+120] if pos else text[:2500]
