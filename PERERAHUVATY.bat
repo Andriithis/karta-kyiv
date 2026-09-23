@@ -6,6 +6,9 @@ set PY=py -3
 %PY% --version >nul 2>&1 || set PY=python
 set PYTHONIOENCODING=utf-8
 
+echo ZASTARILO (23.09.2026): tsey fayl bilshe ne potriben. Pererahunok adres
+echo robyt bot "Onovlennya karty" v GitHub Actions - krok 6 "Poryadku".
+echo Geokeshu na tsiy mashyni nemae: step2 shchorazu zbyrae geo zanovo.
 echo.
 echo ========================================
 echo   PERERAHUNOK ADRES
