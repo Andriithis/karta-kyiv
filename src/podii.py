@@ -54,6 +54,39 @@ def load_formy():
         return {r[0]: r[1] for r in rd if len(r) >= 2}
 
 
+# ---- ПОСИЛАННЯ НА РІШЕННЯ Й НОМЕРИ СПРАВ МИНУЛИХ РОКІВ ----
+# Номер справи й посилання на текст є лише в дампі ЄДРСР (kyiv_*.csv). У
+# GitHub Actions ці файли між запусками не живуть: крок 0 качає дамп лише
+# поточного року. Тож на сайті в панелі для справ 2024–2025 не було ні
+# посилань, ні номерів (перевірено 23.09: 17 із 6 012 справ 2024 року).
+# Минулі роки крок 0 кладе сюди — по файлу на рік дампу, щоб щомісячне
+# оновлення минулого року не переписувало решту історії.
+POSYL = os.path.join(DATA, 'posylannya')
+
+# Усі посилання починаються однаково: .../files/XX/<32 шістнадцяткові>.rtf.
+# Зберігаємо лише XX і хеш — решту складає сторінка. Це 34 знаки замість 70.
+_REF = re.compile(r'/files/(\w{2})/([0-9a-f]{32})\.rtf$')
+
+
+def docref(url):
+    m = _REF.search(url or '')
+    return (m.group(1) + m.group(2)) if m else ''
+
+
+def load_links():
+    """doc_id -> (номер справи, посилання) з data/posylannya/<рік>.csv.gz."""
+    out = {}
+    if not os.path.isdir(POSYL):
+        return out
+    for fn in sorted(os.listdir(POSYL)):
+        if not fn.endswith('.csv.gz'): continue
+        with gzip.open(os.path.join(POSYL, fn), 'rt', encoding='utf-8', newline='') as fh:
+            rd = csv.reader(fh, delimiter='\t'); next(rd, None)
+            for r in rd:
+                if len(r) >= 3: out[r[0]] = (r[1], r[2])
+    return out
+
+
 def load_fab(conn=None):
     """doc_id -> фабула. Спершу таблиця fab у базі (вона є там, де працював
     крок 1b), інакше знімок data/fabuly.csv.gz — так у GitHub Actions, де

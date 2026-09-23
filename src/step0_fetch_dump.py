@@ -11,6 +11,11 @@ import os, sys, io, csv, json, time, zipfile, datetime, glob, gzip
 import urllib.request, urllib.error, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import labels as L
+import podii as PD
+
+# Перший рік, з якого на карті є події (kyiv_2024.csv). Посилання раніших
+# років не потрібні: подій звідти немає.
+FIRST_YEAR = 2024
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
@@ -137,14 +142,32 @@ def column(hdr, name, default):
     h = [x.strip().strip('"') for x in hdr]
     return h.index(name) if name in h else default
 
+def save_links(year, links):
+    """Номери справ і посилання за рік дампу — data/posylannya/<рік>.csv.gz
+    (читає podii.load_links). Рядки відсортовано, а в gzip не пишемо час: той
+    самий дамп дає побайтно той самий файл, і щомісячне оновлення минулого
+    року не комітить нічого, коли нічого не змінилося."""
+    os.makedirs(PD.POSYL, exist_ok=True)
+    fp = os.path.join(PD.POSYL, f'{year}.csv.gz')
+    with open(fp + '.tmp', 'wb') as raw, \
+         gzip.GzipFile(filename='', mode='wb', fileobj=raw, mtime=0) as gz:
+        gz.write('doc_id\tcause_num\tref\n'.encode('utf-8'))
+        for k in sorted(links, key=lambda x: int(x) if x.isdigit() else 0):
+            c, r = links[k]
+            gz.write(f'{k}\t{c}\t{r}\n'.encode('utf-8'))
+    os.replace(fp + '.tmp', fp)
+    print(f'   posylannya/{year}.csv.gz: {len(links):,} документів, '
+          f'{os.path.getsize(fp)/1048576:.1f} МБ')
+
 def parse(zpath, year, write_kyiv):
-    """Розбирає documents.csv дампу. Повертає doc_id -> форму рішення для
-    київських документів і, якщо треба, пише kyiv_YYYY.csv."""
+    """Розбирає documents.csv дампу. Повертає (doc_id -> форма рішення,
+    doc_id -> (номер справи, посилання)) для київських документів і, якщо
+    треба, пише kyiv_YYYY.csv."""
     out = os.path.join(DATA, f'kyiv_{year}.csv')
     tmp = out + '.tmp'
     total = found = 0
     grp = collections.Counter()
-    forms = {}
+    forms, links = {}, {}
     with zipfile.ZipFile(zpath) as z:
         save_dovidnyk(z)
         name = next(n for n in z.namelist() if n.endswith('documents.csv'))
@@ -166,6 +189,7 @@ def parse(zpath, year, write_kyiv):
                 if f[10] != '1': continue
                 code = f[jc].strip().strip('"')
                 forms[f[0]] = code
+                links[f[0]] = (f[5], PD.docref(f[9]))
                 if o:
                     d = f[6].replace('"', '')[:10]
                     o.write(f'{f[0]}\t{f[1]}\t{COURTS[f[1]]}\t{lb[0]}\t{f[4]}\t{f[5]}\t{d}\t{f[9]}\t{code}\n')
@@ -179,7 +203,7 @@ def parse(zpath, year, write_kyiv):
         print(f'   прочитано {total:,}, київських документів {found:,}')
     fc = collections.Counter(forms.values())
     print('   форми рішень: ' + ', '.join(f'{k}: {v:,}' for k, v in fc.most_common()))
-    return forms
+    return forms, links
 
 def fetch(year):
     url = find_url(year) or os.environ.get('EDRSR_URL')
@@ -194,11 +218,19 @@ def fetch(year):
 def main():
     os.makedirs(DATA, exist_ok=True)
     args = sys.argv[1:]
+    this_year = datetime.date.today().year
     # Разовий прохід «лише форми» (workflow «Форма рішення»): дампи кількох
     # років, kyiv_*.csv не чіпаємо й тексти заново не качаємо — лише
     # дописуємо форму рішення до вже відомих документів.
-    only_forms = '--formy' in args
-    years = [int(a) for a in args if a.isdigit()] or [datetime.date.today().year]
+    only_forms = '--formy' in args or '--posylannya' in args
+    years = [int(a) for a in args if a.isdigit()] or [this_year]
+    # --posylannya: докачати лише ті минулі роки, для яких посилань ще немає.
+    # Щотижневий запуск із цим ключем нічого не качає, коли всі файли на місці.
+    if '--posylannya' in args:
+        years = [y for y in range(FIRST_YEAR, this_year)
+                 if not os.path.exists(os.path.join(PD.POSYL, f'{y}.csv.gz'))]
+        if not years:
+            print('посилання минулих років уже є — нічого не качаю'); return
     formy = load_formy()
     for year in years:
         print(f'=== Крок 0: дамп ЄДРСР за {year} рік' + (' — лише форми рішень' if only_forms else '') + ' ===')
@@ -208,7 +240,7 @@ def main():
                 print('   ' + err + ' Рік пропущено.'); continue
             give_up(err)
         try:
-            forms = parse(zpath, year, write_kyiv=not only_forms)
+            forms, links = parse(zpath, year, write_kyiv=not only_forms)
         except Exception as e:
             tmp = os.path.join(DATA, f'kyiv_{year}.csv.tmp')
             if os.path.exists(tmp): os.remove(tmp)
@@ -217,6 +249,10 @@ def main():
                 print(f'   Архів пошкоджений або обірваний ({type(e).__name__}). Рік пропущено.'); continue
             give_up(f'Архів пошкоджений або обірваний ({type(e).__name__}).')
         os.remove(zpath)
+        # Поточний рік і так приходить у kyiv_*.csv кожного запуску; у
+        # репозиторій ідуть лише минулі роки, які інакше не пережили б запуск.
+        if year < this_year:
+            save_links(year, links)
         before = len(formy)
         formy.update(forms)
         print(f'   formy.csv.gz: {before:,} -> {len(formy):,} документів')

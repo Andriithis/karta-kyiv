@@ -43,14 +43,8 @@ REVIEW = os.path.join(DATA, 'top100_dlya_pereviryky.txt')
 ACLS = ['B', 'C', 'D']
 INITIAL = re.compile(r'\b([А-ЯІЇЄҐ])\.([А-ЯІЇЄҐ])')
 
-# Усі 228 632 посилання починаються однаково: .../files/XX/<32 шістнадцяткові>.rtf
-# Зберігаємо лише XX і хеш — решту складає сторінка. Це 34 знаки замість 70.
-_REF = re.compile(r'/files/(\w{2})/([0-9a-f]{32})\.rtf$')
-
-
-def docref(url):
-    m = _REF.search(url or '')
-    return (m.group(1) + m.group(2)) if m else ''
+# Посилання стиснуте до 34 знаків — правило одне з кроком 0 (podii.docref).
+docref = PD.docref
 
 
 def main(district=None, out=None):
@@ -61,11 +55,15 @@ def main(district=None, out=None):
     if not c.execute("SELECT name FROM sqlite_master WHERE name='geo'").fetchone():
         print('немає таблиці geo — крок 2 не відпрацював'); sys.exit(1)
 
-    extra = {}
+    # Спершу минулі роки з data/posylannya (так на сайті, де kyiv_*.csv є лише
+    # за поточний рік), зверху — kyiv_*.csv, якщо вони є: там свіжіше.
+    extra = PD.load_links()
+    n_links = len(extra)
     for fp in glob.glob(os.path.join(DATA, 'kyiv_*.csv')):
         with open(fp, encoding='utf-8-sig') as fh:
             for r in csv.DictReader(fh, delimiter='\t'):
                 extra[r['doc_id']] = (r['cause_num'], docref(r['doc_url']))
+    print(f'посилань на рішення: {len(extra):,} (з data/posylannya — {n_links:,})')
 
     rows = list(c.execute("""SELECT e.doc_id,e.court,e.cat,e.date,e.tm,e.street,e.house,
         g.lat,g.lon,g.precision FROM events e JOIN geo g ON g.doc_id=e.doc_id"""))

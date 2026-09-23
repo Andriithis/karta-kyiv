@@ -46,6 +46,7 @@ jobs:
           for f in data/formy.csv.gz data/formy_dovidnyk.csv; do
             [ -f "$f" ] && git add -f "$f" && echo "додано $f"
           done
+          [ -d data/posylannya ] && git add -f data/posylannya && echo "додано data/posylannya"
           if git diff --quiet --cached; then
             echo "змін немає"
           else
