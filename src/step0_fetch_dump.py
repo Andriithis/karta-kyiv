@@ -108,18 +108,28 @@ def save_formy(d):
         for k in sorted(d, key=lambda x: int(x) if x.isdigit() else 0):
             fh.write(f'{k}\t{d[k]}\n')
 
+def unmojibake(s):
+    """У довіднику дампу назви перекодовано двічі: UTF-8 байти збережено як
+    cp1251, і «Вирок» приїжджає як «Р’РёСЂРѕРє». Повертаємо назад лише тоді,
+    коли перетворення проходить без втрат — інакше лишаємо як є."""
+    try:
+        return s.encode('cp1251').decode('utf-8')
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return s
+
 def save_dovidnyk(z):
     """Довідник форм із того самого дампу — щоб коди в src/podii.py можна
     було звірити з першоджерелом, а не з пам'яттю."""
     name = next((n for n in z.namelist() if n.endswith('judgment_forms.csv')), None)
     if not name: print('   довідника judgment_forms.csv у дампі немає'); return
     with z.open(name) as fh:
-        rows = [ln.rstrip('\r\n').split('\t') for ln in io.TextIOWrapper(fh, encoding='utf-8', errors='replace')]
+        rows = [[unmojibake(x.strip('"')) for x in ln.rstrip('\r\n').split('\t')]
+                for ln in io.TextIOWrapper(fh, encoding='utf-8', errors='replace')]
     with open(DOVIDNYK, 'w', encoding='utf-8', newline='') as o:
         for r in rows:
-            o.write('\t'.join(x.strip('"') for x in r) + '\n')
+            o.write('\t'.join(r) + '\n')
     print('   довідник форм рішень:')
-    for r in rows[1:]: print('      ' + ' — '.join(x.strip('"') for x in r))
+    for r in rows[1:]: print('      ' + ' — '.join(r))
 
 def column(hdr, name, default):
     """Номер колонки за назвою з першого рядка дампу, а якщо назви немає —
