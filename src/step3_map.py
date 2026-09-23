@@ -184,7 +184,9 @@ def main(district=None, out=None):
             prec = 1
         else:
             e = next((e for e in evs if e[6]), None)
-            a = (e[6] + ' · вся вулиця') if e else ''
+            # Перехрестя (addr.extract, level='cross') — це вже точка, а не
+            # вулиця: «вул. X / вул. Y» без хвоста (рішення 23.09).
+            a = (e[6] if ' / ' in e[6] else e[6] + ' · вся вулиця') if e else ''
             prec = 0
             n_street += 1
         # p[5] — УСІ справи адреси, найновіші згори: стаття, дата, година,

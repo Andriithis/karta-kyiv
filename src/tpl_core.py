@@ -407,8 +407,13 @@ function popupHTML(p,n,th,byProblem,cnt,thMaj,st){
    const ev=p[4].filter(e=>evOn(e,C,A,Y,H));
    // Застереження про дані, не пояснення інтерфейсу: адресу більшості
    // показаних подій опис самої події не називає (клас C чи D).
+   // Або так само не підтверджено саму адресу — більшість УСІХ її подій, без
+   // фільтра (RISHENNYA, рішення 23.09): інакше фільтр, що вибрав кілька подій
+   // класу B, знімав би застереження з адреси, якій загалом вірити не можна.
    const nB=ev.filter(e=>e[4]===0).length;
-   const anote=2*nB<ev.length?'<div class="an">адресу не підтверджено описом події</div>':'';
+   const aB=p[4].filter(e=>e[4]===0).length;
+   const anote=2*nB<ev.length||2*aB<p[4].length
+    ?'<div class="an">адресу не підтверджено описом події</div>':'';
    const bc={},hh=new Array(24).fill(0);let nk=0;
    ev.forEach(e=>{bc[e[1]]=(bc[e[1]]||0)+1;if(e[3]>=0){hh[e[3]]++;nk++}});
    const rows=Object.entries(bc).sort((a,b)=>b[1]-a[1]);
