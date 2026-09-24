@@ -28,6 +28,7 @@ from map_problems import COURTS, SLUG
 
 LAST_META = {}          # meta останньої збірки — читає крок 5
 LAST_DOCS = []          # справи адрес для панелі, паралельно до точок карти
+LAST_VYBIR = None       # відібрані події останньої збірки — їх беруть звіти (step6)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data'); DB = os.path.join(DATA, 'events.db')
@@ -63,7 +64,20 @@ def main(district=None, out=None):
     c = sqlite3.connect(DB)
     if not c.execute("SELECT name FROM sqlite_master WHERE name='geo'").fetchone():
         print('немає таблиці geo — крок 2 не відпрацював'); sys.exit(1)
+    global LAST_VYBIR
+    V = LAST_VYBIR = vybir(c)
+    if not V['rows']: return
+    rows, extra, TKD, fab = V['rows'], V['extra'], V['TKD'], V['fab']
+    case_docs, arts, ev_year = V['case_docs'], V['arts'], V['ev_year']
+    zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district, out)
 
+
+def vybir(c, print=print):
+    """Які події йдуть на карту — одне правило для карти й звітів (step6):
+    рішення по суті, одна подія на (справа, вид), без адрес установ, адреса й
+    дата з проходу по текстах, дата події від 2023. Звіти раніше рахували
+    документи (142 тис. проти ~62 тис. подій на карті) — тепер беруть звідси.
+    rows — (doc, court, cat, date, tm, street, house, lat, lon, precision)."""
     # Спершу минулі роки з data/posylannya (так на сайті, де kyiv_*.csv є лише
     # за поточний рік), зверху — kyiv_*.csv, якщо вони є: там свіжіше.
     extra = PD.load_links()
@@ -83,7 +97,8 @@ def main(district=None, out=None):
     rows = [(r[:5] + (TKD[r[0]]['street'], TKD[r[0]]['house'] or None) + r[7:]) if r[0] in TKD else r
             for r in rows]
     print(f'подій з координатами: {len(rows):,} (з проходу по текстах: {len(TKD):,})')
-    if not rows: return
+    if not rows:
+        return dict(rows=[], extra=extra, TKD=TKD, fab={}, case_docs={}, arts={}, ev_year={})
 
     # витяги обставин (крок 1b). Може не бути зовсім або бути частково —
     # завантаження довге, а карта має збиратися з тим, що вже є.
@@ -167,7 +182,11 @@ def main(district=None, out=None):
     if n_old:
         print(f'   подій з датою до {MIN_EVENT_DATE[:4]} (на карту не йдуть): {sum(n_old.values()):,} — '
               + ', '.join(f'{k} {v:,}' for k, v in n_old.most_common()))
-    rows = reps
+    return dict(rows=reps, extra=extra, TKD=TKD, fab=fab, case_docs=case_docs, arts=arts, ev_year=ev_year)
+
+
+def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, out=None):
+    """Сама карта з відібраних подій (vybir)."""
 
     # ---- злиття кодів у назви ----
     cnt = collections.Counter()

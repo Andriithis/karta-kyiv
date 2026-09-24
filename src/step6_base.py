@@ -112,12 +112,34 @@ def load():
     return D
 
 def load_events():
-    """(court, cat, date, street, house, tm) — з бази, а якщо її нема, зі знімка.
+    """(court, cat, date, street, house, tm) — ті самі події, що на карті.
 
-    Лише рішення по суті (src/podii.py): звіти рахують ті самі події, що й
-    карта, інакше їхні числа з картою розходилися б."""
-    formy = PD.load_formy()
+    Відбір — step3_map.vybir(): рішення по суті, одна подія на (справа, вид)
+    (podii.merge_cases), без адрес установ, адреса, дата й час події з
+    проходу по текстах, дата події від 2023. Раніше тут бралися всі рішення
+    по суті з бази — 142 тис. документів із 2009 року проти ~62 тис. подій на
+    карті, і «пл. Вокзальна, 1» (вокзал, у переліку установ) стояла в
+    п'ятірці адрес. Якщо бази з координатами немає — старий шлях нижче."""
     db = os.path.join(DATA, 'events.db')
+    try:
+        import step3_map as M3
+        V = M3.LAST_VYBIR
+        if V is None and os.path.exists(db):
+            c = sqlite3.connect(db)
+            if c.execute("SELECT name FROM sqlite_master WHERE name='geo'").fetchone():
+                V = M3.vybir(c)
+            c.close()
+        if V and V['rows']:
+            out = []
+            for doc, court, cat, date, tm, street, house, *_ in V['rows']:
+                tk = V['TKD'].get(doc) or {}
+                et = tk.get('time') or ''
+                out.append((court, cat, tk.get('date') or date, street, house,
+                            et if et[:2].isdigit() else tm))
+            return out
+    except Exception as e:
+        print('   події карти не відібрано, беру рішення з бази:', e)
+    formy = PD.load_formy()
     if os.path.exists(db):
         try:
             c = sqlite3.connect(db)
