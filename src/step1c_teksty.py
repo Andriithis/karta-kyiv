@@ -18,7 +18,7 @@ data/teksty/<дата>.csv.gz — після того, як затвердять
 
 Запуск: py -3 src\\step1c_teksty.py          (MAX_DOCS=2000 — бюджет)
 """
-import os, re, sys, csv, gzip, glob, time, datetime, threading, queue, collections
+import os, re, sys, csv, gzip, glob, time, datetime, threading, queue, collections, json, lzma, hashlib
 import urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import addr as A
@@ -701,6 +701,37 @@ ORDER = ['МАЙ', 'НАР', 'НАС', 'ГП', 'АЛК', 'СЕР', 'ДОР']
 COLS = ['doc_id', 'rule', 'vada', 'klass', 'date', 'time', 'street', 'house', 'level',
         'addr_sentence', 'fab_len', 'end_found', 'fab']
 SAVE_EVERY = 1000          # частину переписуємо по ходу: обрив запуску не губить зроблене
+# Повні тексти (рішення 24.09, PLAN-BAZA.md): прохід їх качав і викидав, і
+# нове правило бачило лише обрізану фабулу. Тепер кожен текст іде в
+# vykhid/teksty/<місяць рішення>.jsonl.xz — звідти workflow кладе їх у
+# приватний репозиторій (реліз «teksty»), а доки його немає — в артефакт
+# запуску. У git ці файли не йдуть.
+ARKHIV = os.path.join(ROOT, 'vykhid', 'teksty')
+
+
+class Arkhiv:
+    """Рядки jsonl по місяцях; на диск — готовим xz-потоком за раз. Кілька
+    потоків підряд — теж коректний .xz (lzma читає їх як один файл), тож
+    обрив запуску не псує вже записане."""
+    def __init__(s):
+        s.buf = collections.defaultdict(list)
+        s.n = 0
+
+    def add(s, r, ref, text):
+        s.buf[(r.get('date') or '')[:7] or 'bez-daty'].append(json.dumps(dict(
+            doc_id=r['doc_id'], cat=r['cat'], sud=r.get('court', ''), data=r.get('date', ''),
+            ref=ref, sha256=hashlib.sha256(text.encode('utf-8')).hexdigest(), tekst=text),
+            ensure_ascii=False))
+        s.n += 1
+
+    def flush(s):
+        if not s.buf:
+            return
+        os.makedirs(ARKHIV, exist_ok=True)
+        for m, lines in s.buf.items():
+            with open(os.path.join(ARKHIV, f'{m}.jsonl.xz'), 'ab') as fh:
+                fh.write(lzma.compress(('\n'.join(lines) + '\n').encode('utf-8'), preset=6))
+        s.buf.clear()
 
 
 def load_done():
@@ -816,6 +847,7 @@ def main():
     fp = part_path()
     q = queue.Queue(); [q.put(r) for r in todo]
     out, lock, err = {}, threading.Lock(), [0]
+    ark = Arkhiv()
     t0 = time.time()
 
     def worker():
@@ -823,13 +855,14 @@ def main():
             try: r = q.get_nowait()
             except queue.Empty: return
             ref = refs[r['doc_id']]
-            res = None
+            res = text = None
             for attempt in range(3):
                 try:
                     rq = urllib.request.Request(REESTR + ref[:2] + '/' + ref[2:] + '.rtf',
                                                 headers={'User-Agent': UA})
                     with urllib.request.urlopen(rq, timeout=45) as resp:
-                        res = rozbir(rtf_to_text(resp.read()), r['cat'])
+                        text = rtf_to_text(resp.read())
+                    res = rozbir(text, r['cat'])
                     break
                 except Exception:
                     time.sleep(1.5 * (attempt + 1))
@@ -840,12 +873,14 @@ def main():
                     res = {k: ('1' if v is True else '0' if v is False else v) for k, v in res.items()}
                     res.update(doc_id=r['doc_id'], rule=RULE)
                     out[r['doc_id']] = res
+                    ark.add(r, ref, text)
                 n = len(out) + err[0]
                 if n % 200 == 0:
                     sp = n / max(time.time() - t0, 1)
                     print(f'   {n:,} з {len(todo):,} · {sp:.1f}/с · помилок {err[0]}', flush=True)
                 if len(out) % SAVE_EVERY == 0 and out:
                     _write(fp, out)
+                    ark.flush()
             time.sleep(DELAY)
 
     ths = [threading.Thread(target=worker, daemon=True) for _ in range(WORKERS)]
@@ -857,8 +892,12 @@ def main():
     with lock:
         if out:
             _write(fp, out)
+        ark.flush()
     mins = (time.time() - t0) / 60
     print(f'\n=== ГОТОВО за {mins:.0f} хв: {len(out):,} розібрано, помилок {err[0]} ===')
+    if ark.n:
+        mb = sum(os.path.getsize(p) for p in glob.glob(os.path.join(ARKHIV, '*.jsonl.xz'))) / 1048576
+        print(f'   повні тексти: {ark.n:,} у vykhid/teksty — {mb:.1f} МБ')
     if out:
         print(f'   {os.path.relpath(fp, ROOT)} — {os.path.getsize(fp) / 1048576:.1f} МБ')
         th = {r['doc_id']: PD.theme(r['cat']) for r in todo}

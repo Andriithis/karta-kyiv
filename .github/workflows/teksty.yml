@@ -30,6 +30,12 @@ jobs:
   teksty:
     runs-on: ubuntu-latest
     timeout-minutes: 330
+    # Повні тексти рішень (PLAN-BAZA.md): постійне місце — реліз «teksty»
+    # приватного репозиторію DANI_REPO, токен — секрет DANI_TOKEN. Доки
+    # секрету немає, тексти лягають в артефакт запуску на 90 днів.
+    env:
+      DANI_REPO: Andriithis/karta-kyiv-dani
+      DANI_TOKEN: ${{ secrets.DANI_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +55,46 @@ jobs:
         env:
           MAX_DOCS: ${{ github.event.inputs.max_docs || '30000' }}
         run: python src/step1c_teksty.py
+
+      # Місячний архів у релізі дописується: старий файл + новий xz-потік
+      # підряд — це коректний .xz. --clobber замінює файл цілком.
+      - name: Повні тексти — у приватний репозиторій
+        id: dani
+        if: always() && env.DANI_TOKEN != ''
+        env:
+          GH_TOKEN: ${{ secrets.DANI_TOKEN }}
+        run: |
+          set -e
+          [ -d vykhid/teksty ] || { echo "текстів немає"; exit 0; }
+          gh release view teksty -R "$DANI_REPO" >/dev/null 2>&1 || \
+            gh release create teksty -R "$DANI_REPO" --title "Повні тексти рішень" \
+              --notes "Архіви по місяцях дати рішення: jsonl.xz, по рядку на рішення. Не публікувати."
+          mkdir -p /tmp/rel
+          for f in vykhid/teksty/*.jsonl.xz; do
+            n=$(basename "$f")
+            rm -f "/tmp/rel/$n.old"
+            if gh release download teksty -R "$DANI_REPO" -p "$n" -O "/tmp/rel/$n.old" 2>/dev/null; then
+              cat "/tmp/rel/$n.old" "$f" > "/tmp/rel/$n"
+            else
+              cp "$f" "/tmp/rel/$n"
+            fi
+            xz -t "/tmp/rel/$n"
+            gh release upload teksty -R "$DANI_REPO" "/tmp/rel/$n" --clobber
+            echo "$n — $(du -h "/tmp/rel/$n" | cut -f1)"
+          done
+
+      # Тимчасово, доки немає DANI_TOKEN, або якщо запис у реліз не вдався.
+      # Увага: репозиторій публічний — артефакт може завантажити будь-хто,
+      # хто увійшов у GitHub.
+      - name: Повні тексти — артефакт запуску (90 днів)
+        if: always() && (env.DANI_TOKEN == '' || steps.dani.outcome == 'failure')
+        uses: actions/upload-artifact@v4
+        with:
+          name: teksty-${{ github.run_id }}
+          path: vykhid/teksty/
+          retention-days: 90
+          compression-level: 0
+          if-no-files-found: ignore
 
       - name: Зберегти частину
         run: |

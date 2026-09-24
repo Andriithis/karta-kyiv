@@ -14,3 +14,5 @@ FABULA_REZULTAT.txt
 site/
 _site/
 __pycache__/
+# повні тексти рішень — лише в приватний репозиторій чи артефакт, не в git
+vykhid/
