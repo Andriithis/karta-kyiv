@@ -138,16 +138,20 @@ def main(district=None, out=None):
     reps, case_docs, arts = [], {}, {}
     n_tk_gone = 0
     n_old = collections.Counter()
+    ev_year = {}         # рік події: фільтр «Рік» на карті — за подією, не рішенням
     for rep, g, lab, cats in merged:
         if rep[0] not in TKD and (cause.get(rep[0]), PD.theme(rep[2])) in tk_cases:
             n_tk_gone += 1
             continue
         # На карту — лише події з датою від 2023 року, за датою самої події,
         # а не рішення (рішення 24.09, п.3). Старіші лишаються в даних.
+        # Дати події немає — рахуємо за датою рішення: рік на карті один, і
+        # «раніше 2023» туди не йде так само (рішення 24.09, п.4).
         ed = (TKD.get(rep[0]) or {}).get('date') or ''
-        if ed and ed < MIN_EVENT_DATE:
+        if (ed or rep[3] or '') < MIN_EVENT_DATE:
             n_old[PD.theme(rep[2])] += 1
             continue
+        ev_year[rep[0]] = (ed or rep[3])[:4]
         # підпис події — стаття, найтяжча в цьому виді справи (podii.label_cat)
         reps.append(rep[:2] + (lab,) + rep[3:])
         case_docs[rep[0]] = [x[0] for x in sorted(g, key=lambda x: x[3] or '')]
@@ -176,7 +180,7 @@ def main(district=None, out=None):
     li = {k: i for i, k in enumerate(labels)}
     ck = sorted({r[1] for r in rows}); ci = {v: i for i, v in enumerate(ck)}
 
-    yc = collections.Counter(r[3][:4] for r in rows)
+    yc = collections.Counter(ev_year[r[0]] for r in rows)
     yrs = sorted(y for y, n in yc.items() if n >= 200 and y.isdigit())
     ykeys = yrs + (['раніше'] if sum(n for y, n in yc.items() if y not in yrs) else [])
     yi = {y: i for i, y in enumerate(ykeys)}
@@ -212,7 +216,7 @@ def main(district=None, out=None):
         if et[:2].isdigit():
             tm = et
         agg[(round(la, 5), round(lo, 5))].append(
-            (ci[court], li[lb], yi.get(date[:4], yi.get('раніше', 0)),
+            (ci[court], li[lb], yi.get(ev_year[doc], yi.get('раніше', 0)),
              int(tm[:2]) if tm and tm[:2].isdigit() else -1,
              PREC.get(prec, 0), date, street or '', house or '',
              *extra.get(doc, ('', '')),

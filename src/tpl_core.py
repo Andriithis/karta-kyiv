@@ -100,8 +100,8 @@ function paintZoomGates(){
   const need=ZGATE[b.dataset.ctx];
   b.setAttribute('aria-disabled',need!==undefined&&z<need?'true':'false')});
 }
-const PERIODS=[['Ранок','6–11',[6,7,8,9,10,11]],['День','12–17',[12,13,14,15,16,17]],
- ['Вечір','18–23',[18,19,20,21,22,23]],['Ніч','0–5',[0,1,2,3,4,5]]];
+const PERIODS=[['ранок','6–12',[6,7,8,9,10,11]],['день','12–18',[12,13,14,15,16,17]],
+ ['вечір','18–24',[18,19,20,21,22,23]],['ніч','0–6',[0,1,2,3,4,5]]];
 // Звіти кроку 6 — три посилання на виду. Версія одна для всіх.
 $ify('#docs',
  '<a href="doslidzhennya.html" target="_blank" rel="noopener">Дослідження ризиків <span>↗</span></a>'+
@@ -119,10 +119,27 @@ cb_.onclick=e=>{const b=e.target.closest('[data-m]'); if(!b) return;
  cb_.querySelectorAll('button').forEach(x=>swSet(x,x===b));
  draw()};
 const CATNAME={2:['Проблема','var(--ink)','у кураторському списку'],0:null};
+// ---- РІК І ЧАС ДОБИ (у «Розширено») ----
+// Рік — за датою події з проходу, а коли її немає — за датою рішення
+// (step3_map). Кілька чипів разом, за замовчуванням усі.
+$('#fyc').innerHTML=M.years.map((n,i)=>`<button class="chip" data-yc="${i}" aria-pressed="true">${n}</button>`).join('');
+$('#fyc').onclick=e=>{const b=e.target.closest('[data-yc]'); if(!b) return;
+ const on=b.getAttribute('aria-pressed')!=='true'; swSet(b,on);
+ const x=document.querySelector(`[data-y="${b.dataset.yc}"]`); if(x) x.checked=on; draw()};
 const hb=$('#hr');
-PERIODS.forEach((p,i)=>{const s=document.createElement('span');
- s.innerHTML=`${p[0]}<i>${p[1]}</i>`;s.dataset.p=i;hb.appendChild(s)});
-hb.onclick=e=>{const t=e.target.closest('[data-p]');if(t){t.classList.toggle('on');draw()}};
+hb.innerHTML=PERIODS.map((p,i)=>`<button class="chip" data-p="${i}" aria-pressed="true">${p[0]} ${p[1]}</button>`).join('');
+hb.onclick=e=>{const t=e.target.closest('[data-p]'); if(!t) return;
+ swSet(t,t.getAttribute('aria-pressed')!=='true'); draw()};
+// Години обраних періодів. Обрано всі — фільтра немає зовсім: тоді видно й
+// події без часу. Обрано частину — лише події з часом у цих періодах; не
+// обрано нічого — не видно нічого.
+function hoursSel(){
+ const on=[...hb.querySelectorAll('[data-p]')].filter(x=>x.getAttribute('aria-pressed')==='true');
+ if(on.length===PERIODS.length) return new Set();
+ const H=new Set(on.length?[]:[-99]);
+ on.forEach(x=>PERIODS[+x.dataset.p][2].forEach(h=>H.add(h)));
+ return H;
+}
 const sel=a=>new Set([...document.querySelectorAll(`[data-${a}]`)].filter(x=>x.checked).map(x=>+x.dataset[a]));
 // ---- «РОЗШИРЕНО»: КОЖНА СТАТТЯ ОКРЕМО ----
 // Підпис статті в даних — «ст.124 КУпАП · ДТП з пошкодженням майна»:
@@ -175,8 +192,7 @@ const evOn=(e,C,A,Y,H)=>C.has(e[0])&&A.has(e[1])&&Y.has(e[2])&&(!H.size||H.has(e
 // «Усі рішення (N)»: вікно, кнопка й панель мусять казати одне число.
 function evOnNow(e){
  if(!e) return false;
- const H=new Set(); hb.querySelectorAll('.on').forEach(x=>PERIODS[+x.dataset.p][2].forEach(h=>H.add(h)));
- return evOn(e,sel('c'),sel('a'),sel('y'),H);
+ return evOn(e,sel('c'),sel('a'),sel('y'),hoursSel());
 }
 $('#fprec').onclick=()=>{PRECISE=!PRECISE; swSet($('#fprec'),PRECISE); draw()};
 // ---- ПОШУК АДРЕСИ ----
@@ -360,8 +376,7 @@ function computeVis(){
  // проблемою», і перелік від періоду не пересортовується.
  const GVIS=new Set();M.groups.forEach((g,gi)=>{if(g[1].some(i=>A.has(i)))GVIS.add(gi)});
  const CF=MODE==='prob'?2:-1;
- const H=new Set();
- hb.querySelectorAll('.on').forEach(x=>PERIODS[+x.dataset.p][2].forEach(h=>H.add(h)));
+ const H=hoursSel();
  let tot=0;const vis=[];
  for(const p of P){
   if(!inScope(p)) continue;

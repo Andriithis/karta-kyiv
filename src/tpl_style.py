@@ -109,6 +109,9 @@ aside#side{position:absolute;top:14px;right:14px;z-index:1100;width:292px;
  max-height:calc(100% - 76px);overflow:auto;background:var(--card);backdrop-filter:blur(8px);
  -webkit-backdrop-filter:blur(8px);border-radius:6px;box-shadow:var(--card-shadow);padding:14px 16px;color:var(--ink)}
 .adv[hidden]{display:none}
+.advtop{display:grid;gap:6px;border-bottom:1px solid var(--rule);padding:0 26px 10px 0;margin-bottom:10px}
+.advrow{display:grid;grid-template-columns:70px 1fr;align-items:baseline;font-size:12.5px}
+.advrow>span{color:var(--dim)}
 .advh{display:flex;justify-content:space-between;align-items:center;font-weight:500;margin-bottom:8px}
 .advh button{background:none;border:0;font-size:18px;color:var(--dim);cursor:pointer;line-height:1}
 .advgrid{columns:2 230px;column-gap:22px}

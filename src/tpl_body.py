@@ -12,6 +12,10 @@
 """
 BODY = r"""<body data-t="svitla"><div id="wrap"><div id="map"></div>
 <div class="adv" id="adv" hidden>
+ <div class="advtop">
+  <div class="advrow"><span>Рік</span><div class="chips" id="fyc"></div></div>
+  <div class="advrow"><span>Час доби</span><div class="chips" id="hr"></div></div>
+ </div>
  <div class="advh"><span>Статті</span><button id="advx" aria-label="Закрити">×</button></div>
  <div class="advgrid" id="advgrid"></div>
  <div class="advfoot"><button class="sw" id="fprec" aria-pressed="false"><span>Лише точні адреси</span><span class="tog"></span></button></div>
@@ -38,12 +42,12 @@ BODY = r"""<body data-t="svitla"><div id="wrap"><div id="map"></div>
   <div class="menu" id="fd" hidden></div>
   <div class="menu" id="docs"></div>
  </div>
- <!-- Сховані фільтри. На них спирається draw(): рік і час доби повертаються
-      на карту окремим кроком (RISHENNYA, розд. 4), фільтр за судом дублював
+ <!-- Сховані фільтри. На них спирається draw(): прапорці років (їх
+      перемикають чипи «Рік» у «Розширено»), фільтр за судом дублював
       перехід у район, статті вмикає сітка видів і картка «Статті». Тут-таки
       прапорці шарів ризику, населення, потоків і видів об'єктів — їх читають
       drawRisks() і drawFacts(). -->
- <div id="hidden-filters" hidden><div id="fy"></div><div id="hr"></div><div id="fc"></div>
+ <div id="hidden-filters" hidden><div id="fy"></div><div id="fc"></div>
  <div id="fasub"></div><div id="ffact"></div></div>
 </aside>
 <div id="pan"><div id="panh"></div><div id="panb"></div></div></div>"""
