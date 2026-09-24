@@ -283,6 +283,23 @@ def _cut(t, cap):
     return t[:b[-1]] if b else t[:cap].rsplit(' ', 1)[0] + '…'
 
 
+# Хвіст назви розділу вироку, що лишається на початку фабули: «(місце, час,
+# спосіб вчинення та наслідки…) з урахуванням зміненого обвинувачення», і
+# нумерація пунктів «1.1.» (рішення 24.09, п.4).
+LEAD_PAREN = re.compile(r'^[\s,]*\([^)]{0,300}?наслідк[^)]{0,200}\)\s*[,.:]?\s*'
+                        r'(?:з\s+урахуванням\s+зміненого\s+обвинувачення\s*[,.:]?\s*)?', re.I)
+LEAD_CHANGED = re.compile(r'^[\s,]*з\s+урахуванням\s+зміненого\s+обвинувачення\s*[,.:]?\s*', re.I)
+# Лише «1.1. », «2.3.1. » — з крапкою в кінці: дата «14.08.2025 » на
+# початку фабули під це не підпадає (перша версія шаблону її зрізала).
+LEAD_NUM = re.compile(r'^\d{1,2}(?:\.\d{1,2}){1,3}\.\s+')
+
+
+def tidy_start(t):
+    t = LEAD_PAREN.sub('', t)
+    t = LEAD_CHANGED.sub('', t)
+    return LEAD_NUM.sub('', t).lstrip(' ,.:;')
+
+
 def fabula(text):
     """Фабула з логічними межами, без стелі: (текст, чи знайдено кінець)."""
     # «\~», «\*» — залишки RTF, які rtf_to_text не прибрав
@@ -291,6 +308,7 @@ def fabula(text):
         return '', False
     t = F.OPEN.sub('', body).strip()
     t = OPEN_COURT.sub('', t).strip()
+    t = tidy_start(t)
     t = F._drop_preamble(t)
     t = _drop_lead(t)
     fab, found = _ends(t)
@@ -376,6 +394,12 @@ def _ends(t):
 # протоколу, а не перед датою події.
 DATE_NOT_EVENT = re.compile(r'Указ|Закон|воєнн|ЄРДР|реєстр|надійш|засідан|призначен\w*\s+на|від\s*$', re.I)
 DATE_CTX = 30
+# Речення, дата з якого не буває датою події (рішення 24.09, п.3): наказ
+# про призначення на посаду, ухвала, реєстрація провадження, попередня
+# судимість, довідка, СІЗО. На першій частині проходу 833 події дістали
+# дату до 2022 року при рішенні 2024+, і частина з них — саме звідси.
+DATE_SENT_NOT_EVENT = re.compile(r'наказ|ухвал|провадженн\w*\s*№|судим|засуджен|довідк|СІЗО|'
+                                 r'ізолятор|ув.?язнен', re.I)
 
 
 def event_date(fab):
@@ -387,8 +411,15 @@ def event_date(fab):
             cands.append((m.start(), f'{y:04d}-{mo:02d}-{d:02d}'))
     for m in DATE_TXT.finditer(fab):
         cands.append((m.start(), f'{int(m.group(3)):04d}-{MONTHS[m.group(2).lower()]:02d}-{int(m.group(1)):02d}'))
+    bounds = [0] + _bounds(fab) + [len(fab)]
     for pos, iso in sorted(cands):
         if DATE_NOT_EVENT.search(fab[max(0, pos - DATE_CTX):pos]):
+            continue
+        a = max(b for b in bounds if b <= pos)
+        z = min((b for b in bounds if b > pos), default=len(fab))
+        # «ОСОБА_3, будучи раніше судимим, 21.11.2024 о 14 год … за адресою» —
+        # саме речення події: судимість у ньому лише згадана
+        if DATE_SENT_NOT_EVENT.search(fab[a:z]) and not is_event_sentence(fab[a:z]):
             continue
         # «з 05 години 30 хвилин 24 лютого 2022 року», «продовжено з 05
         # листопада 2025» — дати указів про воєнний стан, а не подія, навіть
@@ -461,16 +492,47 @@ def vada(fab, found):
     return ''
 
 
-def rozbir(text, cat):
-    """Усе, що прохід бере з одного тексту рішення."""
-    full, found = fabula(text)
-    res = A.extract(text)
+def mend(fab, found):
+    """(фабула, позначка). Обрізаний кінець («…без мети збуту. PVP (1-феніл-
+    …), згідно з») відрізаємо до останнього повного речення. Якщо лишилася
+    фабула з датою й подією — вада в рамці, «косметична»; ні — «шкідлива»
+    (рішення 24.09, п.2). У НАР так хибно шкідливими ставали 5,2% фабул:
+    довідка про речовину після опису, обірвана стелею чи маркером."""
+    fab = tidy_start(fab)
+    trimmed = False
+    if fab and HARMFUL_END.search(fab.rstrip(' ,.;:')):
+        b = _bounds(fab)
+        rest = fab[:b[-1]].rstrip(' ,.;:') if b else ''
+        if rest and event_date(rest) and any(is_event_sentence(s) for s in _sentences(rest)):
+            fab, trimmed = rest, True
+    v = vada(fab, found)
+    return fab, ('косметична' if trimmed and not v else v)
+
+
+def adresa(fab, text=''):
+    """Адреса — спершу з самої фабули: у повному тексті body_start ловить
+    пізнє «встановив» (у мотивах), і адреса з опису лишалася за межею
+    пошуку — на першій частині проходу так без місця лишилося 172 фабули.
+    Повний текст — лише запасний шлях, коли у фабулі місця не названо."""
+    t = 'ВСТАНОВИВ: ' + fab if fab else ''
+    res = A.extract(t) if t else dict(street=None, house=None, level='none', time=None, pos=None)
+    if res['level'] == 'none' and text:
+        res2 = A.extract(text)
+        if res2['level'] != 'none':
+            res, t = res2, text
     sent = ''
     if res.get('pos') is not None:
         p = res['pos']
-        sent = re.sub(r'\s+', ' ', text[A.sentence_start(text, p):A.sentence_end(text, p)]).strip()
+        sent = re.sub(r'\s+', ' ', t[A.sentence_start(t, p):A.sentence_end(t, p)]).strip()
+    return res, sent
+
+
+def rozbir(text, cat):
+    """Усе, що прохід бере з одного тексту рішення."""
+    full, found = fabula(text)
+    full, v = mend(full, found)
+    res, sent = adresa(full, text)
     kd = kodeks(cat)
-    v = vada(full, found)
     return dict(
         fab=_cut(full, CAP[kd]), fab_len=len(full), end_found=found, kodeks=kd, vada=v,
         date=event_date(full), time=event_time(full) or (res.get('time') or ''),
@@ -481,6 +543,25 @@ def rozbir(text, cat):
         klass='D' if v == 'шкідлива' else PD.addr_class(full, res['street'], res['level']))
 
 
+def pererakhuvaty(r):
+    """Рядок частини зі старим правилом -> рядок за чинним, без повторного
+    завантаження: фабула збережена, адреса й дата стоять у ній. Якщо у
+    збереженій (обрізаній стелею) фабулі місця не названо, а старий розбір
+    повного тексту його знайшов — лишаємо старе."""
+    fab, found = r['fab'], r['end_found'] == '1'
+    fab, v = mend(fab, found)
+    res, sent = adresa(fab)
+    if res['level'] == 'none' and r['level'] != 'none':
+        res = dict(street=r['street'] or None, house=r['house'] or None, level=r['level'], time=None)
+        sent = r['addr_sentence']
+    out = dict(r)
+    out.update(rule=RULE, vada=v, fab=fab, date=event_date(fab),
+               time=event_time(fab) or r['time'], street=res['street'] or '', house=res['house'] or '',
+               level=res['level'], addr_sentence=sent,
+               klass='D' if v == 'шкідлива' else PD.addr_class(fab, res['street'], res['level']))
+    return out
+
+
 # ============================================================ ПРОХІД
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
@@ -488,7 +569,9 @@ TEKSTY = os.path.join(DATA, 'teksty')
 REESTR = 'https://od.reyestr.court.gov.ua/files/'
 # Версія правил розбору. Частини зі старою версією в зроблене не рахуються —
 # зміна правил означає новий прохід, а старі частини лишаються як історія.
-RULE = 'v1'
+# v2 (24.09): адреса з фабули, «пр.», вікно NOISE в межах речення, обрізаний
+# кінець — косметична, дата не з речення про наказ, ухвалу, судимість.
+RULE = 'v2'
 ORDER = ['МАЙ', 'НАР', 'НАС', 'ГП', 'АЛК', 'СЕР', 'ДОР']
 COLS = ['doc_id', 'rule', 'vada', 'klass', 'date', 'time', 'street', 'house', 'level',
         'addr_sentence', 'fab_len', 'end_found', 'fab']
@@ -557,7 +640,37 @@ def part_path():
     return os.path.join(TEKSTY, f'{day}-{k:02d}.csv.gz')
 
 
+def main_pererakhuvaty():
+    """Перерахунок частин зі старим правилом за чинним — без завантаження.
+    Результат — нова частина з RULE; старі лишаються як історія."""
+    old = {}
+    for fp in sorted(glob.glob(os.path.join(TEKSTY, '*.csv.gz'))):
+        with gzip.open(fp, 'rt', encoding='utf-8', newline='') as fh:
+            for r in csv.DictReader(fh, delimiter='\t'):
+                if r.get('rule') != RULE:
+                    old[r['doc_id']] = r
+    done = load_done()
+    todo = {d: r for d, r in old.items() if d not in done}
+    print(f'до перерахунку: {len(todo):,} (уже за правилом {RULE}: {len(done):,})')
+    if not todo:
+        return
+    out = {d: pererakhuvaty(r) for d, r in todo.items()}
+    fp = part_path()
+    _write(fp, out)
+    ch = collections.Counter()
+    for d, r in out.items():
+        o = todo[d]
+        ch['рівень ' + o['level'] + ' -> ' + r['level']] += 1 if o['level'] != r['level'] else 0
+        ch['позначка ' + (o['vada'] or '-') + ' -> ' + (r['vada'] or '-')] += 1 if o['vada'] != r['vada'] else 0
+        ch['дата змінилася'] += o['date'] != r['date']
+    print(f'   {os.path.relpath(fp, ROOT)}: {len(out):,}')
+    for k, n in ch.most_common():
+        if n: print(f'   {k}: {n:,}')
+
+
 def main():
+    if '--pererakhuvaty' in sys.argv:
+        return main_pererakhuvaty()
     budget = int(os.environ.get('MAX_DOCS', '30000') or 0)
     done = load_done()
     reps, refs = queue_docs()
