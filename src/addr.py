@@ -357,7 +357,7 @@ def sentence_end(text, pos, cap=400):
 RANK = {'house': 0, 'cross': 1, 'street': 2, 'hidden': 3}
 
 
-def extract(text):
+def extract(text, keep=None):
     """Місце події: dict(street, house, level, time).
 
     level: house | cross | street | hidden | none.
@@ -379,7 +379,10 @@ def extract(text):
 
     Відоме обмеження: нові правила діють лише на тексти, завантажені після
     цієї зміни. Наявні події отримають їх у повторному проході по текстах
-    (крок 6 «Порядку», черга — там само)."""
+    (крок 6 «Порядку», черга — там само).
+
+    keep(text, ms) -> ms — додатковий відсів згадок, який знає вид справи
+    (у наркотичних — місце замовлення не місце події, step1c_teksty)."""
     text = fix_typos(text)
     bs = body_start(text)
     ms = mentions(text, bs)
@@ -392,6 +395,8 @@ def extract(text):
         # віддавала адресу суду з позначкою level='house' — тобто вигадувала
         # місце події. Краще чесне «адреси немає», ніж хибна точність.
         ms = mentions(text, 0)
+    if ms and keep:
+        ms = keep(text, ms)
     if not ms:
         return dict(street=None, house=None, level='none', time=None, pos=None)
     p0 = ms[0][0]

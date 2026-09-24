@@ -368,6 +368,12 @@ def _stop(t):
 TAIL_LINK = re.compile(r'[,\s]+(?:(?:у\s+зв.?язку\s+з\s+чим|тим\s+самим|внаслідок\s+чого|чим)\b[^.,;]{0,20}|'
                        r'(?:тому|отже)\s+(?:його|її|їх)\s+дії\b[^.,;]{0,40}|'
                        r'тобто\b[^.,;]{0,60}|за\s+що\b[^.,;]{0,60})$', re.I)
+# «…Відповідальність за вказане адміністративне правопорушення передбачена
+# ст.124 КУпАП» — окреме речення кваліфікації в кінці постанови (Хрещатик, 25,
+# ДТП 26.02.2025). На частині v2 — 64 фабули. «Відповідальність за незаконний
+# обіг…» всередині опису не чіпаємо: відрізаємо лише речення про «вказане».
+TAIL_VIDP = re.compile(r'[\s.,;]*\bВідповідальність\s+за\s+вказан\w*\s+(?:адміністративн\w*\s+)?'
+                       r'правопорушен\w*,?\s+передбачен\w*\b.{0,160}$', re.I | re.S)
 
 
 def tidy_end(t):
@@ -375,7 +381,7 @@ def tidy_end(t):
     записаних частин, тож дані для цього переписувати не треба."""
     if not t:
         return t
-    new = TAIL_LINK.sub('', t)
+    new = TAIL_LINK.sub('', TAIL_VIDP.sub('', t))
     return new.rstrip(' ,.;:—-(') if new != t else t
 
 
@@ -528,15 +534,44 @@ def mend(fab, found):
     return fab, ('косметична' if trimmed and not v else v)
 
 
-def adresa(fab, text=''):
+# Місце події в наркотичних справах (рішення 24.09, п.4) — де придбав,
+# забрав закладку, зберігав чи де затримали, а не звідки замовляв. Фабула
+# зазвичай починається з дому: «перебуваючи за адресою: АДРЕСА_1, через
+# месенджер «Телеграм» домовився…», і за правилом «перша згадка» місцем
+# ставала квартира (клас D) або будинок, звідки писали в месенджер.
+NAR_ORDER = re.compile(r'\b(?:замовив\w*|замовил\w*|домовив\w*|домовил\w*|сплатив\w*|сплатил\w*|'
+                       r'перерахував\w*|перерахувал\w*|месенджер\w*|інтернет\w*|телеграм\w*|telegram)', re.I)
+NAR_PICK = re.compile(r'\b(?:підібра\w*|підбор\w*|забра\w*|знайш\w*|знахідк\w*|виявлен\w*|вилучен\w*|'
+                      r'затрима\w*|зупин\w*)', re.I)
+
+
+def nar_keep(text, ms):
+    """Відсів для A.extract: згадка, у частині речення якої (від сусідньої
+    згадки до сусідньої, в межах речення) є «замовив», «месенджер»… і немає
+    «забрав», «затримано»…, — місце замовлення. Воно не дає місця події,
+    якщо далі у фабулі є згадка з «забрав», «виявлено», «затримано».
+    Якщо такої немає — лишається те, що є."""
+    kind = []
+    for i, (p, *_r) in enumerate(ms):
+        lo = max(A.sentence_start(text, p), ms[i - 1][0] if i else 0)
+        hi = min(A.sentence_end(text, p), ms[i + 1][0] if i + 1 < len(ms) else len(text))
+        seg = text[lo:hi]
+        kind.append('pick' if NAR_PICK.search(seg) else 'order' if NAR_ORDER.search(seg) else '')
+    out = [m for i, m in enumerate(ms)
+           if not (kind[i] == 'order' and 'pick' in kind[i + 1:])]
+    return out or ms
+
+
+def adresa(fab, text='', nar=False):
     """Адреса — спершу з самої фабули: у повному тексті body_start ловить
     пізнє «встановив» (у мотивах), і адреса з опису лишалася за межею
     пошуку — на першій частині проходу так без місця лишилося 172 фабули.
     Повний текст — лише запасний шлях, коли у фабулі місця не названо."""
+    keep = nar_keep if nar else None
     t = 'ВСТАНОВИВ: ' + fab if fab else ''
-    res = A.extract(t) if t else dict(street=None, house=None, level='none', time=None, pos=None)
+    res = A.extract(t, keep) if t else dict(street=None, house=None, level='none', time=None, pos=None)
     if res['level'] == 'none' and text:
-        res2 = A.extract(text)
+        res2 = A.extract(text, keep)
         if res2['level'] != 'none':
             res, t = res2, text
     sent = ''
@@ -550,7 +585,7 @@ def rozbir(text, cat):
     """Усе, що прохід бере з одного тексту рішення."""
     full, found = fabula(text)
     full, v = mend(full, found)
-    res, sent = adresa(full, text)
+    res, sent = adresa(full, text, nar=PD.theme(cat) == 'НАР')
     kd = kodeks(cat)
     return dict(
         fab=_cut(full, CAP[kd]), fab_len=len(full), end_found=found, kodeks=kd, vada=v,
@@ -562,14 +597,18 @@ def rozbir(text, cat):
         klass='D' if v == 'шкідлива' else PD.addr_class(full, res['street'], res['level']))
 
 
-def pererakhuvaty(r):
+def pererakhuvaty(r, cat=''):
     """Рядок частини зі старим правилом -> рядок за чинним, без повторного
     завантаження: фабула збережена, адреса й дата стоять у ній. Якщо у
     збереженій (обрізаній стелею) фабулі місця не названо, а старий розбір
     повного тексту його знайшов — лишаємо старе."""
     fab, found = r['fab'], r['end_found'] == '1'
-    fab, v = mend(fab, found)
-    res, sent = adresa(fab)
+    fab, v = mend(r['fab'], found)
+    # збережену фабулу вже підрізано — повторний mend обрізу не бачить і
+    # знімав би «косметичну» з 225 фабул, у яких нічого не змінилось
+    if not v and fab == r['fab'] and r['vada'] == 'косметична':
+        v = 'косметична'
+    res, sent = adresa(fab, nar=PD.theme(cat) == 'НАР')
     if res['level'] == 'none' and r['level'] != 'none':
         res = dict(street=r['street'] or None, house=r['house'] or None, level=r['level'], time=None)
         sent = r['addr_sentence']
@@ -590,7 +629,9 @@ REESTR = 'https://od.reyestr.court.gov.ua/files/'
 # зміна правил означає новий прохід, а старі частини лишаються як історія.
 # v2 (24.09): адреса з фабули, «пр.», вікно NOISE в межах речення, обрізаний
 # кінець — косметична, дата не з речення про наказ, ухвалу, судимість.
-RULE = 'v2'
+# v3 (24.09): у наркотичних місце замовлення не місце події; хвіст
+# «Відповідальність за вказане правопорушення передбачена ст. …».
+RULE = 'v3'
 ORDER = ['МАЙ', 'НАР', 'НАС', 'ГП', 'АЛК', 'СЕР', 'ДОР']
 COLS = ['doc_id', 'rule', 'vada', 'klass', 'date', 'time', 'street', 'house', 'level',
         'addr_sentence', 'fab_len', 'end_found', 'fab']
@@ -673,7 +714,11 @@ def main_pererakhuvaty():
     print(f'до перерахунку: {len(todo):,} (уже за правилом {RULE}: {len(done):,})')
     if not todo:
         return
-    out = {d: pererakhuvaty(r) for d, r in todo.items()}
+    # вид справи в частині не записано — беремо з events: від нього залежить
+    # правило місця (наркотичні, v3)
+    with gzip.open(os.path.join(DATA, 'events.csv.gz'), 'rt', encoding='utf-8', newline='') as fh:
+        cat = {r['doc_id']: r['cat'] for r in csv.DictReader(fh, delimiter='\t') if r.get('doc_id') in todo}
+    out = {d: pererakhuvaty(r, cat.get(d, '')) for d, r in todo.items()}
     fp = part_path()
     _write(fp, out)
     ch = collections.Counter()
