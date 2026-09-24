@@ -50,6 +50,7 @@ INITIAL = re.compile(r'\b([А-ЯІЇЄҐ])\.([А-ЯІЇЄҐ])')
 # 3 і 4 вікно адреси позначає як приблизні.
 PREC = {'house': 1, 'cross': 2, 'base': 3, 'interp': 4}
 POINT = {'house', 'base', 'interp'}
+MIN_EVENT_DATE = '2023-01-01'
 
 # Посилання стиснуте до 34 знаків — правило одне з кроком 0 (podii.docref).
 docref = PD.docref
@@ -136,9 +137,16 @@ def main(district=None, out=None):
     tk_cases = {(cause[d], PD.theme(cat_of[d])) for d in TKD if d in cause and d in cat_of}
     reps, case_docs, arts = [], {}, {}
     n_tk_gone = 0
+    n_old = collections.Counter()
     for rep, g, lab, cats in merged:
         if rep[0] not in TKD and (cause.get(rep[0]), PD.theme(rep[2])) in tk_cases:
             n_tk_gone += 1
+            continue
+        # На карту — лише події з датою від 2023 року, за датою самої події,
+        # а не рішення (рішення 24.09, п.3). Старіші лишаються в даних.
+        ed = (TKD.get(rep[0]) or {}).get('date') or ''
+        if ed and ed < MIN_EVENT_DATE:
+            n_old[PD.theme(rep[2])] += 1
             continue
         # підпис події — стаття, найтяжча в цьому виді справи (podii.label_cat)
         reps.append(rep[:2] + (lab,) + rep[3:])
@@ -152,6 +160,9 @@ def main(district=None, out=None):
     print(f'   одна подія на (справа, вид): {len(rows):,} документів -> {len(reps):,} подій')
     if n_tk_gone:
         print(f'   справ, яким прохід по текстах прибрав адресу: {n_tk_gone:,}')
+    if n_old:
+        print(f'   подій з датою до {MIN_EVENT_DATE[:4]} (на карту не йдуть): {sum(n_old.values()):,} — '
+              + ', '.join(f'{k} {v:,}' for k, v in n_old.most_common()))
     rows = reps
 
     # ---- злиття кодів у назви ----
@@ -185,7 +196,9 @@ def main(district=None, out=None):
         if tk is not None:
             # фабула й клас — з проходу; шкідлива фабула на сайт не йде
             # (панель покаже рішення з посиланням, без опису), клас у неї D
-            f = '' if tk['vada'] == 'шкідлива' else tk['fab']
+            # tidy_end — хвіст кваліфікації («тому його дії») і в уже
+            # записаних частинах, без їх перезапису
+            f = '' if tk['vada'] == 'шкідлива' else TK.tidy_end(tk['fab'])
             kl = tk['klass']
         else:
             f = next((fab[x] for x in case_docs.get(doc, [doc]) if fab.get(x)), '')
