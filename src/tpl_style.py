@@ -216,6 +216,7 @@ aside#side button:focus-visible,.adv button:focus-visible{outline:2px solid #3d9
 .pbtn2{width:100%;padding:6px;background:var(--sunk);color:var(--ink);border:1px solid var(--rule);
  border-radius:6px;font:inherit;font-size:11.5px;cursor:pointer;margin-top:5px}
 .pbtn2:hover{background:var(--rule)}
+.pbtn2[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
 /* значок виду об'єкта: коло, обведене кольором ролі, всередині символ виду */
 .fic{display:flex;align-items:center;justify-content:center;width:20px;height:20px;
  border-radius:99px;border:1.5px solid;font-size:11px;line-height:1;

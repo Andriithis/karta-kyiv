@@ -65,6 +65,12 @@ const rlayer=L.layerGroup().addTo(map);
 const poplayer=L.layerGroup();          // фон під усім іншим
 const flayer=L.layerGroup().addTo(map); // чинники середовища за чекбоксами
 const hlayer=L.layerGroup().addTo(map); // підсвітка «чинники поруч» для конкретного місця
+let nearButton=null;
+function clearNear(){
+ hlayer.clearLayers();
+ if(nearButton) nearButton.setAttribute('aria-pressed','false');
+ nearButton=null;
+}
 // Клік по вікні проблеми, коли воно відкрите, мав закривати саме вікно — а
 // закривав вікно (стандартна поведінка Leaflet) І одночасно відкривав район,
 // бо межі району клікабельні майже по всій площі міста. Перший клік «повз»
@@ -160,8 +166,10 @@ function showAllNear(la,lo,rad){
   const d=Math.hypot((p[0]-la)*my,(p[1]-lo)*mx);
   if(d>rad) return;
   shown++;
-  L.marker(p,{icon:nicon(c.k),zIndexOffset:500})
-   .bindTooltip(`${c.n} — ${Math.round(d)} м`,{className:'rt'}).addTo(hlayer)}));
+  L.marker(p,{icon:nicon(c.k),zIndexOffset:500,bubblingMouseEvents:false})
+   .bindTooltip(`${esc(c.n)} — ${Math.round(d)} м`,{className:'rt'})
+   .on('preclick',L.DomEvent.stopPropagation)
+   .on('click',function(){this.openTooltip()}).addTo(hlayer)}));
  L.circle([la,lo],{radius:rad,color:'#fbbf24',weight:1,opacity:.45,
    fill:false,dashArray:'4,4',interactive:false}).addTo(hlayer);
  L.circleMarker([la,lo],{radius:5,weight:2,color:'#fbbf24',

@@ -24,6 +24,7 @@ function applyZoom(){
  clearTimeout(zTimer); zTimer=setTimeout(draw,140);
 }
 function draw(){
+ clearNear();
  const st=computeVis(), vis=st.vis;
  heatOn=(MODE==='heat');
  // MK чистимо до виходу теплової: інакше пошук знаходив би позначку з
@@ -87,7 +88,7 @@ map.on('zoomend',paintZoomGates);
 // Ловимо саме popupclose, а не click: клік по позначці в Leaflet теж
 // доходить до карти, і по кліку підсвітка гасла б одразу після появи.
 // Закриття вікна — це і є «користувач пішов з цього місця».
-map.on('popupclose',()=>hlayer.clearLayers());
+map.on('popupclose popupopen',clearNear);
 paintRows();draw();drawRisks();drawFacts();applyZoom();paintZoomGates();
 // Посилання виду kyiv.html#desna відкриває одразу потрібний район:
 // викладач може дати групі адресу конкретного району, а не «знайдіть самі».
