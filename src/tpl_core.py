@@ -503,7 +503,7 @@ function popupHTML(p,n,th,byProblem,cnt,thMaj,st){
    // основний хід слухача: побачив скупчення -> подивився, що довкола ->
    // висунув гіпотезу. Кнопка нічого не підказує, лише показує околиці.
    if((F.cats||[]).length)
-    pblock+='<button class="pbtn2" data-na="1">Що поруч (250 м)</button>';
+    pblock+='<button class="pbtn2" data-na="1" aria-pressed="false">Що поруч (250 м)</button>';
    // одна подія — одна справа: число за тим самим фільтром, що й панель
    const ncase=ev.length;
    const cinf=probs.length?CATNAME[2]:null;
@@ -531,8 +531,9 @@ function popupHTML(p,n,th,byProblem,cnt,thMaj,st){
     b.textContent=q?`Підсвічено об’єктів: ${q}`:'Поруч нічого з чинників немає'});
    wrap.querySelectorAll('[data-all]').forEach(b=>b.onclick=()=>openPanel(P.indexOf(p)));
    wrap.querySelectorAll('[data-na]').forEach(b=>b.onclick=()=>{
-    const q=showAllNear(p[0],p[1],250);
-    b.textContent=q?`Показано об’єктів: ${q}`:'Поруч нічого не знайдено'});
+    if(b.getAttribute('aria-pressed')==='true'){clearNear();return}
+    clearNear(); showAllNear(p[0],p[1],250);
+    nearButton=b; b.setAttribute('aria-pressed','true')});
    return wrap;
 }
 // ---- ВІКНА З ПОШУКУ, КОЛИ ПОЗНАЧКИ НЕМАЄ ----
