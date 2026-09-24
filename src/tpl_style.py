@@ -220,6 +220,9 @@ aside#side button:focus-visible,.adv button:focus-visible{outline:2px solid #3d9
 .fic{display:flex;align-items:center;justify-content:center;width:20px;height:20px;
  border-radius:99px;border:1.5px solid;font-size:11px;line-height:1;
  background:var(--panel);box-shadow:0 0 0 1px var(--ground)}
+.nic{display:flex;align-items:center;justify-content:center;width:22px;height:22px;
+ border-radius:4px;border:1.5px solid #fbbf24;font-size:13px;line-height:1;
+ background:var(--panel);box-shadow:0 1px 3px rgba(0,0,0,.25)}
 .rpop b{display:block;margin-bottom:4px;font-size:13px}
 .rpop .rmeth{font-size:11px;color:var(--dim);margin:6px 0;line-height:1.4}
 .rpop table{width:100%;border-collapse:collapse;margin-top:4px}
