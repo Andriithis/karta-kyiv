@@ -23,6 +23,7 @@ import map_layers
 import map_problems
 import podii as PD           # що рахується подією: вирок і постанова, не ухвала
 import step1c_teksty as TK   # частини проходу по текстах (крок 6)
+from sut import sut, SUT_CAP, KK_CAP
 from step2_geocode import BESIDE
 from map_problems import COURTS, SLUG
 
@@ -208,6 +209,7 @@ def main(district=None, out=None):
             f = next((fab[x] for x in case_docs.get(doc, [doc]) if fab.get(x)), '')
             # клас адреси — з опису тієї самої справи, що й показує панель
             kl = PD.addr_class(f, street)
+        f = sut(f, cap=KK_CAP if ' КК' in lb[1] else SUT_CAP)
         # Панель показує дату й час самої події з проходу: дата рішення буває
         # на місяць пізніше («2026-04-22 · 23:00» при події 21.03.2026). Нема
         # дати події — дата рішення з позначкою «рішення» (рішення 24.09).
