@@ -244,9 +244,19 @@ function docsFor(i){
    .then(r=>r.ok?r.json():{}).catch(()=>null);
  return DOCCACHE[sl].then(o=>o?(o[i]||[]):null);
 }
-function closePanel(){$('#pan').classList.remove('on')}
-function openPanel(i){
+function closePanel(){$('#pan').classList.remove('on'); PANI=-1}
+// Відкрита панель мусить іти за фільтром одразу: інакше після зміни року чи
+// виду в ній лишалися справи, яких на карті вже немає. Перемальовуємо лише
+// тоді, коли змінився сам фільтр, а не на кожен зум (draw приходить і з ним).
+let PANI=-1, PANKEY='';
+const filterKey=()=>[sel('c'),sel('a'),sel('y'),hoursSel()].map(s=>[...s].join(',')).join('|')+'|'+PRECISE;
+function refreshPanel(){
+ if(PANI<0||!$('#pan').classList.contains('on')||filterKey()===PANKEY) return;
+ const top=$('#panb').scrollTop; openPanel(PANI,top);
+}
+function openPanel(i,keepTop){
  const p=P[i]; if(!p) return;
+ PANI=i; PANKEY=filterKey();
  $('#pan').classList.add('on');
  $('#panh').innerHTML='<button id="panx" title="Закрити">&times;</button>'+
   `<div class="pa">${esc(p[3]?(p[2]||'адреса не визначена'):streetName(p)+' — події без номера будинку')}</div>`+
@@ -279,6 +289,7 @@ function openPanel(i){
       `<a href="${docUrl(h)}" target="_blank" rel="noopener">${(c[4].length>1?'рішення '+(k+1):'відкрити рішення')}</a>`).join('')+'</div>':'')+
     '</div>';
   }).join('') : '<div class="sub">За поточним фільтром рішень немає.</div>';
+  if(keepTop) $('#panb').scrollTop=keepTop;
  });
 }
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closePanel()});
@@ -420,6 +431,7 @@ function computeVis(){
  // Чисел панель більше не показує (RISHENNYA, розд. 18) — ні подій, ні адрес,
  // ні проблем. tot і vis лишаються в результаті: з них кільце у вікні й
  // перевірки паритету.
+ refreshPanel();
  return {vis,tot,C,A,Y,H,GVIS,CF};
 }
 // ---- ВІКНО АДРЕСИ ----
