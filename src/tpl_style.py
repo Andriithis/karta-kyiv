@@ -112,6 +112,10 @@ aside#side{position:absolute;top:14px;right:14px;z-index:1100;width:292px;
 .advtop{display:grid;gap:6px;border-bottom:1px solid var(--rule);padding:0 26px 10px 0;margin-bottom:10px}
 .advrow{display:grid;grid-template-columns:70px 1fr;align-items:baseline;font-size:12.5px}
 .advrow>span{color:var(--dim)}
+.advtop .chips{gap:5px}
+.advtop .chip{padding:5px 9px;border:1px solid var(--rule);border-radius:5px;
+ background:var(--panel);color:var(--dim)}
+.advtop .chip[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
 .advh{display:flex;justify-content:space-between;align-items:center;font-weight:500;margin-bottom:8px}
 .advh button{background:none;border:0;font-size:18px;color:var(--dim);cursor:pointer;line-height:1}
 .advgrid{columns:2 230px;column-gap:22px}
