@@ -26,8 +26,14 @@ def doc_summary(A, D):
     if A['n_addr']:
         cards.append(('адрес з подіями', num(A['n_addr']), 'з точністю до будинку'))
     if ER:
-        cards.append(('тем із робочою моделлю', str(len(ER)),
-                      f"з {len([t for t in L.ORDER if t != 'ДОМ'])}"))
+        # У engine_report поруч із темами лежать і механізми («ДОР_ДТП»),
+        # тож len(ER) давало «18 з 7». Рахуємо теми серед тем, механізми —
+        # окремо, своїм числом.
+        themes = [t for t in L.ORDER if t != 'ДОМ']
+        n_th = sum(1 for t in themes if t in ER)
+        n_mech = sum(1 for k in ER if k not in L.ORDER)
+        cards.append(('тем із робочою моделлю', str(n_th),
+                      f"з {len(themes)}" + (f"; окремо — механізмів: {n_mech}" if n_mech else '')))
         bestpai = max(ER.values(), key=lambda d: d.get('PAI_середовище', 0))
         cards.append(('найкращий PAI', f"×{bestpai.get('PAI_середовище','—')}",
                       esc(bestpai.get('тема', ''))))
