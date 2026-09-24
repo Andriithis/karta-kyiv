@@ -171,6 +171,13 @@ $('#advx').onclick=()=>advOpen(false);
 let PRECISE=false;
 const evOn=(e,C,A,Y,H)=>C.has(e[0])&&A.has(e[1])&&Y.has(e[2])&&(!H.size||H.has(e[3]))
   &&(!PRECISE||e[4]===0);
+// Той самий відбір із поточних перемикачів — для панелі й числа в кнопці
+// «Усі рішення (N)»: вікно, кнопка й панель мусять казати одне число.
+function evOnNow(e){
+ if(!e) return false;
+ const H=new Set(); hb.querySelectorAll('.on').forEach(x=>PERIODS[+x.dataset.p][2].forEach(h=>H.add(h)));
+ return evOn(e,sel('c'),sel('a'),sel('y'),H);
+}
 $('#fprec').onclick=()=>{PRECISE=!PRECISE; swSet($('#fprec'),PRECISE); draw()};
 // ---- ПОШУК АДРЕСИ ----
 // Без урахування регістру й апострофів: «Солом'янську» пишуть і з ', і з ’,
@@ -240,21 +247,16 @@ function openPanel(i){
    return;
   }
   // панель слухається тих самих фільтрів, що й карта: інакше в ній були б
-  // рішення, яких на карті зараз не видно
-  const A=sel('a'), Y=new Set([...sel('y')].map(k=>M.years[k]));
-  const H=new Set(); hb.querySelectorAll('.on').forEach(x=>
-    PERIODS[+x.dataset.p][2].forEach(h=>H.add(h)));
-  const vis=cs.filter(c=>A.has(c[0])
-    && (Y.has((c[1]||'').slice(0,4))||Y.has('раніше'))
-    && (!H.size||H.has(c[2])));
+  // рішення, яких на карті зараз не видно. Справи йдуть у тому самому
+  // порядку, що й події p[4], — відбір тим самим evOn, що й число в кнопці.
+  const vis=cs.filter((c,k)=>evOnNow(p[4][k]));
   $('#panh').querySelector('.ps').textContent =
-    vis.length===cs.length ? `${cs.length} ${pl(cs.length,'справа','справи','справ')}`
-    : `${vis.length} з ${cs.length} ${pl(cs.length,'справи','справ','справ')} за поточним фільтром`;
+    `${vis.length} ${pl(vis.length,'справа','справи','справ')}`;
   $('#panb').innerHTML = vis.length ? vis.map(c=>{
    // повну назву статті тут не повторюємо на кожному рядку — вона є в картці
    // проблеми й у підказці таблиці; тут важать дата, стаття й обставини
    return '<div class="cs">'+
-    `<div class="cd" title="${esc(LAW(M.cats[c[0]]))}"><b>${esc(c[1]||'')}</b>${c[2]>=0?' · '+String(c[2]).padStart(2,'0')+':00':''} · ${esc(M.cats[c[0]])}</div>`+
+    `<div class="cd" title="${esc(LAW(M.cats[c[0]]))}"><b>${esc(c[1]||'')}</b>${c[6]?' · рішення':c[2]>=0?' · '+String(c[2]).padStart(2,'0')+':00':''} · ${esc(M.cats[c[0]])}</div>`+
     (c[3]?`<div class="cn">справа ${esc(c[3])}</div>`:'')+
     (c[5]?`<div class="cx">${esc(c[5])}</div>`:'')+
     ((c[4]||[]).length?'<div class="cl">'+c[4].map((h,k)=>
@@ -423,11 +425,8 @@ function popupHTML(p,n,th,byProblem,cnt,thMaj,st){
    const aB=p[4].filter(e=>e[4]===0).length;
    const anote=nB<ev.length&&(2*nB<ev.length||2*aB<p[4].length)
     ?'<div class="an">адресу не підтверджено описом події</div>':'';
-   // Будинку немає в адресній базі OSM — точка приблизна (PLAN-TEKSTY.md,
-   // 4б; step2_geocode.nearby). Застереження про дані, як і рядок вище.
-   const bn=((p[2]||'').match(/,\s*(\d+)/)||[])[1];
-   const approx=p[3]===3?`<div class="an">будинку немає в адресній базі — точку поставлено біля № ${bn}</div>`
-    :p[3]===4?'<div class="an">будинку немає в адресній базі — точку поставлено між сусідніми номерами</div>':'';
+   // Будинку немає в OSM (p[3] 3 чи 4, step2_geocode.nearby) — рядка про це
+   // у вікні немає (рішення 24.09): рівень точності лишається в даних.
    const bc={},hh=new Array(24).fill(0);let nk=0;
    ev.forEach(e=>{bc[e[1]]=(bc[e[1]]||0)+1;if(e[3]>=0){hh[e[3]]++;nk++}});
    const rows=Object.entries(bc).sort((a,b)=>b[1]-a[1]);
@@ -490,7 +489,8 @@ function popupHTML(p,n,th,byProblem,cnt,thMaj,st){
    // висунув гіпотезу. Кнопка нічого не підказує, лише показує околиці.
    if((F.cats||[]).length)
     pblock+='<button class="pbtn2" data-na="1">Що поруч (250 м)</button>';
-   const ncase=typeof p[5]==='number'?p[5]:(p[5]||[]).length;
+   // одна подія — одна справа: число за тим самим фільтром, що й панель
+   const ncase=ev.length;
    const cinf=probs.length?CATNAME[2]:null;
    // Частка стоїть у кожній адресі з номером будинку. Коли точку пофарбовано
    // напрямком проблеми, а подій за фільтром більше в іншої теми, це кажемо
@@ -501,7 +501,7 @@ function popupHTML(p,n,th,byProblem,cnt,thMaj,st){
      `За поточним фільтром тут переважає ${nm(thMaj)}, ${cnt[thMaj]} із ${n}.</div>`:'';
    const html=`<div class="lp">
    ${cinf?`<span class="cbadge" style="background:var(--sunk);color:${cinf[1]}">${cinf[0]}</span>`:''}
-   <b>${p[2]||'адреса не визначена'}</b>${anote}${approx}
+   <b>${p[2]||'адреса не визначена'}</b>${anote}
    <div class="tt">${n} ${pl(n,'подія','події','подій')} за поточним фільтром</div>
    ${majTxt}
    <table class="bd">`+rows.map(([i,c])=>
@@ -530,11 +530,12 @@ function lpWrap(html,p){
  return w;
 }
 function hiddenHTML(p){
- const N=p[4].length, ncase=typeof p[5]==='number'?p[5]:(p[5]||[]).length;
+ // Кнопки «Усі рішення» тут немає: за фільтром справ нуль, а панель
+ // слухається того самого фільтра — вона відкрилася б порожньою.
+ const N=p[4].length;
  return lpWrap(`<div class="lp"><b>${esc(p[2]||'адреса не визначена')}</b>
   <div class="tt">за поточним фільтром подій тут немає</div>
-  <div class="tt">усього тут ${N} ${pl(N,'подія','події','подій')}</div>
-  <button class="pbtn2" data-all="1">Усі рішення (${ncase})</button></div>`,p);
+  <div class="tt">усього тут ${N} ${pl(N,'подія','події','подій')}</div></div>`,p);
 }
 // Вулиця без номера: не місце, а перелік. Той самий склад статей за фільтром,
 // що й у вікні адреси, і той самий шлях до рішень.
@@ -543,8 +544,8 @@ function hiddenHTML(p){
 // рядком: головний шлях звідси — саме до переліку рішень.
 const STREET_ROWS=8;
 function streetHTML(p,st){
- const N=p[4].length, ncase=typeof p[5]==='number'?p[5]:(p[5]||[]).length;
- const ev=p[4].filter(e=>evOn(e,st.C,st.A,st.Y,st.H));
+ const N=p[4].length;
+ const ev=p[4].filter(e=>evOn(e,st.C,st.A,st.Y,st.H)), ncase=ev.length;
  const bc={};ev.forEach(e=>{bc[e[1]]=(bc[e[1]]||0)+1});
  const rows=Object.entries(bc).sort((a,b)=>b[1]-a[1]);
  const top=rows.slice(0,STREET_ROWS), rest=rows.slice(STREET_ROWS);

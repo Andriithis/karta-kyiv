@@ -138,7 +138,7 @@ aside#side button:focus-visible,.adv button:focus-visible{outline:2px solid #3d9
 #pan.on{transform:none}
 #panh{padding:16px 18px 12px;border-bottom:1px solid var(--rule);position:relative;flex:0 0 auto}
 #panh .pa{font:500 14.5px/1.25 var(--disp);letter-spacing:-.03em;padding-right:26px}
-#panh .ps{font:400 11px var(--mono);color:var(--faint);margin-top:5px}
+#panh .ps{font-size:12.5px;color:var(--dim);margin-top:5px}
 #panx{position:absolute;top:12px;right:14px;width:22px;height:22px;padding:0;margin:0;
  background:none;border:0;color:var(--dim);font-size:16px;line-height:1;cursor:pointer}
 #panx:hover{color:var(--ink)}

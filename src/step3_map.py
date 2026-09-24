@@ -204,6 +204,13 @@ def main(district=None, out=None):
             f = next((fab[x] for x in case_docs.get(doc, [doc]) if fab.get(x)), '')
             # клас адреси — з опису тієї самої справи, що й показує панель
             kl = PD.addr_class(f, street)
+        # Панель показує дату й час самої події з проходу: дата рішення буває
+        # на місяць пізніше («2026-04-22 · 23:00» при події 21.03.2026). Нема
+        # дати події — дата рішення з позначкою «рішення» (рішення 24.09).
+        ed = (tk or {}).get('date') or ''
+        et = (tk or {}).get('time') or ''
+        if et[:2].isdigit():
+            tm = et
         agg[(round(la, 5), round(lo, 5))].append(
             (ci[court], li[lb], yi.get(date[:4], yi.get('раніше', 0)),
              int(tm[:2]) if tm and tm[:2].isdigit() else -1,
@@ -211,7 +218,7 @@ def main(district=None, out=None):
              *extra.get(doc, ('', '')),
              [extra.get(x, ('', ''))[1] for x in case_docs.get(doc, [doc])
               if extra.get(x, ('', ''))[1]],
-             f, arts.get(doc, []), ACLS.index(kl)))
+             f, arts.get(doc, []), ACLS.index(kl), ed or date, 0 if ed else 1))
     ncls = collections.Counter(ACLS[e[13]] for evs in agg.values() for e in evs)
     print('   клас адреси подій: ' + ', '.join(f'{k} {ncls[k]:,}' for k in ACLS))
 
@@ -251,16 +258,21 @@ def main(district=None, out=None):
         # вигляді вони важать 2,4 МБ на файл. Вони їдуть окремим файлом на
         # район разом із витягами обставин — панель підтягує його, коли її
         # відкривають. Порядок справ у тому файлі той самий, що тут.
-        ev_sorted = sorted(evs, key=lambda x: x[5], reverse=True)
+        ev_sorted = sorted(evs, key=lambda x: x[14], reverse=True)   # за датою події
         P.append([la, lo, a, prec,
                   # подія: суд, стаття, рік, година, клас адреси (індекс у
                   # ACLS, 0 — B), далі інші статті справи — лише коли вони є
+                  # у тому самому порядку, що й DOCS: панель відбирає справи
+                  # тим самим фільтром за індексом, і число в кнопці «Усі
+                  # рішення» збігається з числом справ у панелі
                   [[e_[0], e_[1], e_[2], e_[3], e_[13]] + ([e_[12]] if e_[12] else [])
-                   for e_ in evs],
+                   for e_ in ev_sorted],
                   len(ev_sorted)])
-        # DOCS — те, що показує панель: справа, дата, година, номер справи,
-        # папери справи. Порядок збігається з порядком у p[4] за датою.
-        DOCS.append([[e_[1], e_[5], e_[3], e_[8], e_[10], e_[11]] for e_ in ev_sorted])
+        # DOCS — те, що показує панель: справа, дата події (або рішення),
+        # година, номер справи, папери справи, фабула; сьоме поле 1 — дата
+        # рішення, бо дати події в описі немає.
+        DOCS.append([[e_[1], e_[14], e_[3], e_[8], e_[10], e_[11]] + ([1] if e_[15] else [])
+                     for e_ in ev_sorted])
     print(f'унікальних адрес: {len(P):,} '
           f'(з них {n_street:,} — центри вулиць, точного будинку немає)')
 
