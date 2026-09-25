@@ -21,6 +21,7 @@ GL_DISTRICTS = False
 from map_excl import load_excl, detect_institutional, drop_excluded
 import map_layers
 import map_problems
+import map_clusters
 import podii as PD           # що рахується подією: вирок і постанова, не ухвала
 import step1c_teksty as TK   # частини проходу по текстах (крок 6)
 from step2_geocode import BESIDE
@@ -380,7 +381,11 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
     # досить поставити GL_DISTRICTS = True.
     if district is None or GL_DISTRICTS:
         dst_gl = dst[:-len('.html')] + '-gl.html'
-        open(dst_gl, 'w', encoding='utf-8').write(fill(TPL_GL))
+        # Дерево кластерів — лише для GL: Leaflet-версія кілець не малює, і
+        # kyiv.html від нього не змінюється ні на байт.
+        tree = json.dumps(map_clusters.build(P), separators=(',', ':'))
+        print(f'   дерево кластерів: {len(tree)/1024:.0f} КБ')
+        open(dst_gl, 'w', encoding='utf-8').write(fill(TPL_GL).replace('__TREE__', tree))
         print(f'готово: {os.path.basename(dst_gl)} ({os.path.getsize(dst_gl)/1048576:.1f} МБ)')
     return theme_cnt
 

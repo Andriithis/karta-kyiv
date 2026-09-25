@@ -24,7 +24,11 @@ try{const m_=await import('https://unpkg.com/maplibre-gl@6.10.0/dist/maplibre-gl
  maplibregl=m_.default||m_}
 catch(e){location.replace('kyiv.html'+location.search+location.hash);throw e}"""
 
-JS_GL_MAP = r"""// ---- ТЕМИ ----
+JS_GL_MAP = r"""// Дерево кластерів для «Кілець» рахується при збірці (map_clusters): без
+// нього браузер не знає, хто чий нащадок, і розпад кільця при наближенні
+// неможливий. Сум у дереві немає — їх складає браузер з адрес за фільтром.
+const TREE=__TREE__;
+// ---- ТЕМИ ----
 // Кольорову тему прибрано (RISHENNYA, розд. 18), GL-збірка одразу будується
 // на двох. Збережене «kolir» читаємо як світлу.
 if(THEME!=='svitla'&&THEME!=='temna'){THEME='svitla';document.body.dataset.t=THEME;PALA=PAL[THEME]}
