@@ -31,7 +31,33 @@ const TREE=__TREE__;
 // ---- ТЕМИ ----
 // Кольорову тему прибрано (RISHENNYA, розд. 18), GL-збірка одразу будується
 // на двох. Збережене «kolir» читаємо як світлу.
-if(THEME!=='svitla'&&THEME!=='temna'){THEME='svitla';document.body.dataset.t=THEME;PALA=PAL[THEME]}
+// ---- ПАЛІТРИ НОВОЇ КАРТИ (розд. 23, п. 4, затверджено 25.09) ----
+// Одна палітра для кілець, крапок і ромбів; на вибір глядача. Колір
+// прив'язаний до НАЗВИ виду, а не до номера в переліку: коли «Середовище»
+// зникне (крок 7), решта кольорів лишиться на своїх видах. Крейдяна на
+// темній темі — ті самі світлі значення: підібрана окремо губила крейдяний
+// вигляд, а ΔE між видами від підкладки не залежить. kyiv.html — на PAL.
+const KINDS_ORDER=['Громадський порядок','Алкоголь і торгівля','Наркотики','Насильство проти особи',
+ 'Майнові','Дорожній рух','Середовище і майно громади'];
+const GLPAL_HEX={
+ yaskrava:{svitla:['#DF6D40','#28AB7D','#5244A5','#D85151','#367BCE','#118412','#DD7DA2'],
+           temna: ['#CC592D','#14976B','#938BE2','#EA5C5F','#357ED7','#1D8219','#D7638B']},
+ kreida:  {svitla:['#FFA76E','#5ADAB7','#9B99F0','#F78265','#8AC0F1','#85BB8F','#E184AF'],
+           temna: ['#FFA76E','#5ADAB7','#9B99F0','#F78265','#8AC0F1','#85BB8F','#E184AF']},
+ hrafit:  {svitla:['#A54D09','#009178','#5056B0','#BD5460','#3C74C2','#417341','#AC548D'],
+           temna: ['#B03D03','#007C56','#7B73C7','#CE4148','#1965BC','#166E13','#BC4A73']}};
+const PALNAMES=[['yaskrava','Яскрава'],['kreida','Крейдяна'],['hrafit','Графітова']];
+let PALK='yaskrava';
+try{const v=localStorage.getItem('karta-palitra'); if(GLPAL_HEX[v]) PALK=v}catch(e){}
+// Масив у порядку M.groups; вид без свого кольору (якщо такий з'явиться) — з
+// PAL, а восьмий, запасний, як і там, — у кінці.
+function glPal(theme){const src=GLPAL_HEX[PALK][theme]||GLPAL_HEX[PALK].svitla;
+ const by={}; KINDS_ORDER.forEach((n,i)=>by[n]=src[i]);
+ return M.groups.map((g,gi)=>by[g[0]]||PAL[theme][gi%PAL[theme].length]).concat(PAL[theme].slice(M.groups.length))}
+if(THEME!=='svitla'&&THEME!=='temna'){THEME='svitla';document.body.dataset.t=THEME}
+PALA=glPal(THEME);
+// Лінії ризику tpl_base пофарбував ще палітрою сайту — перефарбовуємо.
+Object.keys(R.lines||{}).forEach(k=>{if(k.startsWith('risk_'))RCOL[k]=PALA[(R.lines[k].theme||0)%PALA.length]});
 const GLTH=[['svitla','Світла'],['temna','Темна']];
 const OFM={svitla:'https://tiles.openfreemap.org/styles/positron',
            temna:'https://tiles.openfreemap.org/styles/dark'};
@@ -176,7 +202,7 @@ map.on('style.load',onStyleReady);
 function setTheme(t){
  if(!OFM[t]||t===THEME) return;
  THEME=t; try{localStorage.setItem('karta-tema',t)}catch(e){}
- document.body.dataset.t=t; PALA=PAL[t];
+ document.body.dataset.t=t; PALA=glPal(t);
  document.querySelectorAll('.tsw button').forEach(b=>
    b.setAttribute('aria-pressed',b.dataset.t===t?'true':'false'));
  Object.keys(R.lines||{}).forEach(k=>{
@@ -260,7 +286,7 @@ function addrReady(){
    // Малюється за зростанням ключа: великі адреси знизу, дрібні зверху, як у
    // Leaflet; адреси-проблеми — поверх усіх.
    layout:{'circle-sort-key':['get','k']},
-   paint:{'circle-radius':radiusBy(0),'circle-color':['get','c'],'circle-opacity':.94,
+   paint:{'circle-radius':radiusBy(0),'circle-color':['get','c'],'circle-opacity':RING_OP,
     'circle-stroke-width':1.5}});
  }
  // Гало й тінь — кольори теми з CSS: шари переходять у новий стиль як є,
@@ -357,9 +383,7 @@ function focusStreet(i,pts){afterMove(()=>openAt(i,map.getCenter())); focusBound
 // анімує перехід між сусідніми рівнями. Рівень NL — самі адреси: з z15 кілець
 // немає, адреси малює шар GL.
 const TZ0=TREE.z0, TDZ=TREE.dz, LV=TREE.lv, NL=LV.length, LEAF=TREE.leaf, NG=M.groups.length;
-// Палітра «Яскрава» (розд. 23, п. 4) — кольори сайту, приглушені на 12%.
-// Вибір палітри глядачем — окремим комітом; порядок — як у M.groups.
-const YASKRAVA=['#DF6D40','#28AB7D','#5244A5','#D85151','#367BCE','#118412','#DD7DA2'];
+// Непрозорість ~86% — однакова для кілець і крапок (розд. 23, п. 3).
 const RING_OP=.86;
 const nOf=i=>i===NL?LEAF.length:LV[i].c.length/2;
 // Батько вузла j рівня i (i>=1) — на рівні i-1.
@@ -603,8 +627,8 @@ const ringLayer={id:'k-rings', type:'custom', renderingMode:'2d',
     // Адреса з проблемою в «Кільцях» — ромб за розміром подій (макет), не
     // крапка: вона не ховається в кільце (розд. 6). Місце під нього дерево
     // вже врахувало (map_clusters.r_addr).
-    if(v.np&&SHOWP){later.push(()=>diamond(o.x,o.y,Math.max(7,r)*1.25,al,rgb(YASKRAVA[v.pt%YASKRAVA.length]))); continue}
-    quad(o.x,o.y,r+2,r,0,1,.94*al,Q1,rgb(PALA[v.th%PALA.length])); continue}
+    if(v.np&&SHOWP){later.push(()=>diamond(o.x,o.y,Math.max(7,r)*1.25,al,rgb(PALA[v.pt%PALA.length]))); continue}
+    quad(o.x,o.y,r+2,r,0,1,RING_OP*al,Q1,rgb(PALA[v.th%PALA.length])); continue}
    const r=rRing(o.n), inner=r*.62, q=[1,1,1,1,1,1,1,1];
    let acc=0; for(let g=0;g<7;g++){acc+=g<NG?o.s[g]:0; q[g]=acc/o.n}
    quad(o.x,o.y,r+2,r,inner,0,RING_OP*al,q,C0);
@@ -614,7 +638,7 @@ const ringLayer={id:'k-rings', type:'custom', renderingMode:'2d',
     // праворуч); кілька проблем — один більший ромб із числом.
     const rr=r+3, bx=o.x+rr*Math.SQRT1_2, by=o.y-rr*Math.SQRT1_2;
     quad(o.x,o.y,rr+2,rr+1,rr-1,3,al,Q1,ink);
-    later.push(()=>diamond(bx,by,o.np>1?8.5:5.5,al,rgb(YASKRAVA[(o.pt>=0?o.pt:0)%YASKRAVA.length])));
+    later.push(()=>diamond(bx,by,o.np>1?8.5:5.5,al,rgb(PALA[(o.pt>=0?o.pt:0)%PALA.length])));
     if(o.np>1) ptexts.push([bx,by+.5,String(o.np),10,al])}
   }
   if(addrDiamonds){
@@ -656,7 +680,7 @@ const ringLayer={id:'k-rings', type:'custom', renderingMode:'2d',
    gl.uniform2f(gl.getUniformLocation(p,'u_view'),W,H); return locs};
   const unbind=locs=>locs.forEach(l=>gl.disableVertexAttribArray(l));
   if(nd){const locs=bind(this.pd,this.bd,discBuf,nd,DISC_F,[['a_c',2],['a_o',2],['a_m',4],['a_q0',4],['a_q1',4],['a_col',3]]);
-   gl.uniform3fv(gl.getUniformLocation(this.pd,'u_col'),new Float32Array(YASKRAVA.flatMap(rgb)));
+   gl.uniform3fv(gl.getUniformLocation(this.pd,'u_col'),new Float32Array(PALA.slice(0,7).flatMap(rgb)));
    gl.uniform3fv(gl.getUniformLocation(this.pd,'u_halo'),rgb(HALO_C));
    gl.uniform3fv(gl.getUniformLocation(this.pd,'u_ink'),ink);
    gl.drawArrays(gl.TRIANGLES,0,nd); unbind(locs)}
@@ -734,9 +758,24 @@ window.kartaKilcia=()=>{const vm=new Map(LASTST.vis.map(v=>[v[0],v[1]]));
  seg.insertAdjacentHTML('afterend','<button id="fprob" class="pbtn2" aria-pressed="true" '+
    'style="width:auto;align-self:flex-start;margin:6px 0 0;padding:4px 10px">◆ Проблеми</button>');
  $('#fprob').onclick=e=>{SHOWP=!SHOWP; swSet(e.currentTarget,SHOWP); map.triggerRepaint()};}
+// ---- ПЕРЕМИКАЧ ПАЛІТР — у «Розширено», поруч з роком і часом доби ----
+{const top=document.querySelector('#adv .advtop');
+ if(top){top.insertAdjacentHTML('beforeend','<div class="advrow"><span>Кольори</span><div class="chips" id="fpal">'+
+   PALNAMES.map(([k,n])=>`<button class="chip" data-p="${k}" aria-pressed="${k===PALK}">${n}</button>`).join('')+'</div></div>');
+  $('#fpal').onclick=e=>{const b=e.target.closest('[data-p]'); if(!b||b.dataset.p===PALK) return;
+   PALK=b.dataset.p; try{localStorage.setItem('karta-palitra',PALK)}catch(err){}
+   $('#fpal').querySelectorAll('[data-p]').forEach(x=>swSet(x,x===b));
+   PALA=glPal(THEME);
+   Object.keys(R.lines||{}).forEach(k=>{if(k.startsWith('risk_'))RCOL[k]=PALA[(R.lines[k].theme||0)%PALA.length]});
+   paintRows(); drawRisks(); draw()};}}
 // Перевірка з консолі: скільки адрес із проблемами й скільки самих проблем
 // за поточним фільтром і районом — те, що карта показує ромбами.
 window.kartaProblemy=()=>({adres:PROBK.length, problem:PROBK.reduce((s,k)=>s+LEAFV[k].np,0)});
+// Колір адреси за назвою («Володимирська, 26») — перевірка палітр з консолі:
+// яким кольором її намальовано і якого виду цей колір.
+window.kartaAdresa=q=>{const i=P.findIndex(p=>(p[2]||'').includes(q)); if(i<0) return null;
+ const v=(LASTST||computeVis()).vis.find(v=>v[0]===P[i]);
+ return v?{adresa:P[i][2], kolir:PALA[v[2]%PALA.length], vyd:M.groups[v[2]][0], problema:!!v[3]}:{adresa:P[i][2], kolir:null}};
 // Підписки на панель — ті самі, що в tpl_draw, без подій карти Leaflet.
 document.querySelectorAll('#side input:not([data-r]):not([data-f]):not(#fquiet)').forEach(x=>x.addEventListener('change',draw));
 document.querySelectorAll('[data-r]').forEach(x=>x.addEventListener('change',drawRisks));
