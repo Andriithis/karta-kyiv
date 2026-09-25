@@ -268,11 +268,13 @@ function addrReady(){
  const sh=(cssv('--shadow').match(/rgba?\([^)]*\)/)||['rgba(0,0,0,.25)'])[0];
  map.setPaintProperty('k-addr','circle-stroke-color',cssv('--halo'));
  map.setPaintProperty('k-addr-shadow','circle-color',sh);
+ ringColors(); ADDR_VIS=null;
  draw();
 }
 function draw(){
  const st=computeVis(); LASTST=st;
  heatOn=(MODE==='heat');
+ ringSums(st); map.triggerRepaint();
  if(!STYLE_OK||!map.getSource('k-addr')) return;
  // Теплова — у коміті ризику й потоків; поки що в цьому режимі позначок немає.
  const vis=heatOn?[]:st.vis, mx=vis.length?vis[0][1]:1;
@@ -348,6 +350,198 @@ function focusAddress(i){
 }
 function focusBounds(pts){map.fitBounds(bboxOf(pts),{padding:40,maxZoom:16})}
 function focusStreet(i,pts){afterMove(()=>openAt(i,map.getCenter())); focusBounds(pts)}
+// ---- КІЛЬЦЯ (розд. 23, п. 1 і 5) ----
+// Склад кілець — з дерева TREE (map_clusters): рівні з кроком 0,5 зуму, від
+// міського огляду до z14,5, кожен вузол цілком лежить в одному батьківському.
+// Браузер нічого не групує сам — лише складає суми за поточним фільтром і
+// анімує перехід між сусідніми рівнями. Рівень NL — самі адреси: з z15 кілець
+// немає, адреси малює шар GL.
+const TZ0=TREE.z0, TDZ=TREE.dz, LV=TREE.lv, NL=LV.length, LEAF=TREE.leaf, NG=M.groups.length;
+// Палітра «Яскрава» (розд. 23, п. 4) — кольори сайту, приглушені на 12%.
+// Вибір палітри глядачем — окремим комітом; порядок — як у M.groups.
+const YASKRAVA=['#DF6D40','#28AB7D','#5244A5','#D85151','#367BCE','#118412','#DD7DA2'];
+const RING_OP=.86;
+const nOf=i=>i===NL?LEAF.length:LV[i].c.length/2;
+// Батько вузла j рівня i (i>=1) — на рівні i-1.
+const parOf=(i,j)=>LV[i-1].of[j];
+// Скільки дітей у вузла — сталий склад, від фільтра не залежить: кільце з
+// одним нащадком на наступному рівні — те саме кільце, його не анімуємо.
+const KIDS=[]; for(let i=0;i<NL;i++){const a=new Int32Array(nOf(i)); for(const p of LV[i].of) a[p]++; KIDS.push(a)}
+// Межі адрес кожного вузла — куди летіти після кліку по кільцю.
+const BB=[]; for(let i=0;i<NL;i++){const a=new Float64Array(nOf(i)*4); for(let j=0;j<a.length;j+=4){a[j]=a[j+1]=180;a[j+2]=a[j+3]=-180} BB.push(a)}
+LEAF.forEach((pi,k)=>{const j=LV[NL-1].of[k]*4, b=BB[NL-1], la=P[pi][0], lo=P[pi][1];
+ b[j]=Math.min(b[j],lo); b[j+1]=Math.min(b[j+1],la); b[j+2]=Math.max(b[j+2],lo); b[j+3]=Math.max(b[j+3],la)});
+for(let i=NL-2;i>=0;i--){const c=BB[i+1], b=BB[i];
+ LV[i].of.forEach((p,j)=>{const q=p*4, s=j*4;
+  b[q]=Math.min(b[q],c[s]); b[q+1]=Math.min(b[q+1],c[s+1]); b[q+2]=Math.max(b[q+2],c[s+2]); b[q+3]=Math.max(b[q+3],c[s+3])})}
+// Суми за фільтром. SUM — події за видами, TOT — усього, ACT — скільки адрес
+// вузла мають події, ONE — одна з них (коли ACT=1, кільце стає крапкою на
+// місці цієї адреси, як у вигляді «Адреси»; рішення 25.09).
+let SUM=[], TOT=[], ACT=[], ONE=[], LEAFV=[];
+function ringSums(st){
+ const vm=new Map(st.vis.map(v=>[v[0],v])), mx=st.vis.length?st.vis[0][1]:1;
+ SUM=[];TOT=[];ACT=[];ONE=[];
+ for(let i=0;i<=NL;i++){const n=nOf(i); SUM.push(new Int32Array(n*NG)); TOT.push(new Int32Array(n)); ACT.push(new Int32Array(n)); ONE.push(new Int32Array(n).fill(-1))}
+ LEAFV=LEAF.map((pi,k)=>{const v=vm.get(P[pi]); if(!v) return null;
+  TOT[NL][k]=v[1]; ACT[NL][k]=1; ONE[NL][k]=k;
+  for(const g in v[4]) SUM[NL][k*NG+(+g)]=v[4][g];
+  return {n:v[1], th:v[2], r0:Math.max(2.8,Math.min(14,2.8+9.5*Math.pow(v[1]/Math.max(mx,1),.42)))}});
+ for(let i=NL;i>=1;i--){const s=SUM[i],t=TOT[i],a=ACT[i],o=ONE[i],ps=SUM[i-1],pt=TOT[i-1],pa=ACT[i-1],po=ONE[i-1];
+  const n=nOf(i);
+  for(let j=0;j<n;j++){ if(!t[j]) continue; const p=parOf(i,j);
+   pt[p]+=t[j]; pa[p]+=a[j]; if(po[p]<0) po[p]=o[j];
+   for(let g=0;g<NG;g++) ps[p*NG+g]+=s[j*NG+g]}}
+}
+const rRing=n=>Math.min(30,10+3*Math.log2(Math.max(n,1)));
+const fmtN=v=>v>=10000?Math.round(v/1000)+'k':v>=1000?(v/1000).toFixed(1).replace('.',',')+'k':String(v);
+// Що малює вузол j рівня i: кільце в центрі вузла, крапку на місці єдиної
+// адреси з подіями або нічого (подій за фільтром немає).
+// box — межі видимого з запасом: вузли поза ним не створюються зовсім. На
+// z14 у рівні тисячі вузлів, і об'єкт на кожен у кожному кадрі з'їдав
+// половину частоти кадрів.
+function nodeAt(i,j,box){
+ if(!TOT.length||!TOT[i][j]) return null;
+ const one=ACT[i][j]===1, k=one?ONE[i][j]:-1;
+ const lon=one?P[LEAF[k]][1]:LV[i].c[2*j], lat=one?P[LEAF[k]][0]:LV[i].c[2*j+1];
+ if(box&&(lon<box[0]||lon>box[2]||lat<box[1]||lat>box[3])) return null;
+ if(one) return {dot:true,k,lon,lat,n:TOT[i][j]};
+ return {dot:false,lon,lat,n:TOT[i][j],s:SUM[i].subarray(j*NG,(j+1)*NG),i,j};
+}
+// ---- ПОЛОТНО ----
+// Над полотном GL, під вікнами й кнопками. Перемальовується на подію render
+// самої карти — у тому самому кадрі, тож кільця не відстають від підкладки.
+// Розмір — з devicePixelRatio, інакше кільця й числа розмиті.
+const cv=document.createElement('canvas');
+cv.style.cssText='position:absolute;left:0;top:0;pointer-events:none';
+map.getCanvasContainer().appendChild(cv);
+const cx=cv.getContext('2d'); let DPR=1, VIS=[];
+function fitCanvas(){const c=map.getCanvas(); DPR=devicePixelRatio||1;
+ const w=c.clientWidth, h=c.clientHeight;
+ cv.width=Math.round(w*DPR); cv.height=Math.round(h*DPR); cv.style.width=w+'px'; cv.style.height=h+'px'}
+fitCanvas(); map.on('resize',fitCanvas);
+function drawRing(o,x,y,al){
+ const r=rRing(o.n), inner=r*.62; let a0=-Math.PI/2;
+ cx.globalAlpha=RING_OP*al;
+ // Дірка прозора: крізь кільце видно підкладку.
+ for(let g=0;g<NG;g++){const c=o.s[g]; if(!c) continue; const a1=a0+c/o.n*2*Math.PI;
+  cx.beginPath(); cx.arc(x,y,r,a0,a1); cx.arc(x,y,inner,a1,a0,true); cx.closePath();
+  cx.fillStyle=YASKRAVA[g%YASKRAVA.length]; cx.fill(); a0=a1}
+ cx.globalAlpha=al;
+ const t=fmtN(o.n);
+ cx.font=`600 ${Math.max(9,Math.min(13,inner*.9))}px "IBM Plex Mono",ui-monospace,monospace`;
+ cx.textAlign='center'; cx.textBaseline='middle'; cx.lineJoin='round';
+ cx.lineWidth=3; cx.strokeStyle=HALO_C; cx.strokeText(t,x,y+.5); cx.fillStyle=INK_C; cx.fillText(t,x,y+.5);
+ cx.globalAlpha=1;
+}
+// Крапка — та сама, що в шарі GL вигляду «Адреси»: колір, розмір, гало.
+function drawDot(o,x,y,al,z){const v=LEAFV[o.k]; if(!v) return;
+ cx.globalAlpha=.94*al; cx.beginPath(); cx.arc(x,y,v.r0*zmulAt(z),0,7);
+ cx.fillStyle=PALA[v.th%PALA.length]; cx.fill();
+ cx.lineWidth=1.5; cx.strokeStyle=HALO_C; cx.stroke(); cx.globalAlpha=1}
+let HALO_C='#fff', INK_C='#111';
+const easeIO=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+let CANVAS_ON=false, CANVAS_DRAWN=false;
+// Кольори теми — з CSS, але не в кожному кадрі: getComputedStyle на кадр
+// коштував помітну частку частоти кадрів. Оновлюються зі зміною теми.
+function ringColors(){HALO_C=cssv('--halo')||'#fff'; INK_C=cssv('--ink')||'#111'}
+ringColors();
+// Видимість шару адрес міняємо лише тоді, коли вона справді змінилася.
+let ADDR_VIS=null;
+function addrLayerVisible(v){
+ if(v===ADDR_VIS&&map.getLayer('k-addr')&&(map.getLayoutProperty('k-addr','visibility')!=='none')===v) return;
+ ADDR_VIS=v;
+ for(const id of ['k-addr','k-addr-shadow']) if(map.getLayer(id)) map.setLayoutProperty(id,'visibility',v?'visible':'none');
+}
+function renderRings(){
+ const W=cv.width/DPR, H=cv.height/DPR, z=map.getZoom();
+ const f0=Math.max(0,(z-TZ0)/TDZ), zi=Math.min(NL,Math.floor(f0+1e-9));
+ const on=MODE==='rings'&&zi<NL&&TOT.length>0;
+ // З z15 і у вигляді «Адреси» — лише шар GL; у кільцях нижче z15 адреси
+ // малює полотно разом з кільцями, щоб вони розходились із батьківського.
+ if(STYLE_OK) addrLayerVisible(MODE!=='rings'||zi>=NL);
+ CANVAS_ON=on; VIS=[];
+ if(!on&&!CANVAS_DRAWN) return;
+ cx.setTransform(DPR,0,0,DPR,0,0); cx.clearRect(0,0,W,H); CANVAS_DRAWN=on;
+ if(!on) return;
+ const b=map.getBounds(), pad=.25*(b.getNorth()-b.getSouth());
+ const box=[b.getWest()-pad,b.getSouth()-pad,b.getEast()+pad,b.getNorth()+pad];
+ const inB=o=>o.lon>box[0]&&o.lon<box[2]&&o.lat>box[1]&&o.lat<box[3];
+ const pr=o=>{const q=map.project([o.lon,o.lat]); o.x=q.x; o.y=q.y; return o};
+ // Перетікання — лише коли змінюється зум. Під час перетягування — один
+ // набір: інакше на місці кільця з'являлися б два, батьківське й дочірні.
+ const fr=f0-zi, e=zi+1>NL?0:(map.isZooming()?easeIO(Math.min(1,fr)):Math.round(fr));
+ const out=[];
+ if(e<=0||e>=1){const i=e>=1?zi+1:zi;
+  if(i>=NL) return;
+  for(let j=0,n=nOf(i);j<n;j++){const o=nodeAt(i,j,box); if(o) out.push([pr(o),1])}
+ } else {
+  const i0=zi, i1=zi+1, par=new Map();
+  for(let j=0,n=nOf(i0);j<n;j++){const o=nodeAt(i0,j,box); if(o) par.set(j,pr(o))}
+  const still=new Set();
+  for(let j=0,n=nOf(i1);j<n;j++){
+   const pj=parOf(i1,j), p=par.get(pj);
+   // Дочірнє кільце поза видимим, чий батько теж поза ним, — не потрібне.
+   const o=nodeAt(i1,j,p?null:box); if(!o) continue;
+   if(!p){ if(inB(o)){pr(o); out.push([o,e])} continue }
+   pr(o);
+   // Той самий склад або одна адреса з подіями — те саме кільце чи та сама
+   // крапка: лишається на місці, без перетікання.
+   if((i0<NL&&KIDS[i0][pj]===1)||p.dot){out.push([o,1]); still.add(pj); continue}
+   o.x=p.x+(o.x-p.x)*e; o.y=p.y+(o.y-p.y)*e; out.push([o,e]);
+  }
+  for(const [j,p] of par) if(!still.has(j)) out.unshift([p,1-e]);
+ }
+ // Крапки знизу, кільця зверху; великі під дрібними.
+ out.sort((a,b2)=>(a[0].dot?0:1)-(b2[0].dot?0:1)||b2[0].n-a[0].n);
+ for(const [o,al] of out){ if(o.x<-60||o.y<-60||o.x>W+60||o.y>H+60) continue;
+  if(o.dot) drawDot(o,o.x,o.y,al,z); else drawRing(o,o.x,o.y,al);
+  if(al>=.5) VIS.push(o)}
+}
+map.on('render',renderRings);
+// Кінець руху — ще один кадр: після зуму перетікання має стати на рівень.
+map.on('moveend',()=>requestAnimationFrame(()=>map.triggerRepaint()));
+// Клік: кільце — переліт до його адрес, не глибше ніж на 2,5 кроку зуму від
+// поточного (розд. 23, п. 6); крапка — вікно адреси, як у шарі GL.
+function hitRing(pt){let best=null, bd=1e9; const z=map.getZoom();
+ for(const o of VIS){const r=o.dot?Math.max(6,LEAFV[o.k]?LEAFV[o.k].r0*zmulAt(z)+3:6):rRing(o.n)+3;
+  const d=Math.hypot(o.x-pt.x,o.y-pt.y); if(d<=r&&d<bd){bd=d;best=o}}
+ return best}
+map.on('click',e=>{
+ if(!CANVAS_ON) return;
+ const o=hitRing(e.point); if(!o) return;
+ if(o.dot) return openAt(LEAF[o.k]);
+ const q=o.j*4, bb=BB[o.i], z=map.getZoom();
+ const side=$('#side'), W=map.getContainer().clientWidth;
+ const right=side&&side.offsetWidth&&W>700?side.offsetWidth+40:40;
+ let cam=null;
+ try{cam=map.cameraForBounds([[bb[q],bb[q+1]],[bb[q+2],bb[q+3]]],
+   {padding:{top:40,bottom:40,left:40,right},maxZoom:Math.min(18,z+2.5)})}catch(err){}
+ if(!cam||!cam.center) cam={center:[o.lon,o.lat],zoom:z+1.5};
+ map.flyTo({center:cam.center,zoom:Math.min(z+2.5,Math.max(cam.zoom,z+.6)),duration:1400,curve:1.3,essential:true});
+});
+map.on('mousemove',e=>{ if(!CANVAS_ON) return;
+ map.getCanvas().style.cursor=hitRing(e.point)?'pointer':''});
+// Перевірка з консолі (розд. 23, перевірка п. 3): для кожного видимого
+// кільця — число на ньому і сума подій його адрес за фільтром, порахована
+// окремо, прямо з computeVis, а не з дерева.
+window.kartaKilcia=()=>{const vm=new Map(LASTST.vis.map(v=>[v[0],v[1]]));
+ // Діти вузла рівня i — ті вузли рівня i+1 (або адреси), чий LV[i].of — він.
+ const CH=LV.map((l,i)=>{const c=Array.from({length:nOf(i)},()=>[]); l.of.forEach((p,k)=>c[p].push(k)); return c});
+ return VIS.filter(o=>!o.dot).map(o=>{let s=0, a=0;
+  const walk=(i,j)=>{ if(i===NL){const n=vm.get(P[LEAF[j]]); if(n){s+=n;a++} return}
+   for(const c of CH[i][j]) walk(i+1,c)};
+  walk(o.i,o.j); return {na_kilci:o.n, suma_adres:s, adres:a}})};
+// ---- ВИГЛЯД: «Кільця · Адреси · Теплова» (розд. 23, п. 7) ----
+// Замість «Події · Проблеми · Теплова» спільної панелі — лише в GL-збірці.
+// Окремого режиму «лише проблеми» немає: ромби проблем лягають поверх (коміт 5).
+{const VIEWS=[['rings','Кільця'],['addr','Адреси'],['heat','Теплова']];
+ let v=null; try{v=localStorage.getItem('karta-vyhlyad')}catch(e){}
+ MODE=VIEWS.some(x=>x[0]===v)?v:'rings';
+ const seg=$('#fcat');
+ seg.innerHTML=VIEWS.map(([k,n])=>`<button data-m="${k}" aria-pressed="${k===MODE}">${n}</button>`).join('');
+ seg.onclick=e=>{const b=e.target.closest('[data-m]'); if(!b) return;
+  MODE=b.dataset.m; try{localStorage.setItem('karta-vyhlyad',MODE)}catch(err){}
+  seg.querySelectorAll('button').forEach(x=>swSet(x,x===b)); draw()};}
 // Підписки на панель — ті самі, що в tpl_draw, без подій карти Leaflet.
 document.querySelectorAll('#side input:not([data-r]):not([data-f]):not(#fquiet)').forEach(x=>x.addEventListener('change',draw));
 document.querySelectorAll('[data-r]').forEach(x=>x.addEventListener('change',drawRisks));
