@@ -298,25 +298,33 @@ function openAt(i,ll){
  const node=!p[3]?streetHTML(p,st):v?popupHTML(...v,st):hiddenHTML(p);
  if(POPUP) POPUP.remove();
  clearNear();
- POPUP=new maplibregl.Popup({maxWidth:'360px',offset:ll?0:rNow(i),focusAfterOpen:false})
-  .setLngLat(ll||[p[1],p[0]]).setDOMContent(node).addTo(map);
+ const off=ll?0:rNow(i), at=ll||[p[1],p[0]];
+ // Вікно завжди над адресою. Без сталого боку MapLibre сам перебирав, куди
+ // його ставити, і зсув карти під картку виходив непередбачуваним.
+ POPUP=new maplibregl.Popup({maxWidth:'360px',offset:off,anchor:'bottom',focusAfterOpen:false})
+  .setLngLat(at).setDOMContent(node).addTo(map);
  // Закрите вікно — людина пішла з цього місця: гасимо й «Що поруч».
  POPUP.on('close',clearNear);
- // Два кадри: у першому MapLibre ще тільки ставить вікно на місце, і його
- // межі не справжні — зсуву тоді не було зовсім.
- const pp=POPUP; requestAnimationFrame(()=>requestAnimationFrame(()=>keepClear(pp)));
+ keepClear(POPUP,at,off);
 }
 // Адреса не має опинитися під карткою-навігатором. Карту зсуваємо рівно
 // настільки, щоб вікно лягло на вільну частину, — без наближення: людина
 // має бачити, де вона, а різкий зум це губить (розд. 23, п. 6).
-function keepClear(pp){
+// Межі вікна рахуємо від точки адреси й розміру вікна, а не від його
+// прямокутника на екрані: у перші кадри MapLibre ще не поставив вікно на
+// місце, і прямокутник показував лівий верхній кут карти.
+function keepClear(pp,at,off){
  const el=pp&&pp.getElement(); if(!el) return;
- const r=el.getBoundingClientRect(), m=map.getContainer().getBoundingClientRect(), pad=12;
- let L=m.left+pad, R=m.right-pad, T=m.top+pad, B=m.bottom-pad;
- const side=$('#side'), c=side&&side.getBoundingClientRect();
- if(c&&c.width&&c.height){
+ const w=el.offsetWidth, h=el.offsetHeight, q=map.project(at);
+ const cw=map.getContainer().clientWidth, ch=map.getContainer().clientHeight, pad=12;
+ const r={left:q.x-w/2,right:q.x+w/2,top:q.y-off-h,bottom:q.y};
+ let L=pad, R=cw-pad, T=pad, B=ch-pad;
+ const side=$('#side');
+ if(side&&side.offsetWidth){
+  const m=map.getContainer().getBoundingClientRect(), s=side.getBoundingClientRect();
+  const c={left:s.left-m.left,right:s.right-m.left,top:s.top-m.top,bottom:s.bottom-m.top};
   // Праворуч угорі на широкому екрані, знизу на всю ширину на телефоні.
-  if(c.left<=m.left+m.width/2) B=Math.min(B,c.top-pad);
+  if(c.left<=cw/2) B=Math.min(B,c.top-pad);
   else if(r.top<c.bottom&&r.bottom>c.top) R=Math.min(R,c.left-pad);
  }
  let dx=0,dy=0;
