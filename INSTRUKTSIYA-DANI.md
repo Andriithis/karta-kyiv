@@ -10,7 +10,7 @@
 ## 1. Створити приватний репозиторій
 
 1. Відкрийте https://github.com/new
-2. **Repository name:** `karta-kyiv-dani` — саме так. Інша назва теж
+2. **Repository name:** `dani-edrsr` — саме так. Інша назва теж
    підійде, але тоді її треба виправити в `.github/workflows/teksty.yml`,
    рядок `DANI_REPO`.
 3. Оберіть **Private**.
@@ -22,12 +22,12 @@
 
 1. Відкрийте https://github.com/settings/personal-access-tokens/new — це
    «Fine-grained token»; ним можна дати доступ лише до одного репозиторію.
-2. **Token name:** `karta-kyiv-dani`.
+2. **Token name:** `dani-edrsr`.
 3. **Expiration:** найдовший дозволений строк (зазвичай рік). Запишіть собі
    дату: коли строк мине, бот знову складатиме тексти в тимчасовий
    артефакт, а токен треба буде створити заново за цією ж інструкцією.
 4. **Repository access:** **Only select repositories** → оберіть лише
-   `karta-kyiv-dani`.
+   `dani-edrsr`.
 5. **Permissions → Repository permissions:**
    - **Contents: Read and write** — без цього бот не зможе класти архіви
      в реліз;
@@ -44,13 +44,13 @@
 5. **Add secret.**
 
 Готово. Найближчий «Прохід по текстах» (щодня о 22:00 UTC, тобто 01:00 за
-Києвом) сам створить у `karta-kyiv-dani` реліз `teksty` і покладе туди
-архіви по місяцях. Перевірити: `karta-kyiv-dani` → праворуч **Releases** →
+Києвом) сам створить у `dani-edrsr` реліз `teksty` і покладе туди
+архіви по місяцях. Перевірити: `dani-edrsr` → праворуч **Releases** →
 `teksty`, там файли на кшталт `2025-03.jsonl.xz`.
 
 ## Що не робити
 
 - Не вставляйте токен у файли, повідомлення чи чат — лише в секрети.
-- Не робіть `karta-kyiv-dani` публічним: там повні тексти рішень.
+- Не робіть `dani-edrsr` публічним: там повні тексти рішень.
 - Якщо токен випадково десь з'явився, видаліть його на
   https://github.com/settings/personal-access-tokens і створіть новий.

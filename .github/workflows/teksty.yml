@@ -34,7 +34,7 @@ jobs:
     # приватного репозиторію DANI_REPO, токен — секрет DANI_TOKEN. Доки
     # секрету немає, тексти лягають в артефакт запуску на 90 днів.
     env:
-      DANI_REPO: Andriithis/karta-kyiv-dani
+      DANI_REPO: Andriithis/dani-edrsr
       DANI_TOKEN: ${{ secrets.DANI_TOKEN }}
 
     steps:
