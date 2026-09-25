@@ -116,13 +116,14 @@ function carry(prev,next){
 // Не прийшов за 8 секунд або прийшов з помилкою — растрові плитки CARTO.
 let styleTimer=null;
 function setBase(t){
+ STYLE_OK=false;
  USING_FALLBACK=false; clearTimeout(styleTimer); setAttr(OFM_ATTR);
  styleTimer=setTimeout(()=>fallback(t),8000);
  map.setStyle(OFM[t],{transformStyle:(prev,next)=>carry(prev,patchStyle(next))});
 }
 function fallback(t){
  if(USING_FALLBACK) return;
- USING_FALLBACK=true; clearTimeout(styleTimer);
+ USING_FALLBACK=true; clearTimeout(styleTimer); STYLE_OK=false;
  setAttr(CARTO_KEY?'© CARTO, © OpenStreetMap':'© OpenStreetMap');
  console.warn('Стиль OpenFreeMap недоступний, підкладка CARTO');
  map.setStyle(cartoStyle(t),{transformStyle:(prev,next)=>carry(prev,next)});
@@ -165,7 +166,10 @@ map.addControl(new ThemeCtl(),'top-left');
 // Після кожного завантаження стилю: сюди наступні коміти додаватимуть
 // картинки (addImage не переживає setStyle) і фарбування наших шарів у
 // кольори теми.
-function onStyleReady(){}
+// STYLE_OK — чи можна вже додавати джерела. isStyleLoaded() тут не годиться:
+// він чекає ще й на всі плитки, і позначки з'являлися б лише після них.
+let STYLE_OK=false;
+function onStyleReady(){STYLE_OK=true; addrReady()}
 map.on('style.load',onStyleReady);
 function setTheme(t){
  if(!OFM[t]||t===THEME) return;
@@ -205,20 +209,133 @@ window.addEventListener('hashchange',()=>{
 });
 // ---- ЗАГЛУШКИ ----
 // Ті самі імена, що й у Leaflet-збірці, — tpl_core кличе саме їх. Кожна
-// стане справжньою у своєму коміті: ризик і потоки — 6, чинники — 8.
+// стане справжньою у своєму коміті (крок 9): ризик, потоки й теплова — 7,
+// чинники й «Що поруч» — 9.
 let heatOn=false;
 function drawRisks(){}
 function drawFacts(){}
 function showNear(){return 0}
 function showAllNear(){return 0}
-// Пошук: поки позначок немає, лише наближаємо; вікно адреси — у коміті вікна.
-function focusAddress(i){const p=P[i]; map.flyTo({center:[p[1],p[0]],zoom:17})}
-function focusBounds(pts){map.fitBounds(bboxOf(pts),{padding:40,maxZoom:17})}
-function focusStreet(i,pts){focusBounds(pts)}"""
+// Кнопка «Що поруч» у вікні адреси (tpl_core) кличе clearNear і пам'ятає
+// себе в nearButton — без них клік падав би з помилкою ще до коміту 9.
+let nearButton=null;
+function clearNear(){
+ if(nearButton) nearButton.setAttribute('aria-pressed','false');
+ nearButton=null;
+}"""
 
-JS_GL_DRAW = r"""// Позначки адрес — коміт 4. Поки що draw() лише перераховує, що видно:
-// від цього залежать лічильники панелі, і вони мають працювати вже зараз.
-function draw(){computeVis()}
+JS_GL_DRAW = r"""// ---- АДРЕСИ ----
+// Одне джерело GeoJSON, одна точка на адресу. Фільтр міняє лише дані
+// (setData), шари лишаються ті самі: перестворення шарів на кожну галочку
+// давало б блимання, від якого й тікаємо з Leaflet.
+//
+// Розмір — правило кроку 3 з tpl_draw, один в один: той самий радіус від
+// кількості й той самий множник за зумом. Лише множник тут не стрибає на
+// zoomend, а тече з зумом (interpolate) і на цілих зумах дорівнює
+// Leaflet-овому. Зум MapLibre на одиницю менший (плитки 512 px): z12 Leaflet
+// тут — z11, тож і сходинки зсунуті на одиницю.
+const ZMUL=[[11,.78],[12,1],[13,1],[14,1.35],[15,1.35],[16,1.7]];
+const zmulAt=z=>{if(z<=ZMUL[0][0])return ZMUL[0][1];
+ for(let k=1;k<ZMUL.length;k++){const [z1,m1]=ZMUL[k],[z0,m0]=ZMUL[k-1];
+  if(z<=z1) return m0+(m1-m0)*(z-z0)/(z1-z0)}
+ return ZMUL[ZMUL.length-1][1]};
+const radiusBy=add=>['interpolate',['linear'],['zoom'],
+ ...ZMUL.flatMap(([z,m])=>[z,['+',['*',['get','r0'],m],add]])];
+// Від цього зуму — тінь під позначками, як клас deep у Leaflet (там z15).
+const DEEP_Z=14;
+const PIDX=new Map(P.map((p,i)=>[p,i]));
+let LASTST=null;
+function addrReady(){
+ if(!map.getSource('k-addr')){
+  map.addSource('k-addr',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  // Тінь — другий шар кола, розмитий і трохи зсунутий донизу, під основним.
+  // У Leaflet це filter:drop-shadow на полотні; у GL фільтрів полотна немає,
+  // а розмите коло дає ту саму м'яку тінь.
+  map.addLayer({id:'k-addr-shadow',type:'circle',source:'k-addr',minzoom:DEEP_Z,
+   layout:{'circle-sort-key':['get','k']},
+   paint:{'circle-radius':radiusBy(1.5),'circle-blur':.45,'circle-translate':[0,1]}});
+  map.addLayer({id:'k-addr',type:'circle',source:'k-addr',
+   // Малюється за зростанням ключа: великі адреси знизу, дрібні зверху, як у
+   // Leaflet; адреси-проблеми — поверх усіх.
+   layout:{'circle-sort-key':['get','k']},
+   paint:{'circle-radius':radiusBy(0),'circle-color':['get','c'],'circle-opacity':.94,
+    'circle-stroke-width':1.5}});
+ }
+ // Гало й тінь — кольори теми з CSS: шари переходять у новий стиль як є,
+ // а колір теми міняється тут.
+ const sh=(cssv('--shadow').match(/rgba?\([^)]*\)/)||['rgba(0,0,0,.25)'])[0];
+ map.setPaintProperty('k-addr','circle-stroke-color',cssv('--halo'));
+ map.setPaintProperty('k-addr-shadow','circle-color',sh);
+ draw();
+}
+function draw(){
+ const st=computeVis(); LASTST=st;
+ heatOn=(MODE==='heat');
+ if(!STYLE_OK||!map.getSource('k-addr')) return;
+ // Теплова — у коміті ризику й потоків; поки що в цьому режимі позначок немає.
+ const vis=heatOn?[]:st.vis, mx=vis.length?vis[0][1]:1;
+ map.getSource('k-addr').setData({type:'FeatureCollection',features:vis.map(([p,n,th])=>({
+  type:'Feature',geometry:{type:'Point',coordinates:[p[1],p[0]]},
+  properties:{i:PIDX.get(p),c:PALA[th%PALA.length],
+   r0:Math.max(2.8,Math.min(14,2.8+9.5*Math.pow(n/Math.max(mx,1),.42))),
+   k:(probsOf(p).length?1e6:0)-n}}))});
+}
+// Радіус позначки зараз — щоб хвостик вікна ставав на її край, а не в центр.
+function rNow(i){
+ const st=LASTST, v=st&&st.vis.find(x=>x[0]===P[i]);
+ if(!v) return 0;
+ const mx=st.vis[0][1];
+ return Math.max(2.8,Math.min(14,2.8+9.5*Math.pow(v[1]/Math.max(mx,1),.42)))*zmulAt(map.getZoom())+1.5;
+}
+// ---- ВІКНО АДРЕСИ ----
+// Вміст — той самий вузол, що й у Leaflet (popupHTML з tpl_core): склад
+// подій, картки проблем, «Усі рішення (N)».
+let POPUP=null;
+function openAt(i,ll){
+ const p=P[i], st=LASTST||computeVis(), v=st.vis.find(x=>x[0]===p);
+ const node=!p[3]?streetHTML(p,st):v?popupHTML(...v,st):hiddenHTML(p);
+ if(POPUP) POPUP.remove();
+ clearNear();
+ POPUP=new maplibregl.Popup({maxWidth:'360px',offset:ll?0:rNow(i),focusAfterOpen:false})
+  .setLngLat(ll||[p[1],p[0]]).setDOMContent(node).addTo(map);
+ // Закрите вікно — людина пішла з цього місця: гасимо й «Що поруч».
+ POPUP.on('close',clearNear);
+ requestAnimationFrame(()=>keepClear(POPUP));
+}
+// Адреса не має опинитися під карткою-навігатором. Карту зсуваємо рівно
+// настільки, щоб вікно лягло на вільну частину, — без наближення: людина
+// має бачити, де вона, а різкий зум це губить (розд. 23, п. 6).
+function keepClear(pp){
+ const el=pp&&pp.getElement(); if(!el) return;
+ const r=el.getBoundingClientRect(), m=map.getContainer().getBoundingClientRect(), pad=12;
+ let L=m.left+pad, R=m.right-pad, T=m.top+pad, B=m.bottom-pad;
+ const side=$('#side'), c=side&&side.getBoundingClientRect();
+ if(c&&c.width&&c.height){
+  // Праворуч угорі на широкому екрані, знизу на всю ширину на телефоні.
+  if(c.left<=m.left+m.width/2) B=Math.min(B,c.top-pad);
+  else if(r.top<c.bottom&&r.bottom>c.top) R=Math.min(R,c.left-pad);
+ }
+ let dx=0,dy=0;
+ if(r.right>R) dx=r.right-R;
+ if(r.left-dx<L) dx=r.left-L;
+ if(r.bottom>B) dy=r.bottom-B;
+ if(r.top-dy<T) dy=r.top-T;
+ if(dx||dy) map.panBy([dx,dy],{duration:450});
+}
+map.on('click','k-addr',e=>{const f=e.features&&e.features[0]; if(f) openAt(f.properties.i)});
+map.on('mouseenter','k-addr',()=>{map.getCanvas().style.cursor='pointer'});
+map.on('mouseleave','k-addr',()=>{map.getCanvas().style.cursor=''});
+// ---- ПОШУК: КУДИ НАБЛИЖАТИ ----
+// Вікно відкриваємо, коли карта вже стала на місце, а не таймером навмання
+// (причину див. у tpl_draw, afterMove).
+function afterMove(go){map.once('moveend',go)}
+// z16 тут — той самий масштаб, що z17 у Leaflet-версії.
+function focusAddress(i){
+ const p=P[i]; afterMove(()=>openAt(i));
+ map.flyTo({center:[p[1],p[0]],zoom:16});
+}
+function focusBounds(pts){map.fitBounds(bboxOf(pts),{padding:40,maxZoom:16})}
+function focusStreet(i,pts){afterMove(()=>openAt(i,map.getCenter())); focusBounds(pts)}
 // Підписки на панель — ті самі, що в tpl_draw, без подій карти Leaflet.
 document.querySelectorAll('#side input:not([data-r]):not([data-f]):not(#fquiet)').forEach(x=>x.addEventListener('change',draw));
 document.querySelectorAll('[data-r]').forEach(x=>x.addEventListener('change',drawRisks));
