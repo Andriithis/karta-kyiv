@@ -268,7 +268,7 @@ function addrReady(){
  const sh=(cssv('--shadow').match(/rgba?\([^)]*\)/)||['rgba(0,0,0,.25)'])[0];
  map.setPaintProperty('k-addr','circle-stroke-color',cssv('--halo'));
  map.setPaintProperty('k-addr-shadow','circle-color',sh);
- ringColors(); ADDR_VIS=null;
+ ringColors(); ADDR_VIS=null; ringsReady();
  draw();
 }
 function draw(){
@@ -407,44 +407,27 @@ function nodeAt(i,j,box){
  if(one) return {dot:true,k,lon,lat,n:TOT[i][j]};
  return {dot:false,lon,lat,n:TOT[i][j],s:SUM[i].subarray(j*NG,(j+1)*NG),i,j};
 }
-// ---- ПОЛОТНО ----
-// Над полотном GL, під вікнами й кнопками. Перемальовується на подію render
-// самої карти — у тому самому кадрі, тож кільця не відстають від підкладки.
-// Розмір — з devicePixelRatio, інакше кільця й числа розмиті.
-const cv=document.createElement('canvas');
-cv.style.cssText='position:absolute;left:0;top:0;pointer-events:none';
-map.getCanvasContainer().appendChild(cv);
-const cx=cv.getContext('2d'); let DPR=1, VIS=[];
-function fitCanvas(){const c=map.getCanvas(); DPR=devicePixelRatio||1;
- const w=c.clientWidth, h=c.clientHeight;
- cv.width=Math.round(w*DPR); cv.height=Math.round(h*DPR); cv.style.width=w+'px'; cv.style.height=h+'px'}
-fitCanvas(); map.on('resize',fitCanvas);
-function drawRing(o,x,y,al){
- const r=rRing(o.n), inner=r*.62; let a0=-Math.PI/2;
- cx.globalAlpha=RING_OP*al;
- // Дірка прозора: крізь кільце видно підкладку.
- for(let g=0;g<NG;g++){const c=o.s[g]; if(!c) continue; const a1=a0+c/o.n*2*Math.PI;
-  cx.beginPath(); cx.arc(x,y,r,a0,a1); cx.arc(x,y,inner,a1,a0,true); cx.closePath();
-  cx.fillStyle=YASKRAVA[g%YASKRAVA.length]; cx.fill(); a0=a1}
- cx.globalAlpha=al;
- const t=fmtN(o.n);
- cx.font=`600 ${Math.max(9,Math.min(13,inner*.9))}px "IBM Plex Mono",ui-monospace,monospace`;
- cx.textAlign='center'; cx.textBaseline='middle'; cx.lineJoin='round';
- cx.lineWidth=3; cx.strokeStyle=HALO_C; cx.strokeText(t,x,y+.5); cx.fillStyle=INK_C; cx.fillText(t,x,y+.5);
- cx.globalAlpha=1;
-}
-// Крапка — та сама, що в шарі GL вигляду «Адреси»: колір, розмір, гало.
-function drawDot(o,x,y,al,z){const v=LEAFV[o.k]; if(!v) return;
- cx.globalAlpha=.94*al; cx.beginPath(); cx.arc(x,y,v.r0*zmulAt(z),0,7);
- cx.fillStyle=PALA[v.th%PALA.length]; cx.fill();
- cx.lineWidth=1.5; cx.strokeStyle=HALO_C; cx.stroke(); cx.globalAlpha=1}
-let HALO_C='#fff', INK_C='#111';
+// ---- МАЛЮВАННЯ: ВЛАСНИЙ ШАР WEBGL ----
+// Кільця, крапки й числа малює власний шар MapLibre (type 'custom') у тому
+// самому проході WebGL, що й карта. Спершу тут було 2D-полотно поверх карти:
+// власний код брав ~5 мс на кадр, а накладання окремого полотна на карту
+// роняло зум міста до 36–39 кадрів/с на Intel HD 630 (24 з процесором ×4).
+// Розд. 16: плавність — головна вимога, тож окремого полотна немає.
+//
+// Позиції рахуємо на процесорі (map.project, CSS-пікселі), як і раніше, — це
+// дешево; GPU лише зафарбовує квадрат навколо кожного кільця: дуги за
+// видами, дірка 0,62 r, згладжений край. Числа — з атласу цифр (одна
+// текстура, квадрат на літеру), а не шаром symbol: той брав би дані через
+// setData і фоновий воркер і під час розпаду відставав би на кадр-два.
+let VIS=[], HALO_C='#fff', INK_C='#111';
 const easeIO=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
-let CANVAS_ON=false, CANVAS_DRAWN=false;
+let RINGS_ON=false;
 // Кольори теми — з CSS, але не в кожному кадрі: getComputedStyle на кадр
 // коштував помітну частку частоти кадрів. Оновлюються зі зміною теми.
 function ringColors(){HALO_C=cssv('--halo')||'#fff'; INK_C=cssv('--ink')||'#111'}
 ringColors();
+const rgb=h=>{h=(h||'#000').trim().replace('#',''); if(h.length===3) h=h.split('').map(c=>c+c).join('');
+ return [0,2,4].map(i=>parseInt(h.substr(i,2),16)/255)};
 // Видимість шару адрес міняємо лише тоді, коли вона справді змінилася.
 let ADDR_VIS=null;
 function addrLayerVisible(v){
@@ -452,17 +435,12 @@ function addrLayerVisible(v){
  ADDR_VIS=v;
  for(const id of ['k-addr','k-addr-shadow']) if(map.getLayer(id)) map.setLayoutProperty(id,'visibility',v?'visible':'none');
 }
-function renderRings(){
- const W=cv.width/DPR, H=cv.height/DPR, z=map.getZoom();
- const f0=Math.max(0,(z-TZ0)/TDZ), zi=Math.min(NL,Math.floor(f0+1e-9));
- const on=MODE==='rings'&&zi<NL&&TOT.length>0;
- // З z15 і у вигляді «Адреси» — лише шар GL; у кільцях нижче z15 адреси
- // малює полотно разом з кільцями, щоб вони розходились із батьківського.
- if(STYLE_OK) addrLayerVisible(MODE!=='rings'||zi>=NL);
- CANVAS_ON=on; VIS=[];
- if(!on&&!CANVAS_DRAWN) return;
- cx.setTransform(DPR,0,0,DPR,0,0); cx.clearRect(0,0,W,H); CANVAS_DRAWN=on;
- if(!on) return;
+// Що видно в цьому кадрі: [[вузол з x, y], непрозорість]. Та сама логіка,
+// що й була: рівень за зумом, перетікання до наступного — лише під час зуму.
+function frameList(){
+ const z=map.getZoom(), f0=Math.max(0,(z-TZ0)/TDZ), zi=Math.min(NL,Math.floor(f0+1e-9));
+ RINGS_ON=MODE==='rings'&&zi<NL&&TOT.length>0; VIS=[];
+ if(!RINGS_ON) return [];
  const b=map.getBounds(), pad=.25*(b.getNorth()-b.getSouth());
  const box=[b.getWest()-pad,b.getSouth()-pad,b.getEast()+pad,b.getNorth()+pad];
  const inB=o=>o.lon>box[0]&&o.lon<box[2]&&o.lat>box[1]&&o.lat<box[3];
@@ -472,7 +450,7 @@ function renderRings(){
  const fr=f0-zi, e=zi+1>NL?0:(map.isZooming()?easeIO(Math.min(1,fr)):Math.round(fr));
  const out=[];
  if(e<=0||e>=1){const i=e>=1?zi+1:zi;
-  if(i>=NL) return;
+  if(i>=NL) return out;
   for(let j=0,n=nOf(i);j<n;j++){const o=nodeAt(i,j,box); if(o) out.push([pr(o),1])}
  } else {
   const i0=zi, i1=zi+1, par=new Map();
@@ -493,11 +471,156 @@ function renderRings(){
  }
  // Крапки знизу, кільця зверху; великі під дрібними.
  out.sort((a,b2)=>(a[0].dot?0:1)-(b2[0].dot?0:1)||b2[0].n-a[0].n);
- for(const [o,al] of out){ if(o.x<-60||o.y<-60||o.x>W+60||o.y>H+60) continue;
-  if(o.dot) drawDot(o,o.x,o.y,al,z); else drawRing(o,o.x,o.y,al);
-  if(al>=.5) VIS.push(o)}
+ // Для кліку й перевірки з консолі — лише те, що на екрані.
+ const W=map.getCanvas().clientWidth, H=map.getCanvas().clientHeight;
+ for(const [o,al] of out) if(al>=.5&&o.x>-60&&o.y>-60&&o.x<W+60&&o.y<H+60) VIS.push(o);
+ return out;
 }
-map.on('render',renderRings);
+// ---- ШЕЙДЕРИ ----
+// GLSL 100 — працює і в WebGL 2, і в WebGL 1. Без похідних (fwidth):
+// координати квадрата вже в CSS-пікселях, тож згладжування — ±0,5 px.
+const VS_DISC=`attribute vec2 a_c; attribute vec2 a_o; attribute vec4 a_m; attribute vec4 a_q0; attribute vec4 a_q1; attribute vec3 a_col;
+uniform vec2 u_view; varying vec2 v_p; varying vec4 v_m; varying vec4 v_q0; varying vec4 v_q1; varying vec3 v_col;
+void main(){ vec2 s=(a_c+a_o)/u_view*2.0-1.0; gl_Position=vec4(s.x,-s.y,0.0,1.0);
+ v_p=a_o; v_m=a_m; v_q0=a_q0; v_q1=a_q1; v_col=a_col; }`;
+// v_m: r, внутрішній радіус, вид (0 — кільце, 1 — крапка), непрозорість.
+// v_q0, v_q1: межі дуг — накопичені частки видів 1..7 (порядок M.groups).
+const FS_DISC=`precision mediump float;
+uniform vec3 u_col[7]; uniform vec3 u_halo;
+varying vec2 v_p; varying vec4 v_m; varying vec4 v_q0; varying vec4 v_q1; varying vec3 v_col;
+void main(){ float d=length(v_p), r=v_m.x;
+ if(v_m.z<0.5){
+  float cov=(1.0-smoothstep(r-0.5,r+0.5,d))*smoothstep(v_m.y-0.5,v_m.y+0.5,d);
+  if(cov<=0.0) discard;
+  // кут від верху за годинниковою стрілкою, як дуги на полотні
+  float a=atan(v_p.x,-v_p.y)/6.2831853; if(a<0.0) a+=1.0;
+  vec3 c=u_col[6];
+  if(a<v_q1.z) c=u_col[6]; if(a<v_q1.y) c=u_col[5]; if(a<v_q1.x) c=u_col[4];
+  if(a<v_q0.w) c=u_col[3]; if(a<v_q0.z) c=u_col[2]; if(a<v_q0.y) c=u_col[1]; if(a<v_q0.x) c=u_col[0];
+  float al=cov*v_m.w; gl_FragColor=vec4(c*al,al);
+ } else {
+  // крапка: заливка до r, гало 1,5 px по краю — як обвідка в шарі GL
+  float cov=1.0-smoothstep(r+0.25,r+1.25,d); if(cov<=0.0) discard;
+  vec3 c=mix(v_col,u_halo,smoothstep(r-1.25,r-0.25,d));
+  float al=cov*v_m.w; gl_FragColor=vec4(c*al,al);
+ } }`;
+const VS_TXT=`attribute vec2 a_p; attribute vec2 a_uv; attribute float a_a; uniform vec2 u_view;
+varying vec2 v_uv; varying float v_a;
+void main(){ vec2 s=a_p/u_view*2.0-1.0; gl_Position=vec4(s.x,-s.y,0.0,1.0); v_uv=a_uv; v_a=a_a; }`;
+// Атлас у два рядки: угорі — самі цифри, унизу — їхнє гало, тим самим
+// розташуванням. Гало під цифрами, як strokeText під fillText.
+const FS_TXT=`precision mediump float; uniform sampler2D u_tex; uniform vec3 u_ink; uniform vec3 u_halo;
+varying vec2 v_uv; varying float v_a;
+void main(){ float f=texture2D(u_tex,v_uv).a, h=texture2D(u_tex,v_uv+vec2(0.0,0.5)).a;
+ float al=max(f,h)*v_a; if(al<=0.0) discard;
+ vec3 c=mix(u_halo,u_ink,f/max(max(f,h),1e-3)); gl_FragColor=vec4(c*al,al); }`;
+// ---- АТЛАС ЦИФР ----
+// Шрифт — той самий IBM Plex Mono 600. Малюємо вдвічі більшим за найбільший
+// розмір на кільці (13 px) і зменшуємо на GPU: різко на будь-якому екрані.
+const GLYPHS='0123456789,k', ATL_PX=26*Math.max(1,Math.min(2,devicePixelRatio||1));
+let ATLAS=null, ATLAS_VER=0;
+function buildAtlas(){
+ const c=document.createElement('canvas'), g=c.getContext('2d');
+ const font=`600 ${ATL_PX}px "IBM Plex Mono",ui-monospace,monospace`;
+ g.font=font; const adv=Math.ceil(g.measureText('0').width), pad=Math.ceil(ATL_PX*.25);
+ const cw=adv+2*pad, ch=Math.ceil(ATL_PX*1.3)+2*pad;
+ c.width=cw*GLYPHS.length; c.height=ch*2;
+ g.font=font; g.textAlign='center'; g.textBaseline='middle'; g.lineJoin='round';
+ g.fillStyle='#fff'; g.strokeStyle='#fff'; g.lineWidth=ATL_PX*3/13;
+ [...GLYPHS].forEach((s,k)=>{const x=k*cw+cw/2;
+  g.fillText(s,x,ch/2); g.strokeText(s,x,ch+ch/2); g.fillText(s,x,ch+ch/2)});
+ ATLAS={canvas:c, cw, ch, adv}; ATLAS_VER++; map.triggerRepaint();
+}
+(document.fonts&&document.fonts.load?document.fonts.load(`600 ${ATL_PX}px "IBM Plex Mono"`):Promise.resolve())
+ .catch(()=>{}).then(buildAtlas);
+function glProgram(gl,vs,fs){
+ const sh=(t,s)=>{const o=gl.createShader(t); gl.shaderSource(o,s); gl.compileShader(o);
+  if(!gl.getShaderParameter(o,gl.COMPILE_STATUS)) throw new Error('шейдер: '+gl.getShaderInfoLog(o)); return o};
+ const p=gl.createProgram(); gl.attachShader(p,sh(gl.VERTEX_SHADER,vs)); gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs));
+ gl.linkProgram(p); if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error('програма: '+gl.getProgramInfoLog(p));
+ return p;
+}
+// Вершини: 6 на квадрат (два трикутники), без розширення інстансів — так
+// шар однаково працює на WebGL 1 і 2.
+const DISC_F=19, TXT_F=5, CORNERS=[[-1,-1],[1,-1],[1,1],[-1,-1],[1,1],[-1,1]];
+let discBuf=new Float32Array(6*DISC_F*512), txtBuf=new Float32Array(6*TXT_F*2048);
+const ringLayer={id:'k-rings', type:'custom', renderingMode:'2d',
+ onAdd(m,gl){
+  this.pd=glProgram(gl,VS_DISC,FS_DISC); this.pt=glProgram(gl,VS_TXT,FS_TXT);
+  this.bd=gl.createBuffer(); this.bt=gl.createBuffer(); this.tex=gl.createTexture(); this.texVer=-1;
+  this.vao=gl.bindVertexArray?null:gl.getExtension('OES_vertex_array_object');
+ },
+ onRemove(m,gl){gl.deleteProgram(this.pd); gl.deleteProgram(this.pt); gl.deleteBuffer(this.bd); gl.deleteBuffer(this.bt); gl.deleteTexture(this.tex)},
+ render(gl){
+  const out=frameList(); if(!out.length) return;
+  const cvs=map.getCanvas(), W=cvs.clientWidth, H=cvs.clientHeight, z=map.getZoom();
+  // ---- квадрати кілець і крапок ----
+  let nd=0, nt=0;
+  const need=out.length*6*DISC_F; if(discBuf.length<need) discBuf=new Float32Array(need*2);
+  const texts=[];
+  for(const [o,al] of out){ if(o.x<-60||o.y<-60||o.x>W+60||o.y>H+60) continue;
+   let r, inner=0, kind, a, q=[1,1,1,1,1,1,1,1], col=[0,0,0];
+   if(o.dot){const v=LEAFV[o.k]; if(!v) continue; r=v.r0*zmulAt(z); kind=1; a=.94*al; col=rgb(PALA[v.th%PALA.length])}
+   else {r=rRing(o.n); inner=r*.62; kind=0; a=RING_OP*al;
+    let acc=0; for(let g=0;g<7;g++){acc+=g<NG?o.s[g]:0; q[g]=acc/o.n}
+    texts.push([o,al,inner])}
+   const ext=r+2;
+   for(const [cx_,cy_] of CORNERS){const b=nd*DISC_F;
+    discBuf[b]=o.x; discBuf[b+1]=o.y; discBuf[b+2]=cx_*ext; discBuf[b+3]=cy_*ext;
+    discBuf[b+4]=r; discBuf[b+5]=inner; discBuf[b+6]=kind; discBuf[b+7]=a;
+    for(let g=0;g<8;g++) discBuf[b+8+g]=q[g];
+    discBuf[b+16]=col[0]; discBuf[b+17]=col[1]; discBuf[b+18]=col[2]; nd++}
+  }
+  // ---- літери чисел ----
+  if(ATLAS){const A=ATLAS, tw=A.canvas.width, th=A.canvas.height;
+   let chars=0; for(const t of texts) chars+=fmtN(t[0].n).length;
+   if(txtBuf.length<chars*6*TXT_F) txtBuf=new Float32Array(chars*6*TXT_F*2);
+   for(const [o,al,inner] of texts){const s=fmtN(o.n), fs=Math.max(9,Math.min(13,inner*.9)), k=fs/ATL_PX;
+    const cw=A.cw*k, ch=A.ch*k, adv=A.adv*k; let x=o.x-adv*s.length/2+adv/2; const y=o.y+.5;
+    for(const c of s){const gi=GLYPHS.indexOf(c); if(gi<0){x+=adv;continue}
+     const u0=gi*A.cw/tw, u1=(gi+1)*A.cw/tw, v0=0, v1=A.ch/th;
+     const x0=x-cw/2, x1=x+cw/2, y0=y-ch/2, y1=y+ch/2;
+     for(const [px,py,u,v] of [[x0,y0,u0,v0],[x1,y0,u1,v0],[x1,y1,u1,v1],[x0,y0,u0,v0],[x1,y1,u1,v1],[x0,y1,u0,v1]]){
+      const b=nt*TXT_F; txtBuf[b]=px; txtBuf[b+1]=py; txtBuf[b+2]=u; txtBuf[b+3]=v; txtBuf[b+4]=al; nt++}
+     x+=adv}}}
+  // ---- стан GL ----
+  // MapLibre після власного шару сам відновлює свій стан (setDirty), але
+  // масиви вершин прив'язані до його VAO — тож свій малюємо на порожньому.
+  if(gl.bindVertexArray) gl.bindVertexArray(null); else if(this.vao) this.vao.bindVertexArrayOES(null);
+  gl.disable(gl.DEPTH_TEST); gl.disable(gl.STENCIL_TEST); gl.disable(gl.CULL_FACE);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA);
+  const bind=(p,buf,data,n,F,attrs)=>{gl.useProgram(p); gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+   gl.bufferData(gl.ARRAY_BUFFER,data.subarray(0,n*F),gl.STREAM_DRAW);
+   const locs=[]; let off=0;
+   for(const [name,size] of attrs){const l=gl.getAttribLocation(p,name); off+=0;
+    if(l>=0){gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l,size,gl.FLOAT,false,F*4,off*4); locs.push(l)}
+    off+=size}
+   gl.uniform2f(gl.getUniformLocation(p,'u_view'),W,H); return locs};
+  const unbind=locs=>locs.forEach(l=>gl.disableVertexAttribArray(l));
+  if(nd){const locs=bind(this.pd,this.bd,discBuf,nd,DISC_F,[['a_c',2],['a_o',2],['a_m',4],['a_q0',4],['a_q1',4],['a_col',3]]);
+   gl.uniform3fv(gl.getUniformLocation(this.pd,'u_col'),new Float32Array(YASKRAVA.flatMap(rgb)));
+   gl.uniform3fv(gl.getUniformLocation(this.pd,'u_halo'),rgb(HALO_C));
+   gl.drawArrays(gl.TRIANGLES,0,nd); unbind(locs)}
+  if(nt){gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,this.tex);
+   if(this.texVer!==ATLAS_VER){gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,ATLAS.canvas);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    this.texVer=ATLAS_VER}
+   const locs=bind(this.pt,this.bt,txtBuf,nt,TXT_F,[['a_p',2],['a_uv',2],['a_a',1]]);
+   gl.uniform1i(gl.getUniformLocation(this.pt,'u_tex'),0);
+   gl.uniform3fv(gl.getUniformLocation(this.pt,'u_ink'),rgb(INK_C));
+   gl.uniform3fv(gl.getUniformLocation(this.pt,'u_halo'),rgb(HALO_C));
+   gl.drawArrays(gl.TRIANGLES,0,nt); unbind(locs)}
+ }};
+// Шар кілець — найвищий з наших: над адресами. Власний шар не переживає
+// setStyle (його не можна описати в стилі), тож додаємо після кожного стилю.
+function ringsReady(){ if(!map.getLayer('k-rings')) map.addLayer(ringLayer) }
+// Видимість шару адрес — після кадру, а не всередині шару: міняти стиль
+// посеред малювання не можна.
+map.on('render',()=>{ if(!STYLE_OK) return;
+ const z=map.getZoom(), zi=Math.min(NL,Math.floor(Math.max(0,(z-TZ0)/TDZ)+1e-9));
+ addrLayerVisible(MODE!=='rings'||zi>=NL)});
 // Кінець руху — ще один кадр: після зуму перетікання має стати на рівень.
 map.on('moveend',()=>requestAnimationFrame(()=>map.triggerRepaint()));
 // Клік: кільце — переліт до його адрес, не глибше ніж на 2,5 кроку зуму від
@@ -507,7 +630,7 @@ function hitRing(pt){let best=null, bd=1e9; const z=map.getZoom();
   const d=Math.hypot(o.x-pt.x,o.y-pt.y); if(d<=r&&d<bd){bd=d;best=o}}
  return best}
 map.on('click',e=>{
- if(!CANVAS_ON) return;
+ if(!RINGS_ON) return;
  const o=hitRing(e.point); if(!o) return;
  if(o.dot) return openAt(LEAF[o.k]);
  const q=o.j*4, bb=BB[o.i], z=map.getZoom();
@@ -519,7 +642,7 @@ map.on('click',e=>{
  if(!cam||!cam.center) cam={center:[o.lon,o.lat],zoom:z+1.5};
  map.flyTo({center:cam.center,zoom:Math.min(z+2.5,Math.max(cam.zoom,z+.6)),duration:1400,curve:1.3,essential:true});
 });
-map.on('mousemove',e=>{ if(!CANVAS_ON) return;
+map.on('mousemove',e=>{ if(!RINGS_ON) return;
  map.getCanvas().style.cursor=hitRing(e.point)?'pointer':''});
 // Перевірка з консолі (розд. 23, перевірка п. 3): для кожного видимого
 // кільця — число на ньому і сума подій його адрес за фільтром, порахована
