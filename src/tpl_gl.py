@@ -47,9 +47,60 @@ function cartoStyle(t){
  return {version:8,sources:{base:{type:'raster',tiles:[src.u.replace('{r}',r)],
    tileSize:256,attribution:src.a}},layers:[{id:'base',type:'raster',source:'base'}]};
 }
-// Правки стилю підкладки (українські підписи, номери будинків, без poi)
-// — окремим комітом.
-function patchStyle(s){return s}
+// ---- ПРАВКИ СТИЛЮ ПІДКЛАДКИ ----
+// Стилі OpenFreeMap підписують «name:latin + name:nonlatin», і в Києві
+// виходить «Khreshchatyk Street Хрещатик». Беремо українську назву, а де її
+// немає — основну з OSM (у Києві вона теж українська).
+const UK_NAME=['coalesce',['get','name:uk'],['get','name']];
+function patchStyle(s){
+ // Щити доріг: у positron три шари щитів (два — американські), їхній фільтр
+ // порівнює ref_length, якого в наших плитках немає, — звідси попередження в
+ // консолі на кожне завантаження. Номери трас на карті правопорушень не
+ // потрібні, тож шари прибираємо, а не лагодимо. Значки закладів (poi)
+ // прибираємо з тієї ж причини, що й раніше: вони змагаються з нашими
+ // позначками. У positron і dark їх зараз немає, правило — на майбутнє.
+ const layers=s.layers.filter(l=>!(l.type==='symbol'&&
+   (/shield/.test(l.id)||l['source-layer']==='poi')));
+ let font=null, tc='#888', th='#fff';
+ for(const l of layers){
+  if(l.type!=='symbol'||!l.layout) continue;
+  const tf=l.layout['text-field'];
+  // Лише підписи з назвою; номер траси (ref) лишається номером.
+  if(tf&&JSON.stringify(tf).includes('name')) l.layout['text-field']=UK_NAME;
+  // Шрифт і кольори для наших підписів — з підписів вулиць самого стилю:
+  // так вони однаково лягають і на світлу, і на темну тему, а шрифт
+  // гарантовано є на сервері гліфів.
+  if(!font&&l['source-layer']==='transportation_name'&&l.layout['text-font']){
+   font=l.layout['text-font']; const p=l.paint||{};
+   if(typeof p['text-color']==='string') tc=p['text-color'];
+   if(typeof p['text-halo-color']==='string') th=p['text-halo-color'];
+  }
+ }
+ const src=Object.keys(s.sources).find(k=>s.sources[k].type==='vector');
+ if(src&&font){
+  const txt=(id,sl,minzoom,filter,size,extra)=>({id:'base-'+id,type:'symbol',source:src,
+   'source-layer':sl,minzoom,...(filter?{filter}:{}),
+   layout:{'text-field':UK_NAME,'text-font':font,'text-size':size,...extra},
+   paint:{'text-color':tc,'text-halo-color':th,'text-halo-width':1.2}});
+  layers.push(
+   // Назви парків і станцій метро — орієнтири, за якими слухач впізнає
+   // місце. У стилях OpenFreeMap їх немає, тож додаємо самі, лише текстом,
+   // без значків.
+   // Парки — з poi, а не з шару park: точки-підписи в park є лише на
+   // дрібних масштабах, на z14+ їх там немає.
+   txt('park','poi',14,['==',['get','class'],'park'],11,{'text-max-width':8}),
+   txt('metro','poi',13,['all',['==',['get','class'],'railway'],
+     ['in',['get','subclass'],['literal',['station','subway']]]],11,
+     {'text-max-width':8,'text-offset':[0,.2]}),
+   // Номери будинків — на тому ж масштабі, що й на Leaflet-карті з z17
+   // (зум MapLibre на одиницю менший: плитки 512 px проти 256).
+   {id:'base-housenumber',type:'symbol',source:src,'source-layer':'housenumber',minzoom:16,
+    layout:{'text-field':['get','housenumber'],'text-font':font,'text-size':10,
+     'text-padding':2},
+    paint:{'text-color':tc,'text-halo-color':th,'text-halo-width':1,'text-opacity':.75}});
+ }
+ return {...s,layers};
+}
 // setStyle скидає все, що ми додали. transformStyle (є в 6.10) переносить
 // наші джерела й шари з попереднього стилю в новий як є — без перестворення
 // й без повторного setData на одинадцять тисяч адрес — і заразом дає змогу
