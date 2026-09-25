@@ -144,7 +144,7 @@ attrEl.className='maplibregl-ctrl maplibregl-ctrl-attrib';
 // Рядок про адреси — той самий, що й у Leaflet-збірці (причину див. у tpl_map):
 // він не залежить від підкладки, тож стоїть за будь-якою з них.
 function setAttr(t){attrEl.innerHTML='<div class="maplibregl-ctrl-attrib-inner">'+t+
- ' · адреси — з текстів рішень ЄДРСР</div>'}
+ ' · адреси — з текстів рішень ЄДРСР · адреси © КМДА</div>'}
 map.addControl({onAdd:()=>attrEl,onRemove(){}},'bottom-right');
 // Помилка до того, як стиль устиг завантажитися, — це відмова підкладки.
 // Пізніші помилки (окремий тайл не прийшов) підкладку не міняють.

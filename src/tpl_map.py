@@ -59,7 +59,8 @@ tiles();
 // прибрано з панелі (RISHENNYA, розд. 18), але причина лишилася: адресу
 // виймає наш розбір тексту рішення, а не поле реєстру, і часом це адреса
 // відділку чи суду. Тож рядок живе дрібно в атрибуції карти.
-map.attributionControl.addAttribution('адреси — з текстів рішень ЄДРСР');
+// «адреси © КМДА» — частина будинків стоїть за геокодером КМДА (step2_geocode).
+map.attributionControl.addAttribution('адреси — з текстів рішень ЄДРСР · адреси © КМДА');
 let layer=L.layerGroup().addTo(map),heat=null,heatOn=false;
 const rlayer=L.layerGroup().addTo(map);
 const poplayer=L.layerGroup();          // фон під усім іншим

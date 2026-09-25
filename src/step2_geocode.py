@@ -152,6 +152,135 @@ def nearby(ns, h, exact, nums):
     return (round(la1 + f * (la2 - la1), 6), round(lo1 + f * (lo2 - lo1), 6), 'interp')
 
 
+# ---- ГЕОКОДЕР МІСТА (КМДА) — друге джерело точних будинків ----
+# Шар «Повна адреса (геокодер)» з ГІС-сервера КМДА: ~47 тис. адрес з
+# координатами. Будинків, яких немає в OSM, у ньому ~1/6 (звіт 25.09); Андрій
+# дозволив брати без листа (PLAN-ZAHALNYI.md, А4б). Правила ті самі, що й для
+# OSM: лише точний будинок. Якщо будинок є і в OSM, лишається OSM.
+#
+# Знімок лежить у data/ і в git, щоб «Оновлення карти» не залежало від
+# доступності ГІС-сервера. Оновити: видалити data/geokoder_kmda.csv.gz і
+# запустити цей крок — він завантажить шар заново.
+KMDA_ON = True          # False — точки КМДА зникають з усього (карта, модель)
+KMDA = os.path.join(DATA, 'geokoder_kmda.csv.gz')
+KMDA_URL = ('https://gisserver-stage.kyivcity.gov.ua/mayno/rest/services/KYIV_API/'
+            + urllib.parse.quote('Адреси') + '/FeatureServer/0/query')
+# У 1% адрес геокодер і OSM розходяться на кілометри — однакові назви вулиць у
+# різних кінцях міста, садові товариства. Тому точку КМДА беремо, лише якщо
+# вона лежить біля СВОЄЇ вулиці за геометрією OSM і в межах Києва.
+KMDA_NEAR = 150         # м: будинок не далі за стільки від осі своєї вулиці
+KMDA_DUP = 200          # м: дві точки з тією самою адресою далі — адреса неоднозначна
+
+
+def fetch_kmda():
+    """[(вулиця з типом, номер, lat, lon)] зі знімка або з ГІС-сервера."""
+    import csv, gzip
+    if not os.path.exists(KMDA):
+        print('   геокодер КМДА: завантаження шару', flush=True)
+        rows, off = [], 0
+        while True:
+            q = urllib.parse.urlencode({'where': '1=1', 'outFields': 'type_vul,ukrnamef,addrnumb1',
+                                        'returnGeometry': 'true', 'outSR': 4326, 'orderByFields': 'objectid',
+                                        'resultOffset': off, 'resultRecordCount': 20000, 'f': 'json'})
+            rq = urllib.request.Request(KMDA_URL + '?' + q, headers={'User-Agent': 'edrsr-academy/4.0'})
+            with urllib.request.urlopen(rq, timeout=300) as r:
+                js = json.loads(r.read().decode('utf-8'))
+            fs = js.get('features', [])
+            for f in fs:
+                a, g = f['attributes'], f.get('geometry')
+                if g and a.get('ukrnamef') and a.get('addrnumb1'):
+                    rows.append((f"{a.get('type_vul') or ''} {a['ukrnamef']}".strip(), a['addrnumb1'],
+                                 round(g['y'], 6), round(g['x'], 6)))
+            if not js.get('exceededTransferLimit'):
+                break
+            off += len(fs)
+        with gzip.open(KMDA, 'wt', encoding='utf-8', newline='') as fh:
+            w = csv.writer(fh, delimiter='\t', lineterminator='\n')
+            w.writerow(['street', 'house', 'lat', 'lon'])
+            w.writerows(sorted(rows))
+    with gzip.open(KMDA, 'rt', encoding='utf-8', newline='') as fh:
+        return [(r['street'], r['house'], float(r['lat']), float(r['lon']))
+                for r in csv.DictReader(fh, delimiter='\t')]
+
+
+def skey(s):
+    """Ключ вулиці без порядку слів: у геокодері «Корольова Академіка», у
+    текстах і в OSM — «Академіка Корольова»."""
+    return ' '.join(sorted(norm(s).split()))
+
+
+def _m(la, lo, la0):
+    return la * 111320, lo * 111320 * math.cos(math.radians(la0))
+
+
+def _seg_dist(p, a, b):
+    """Відстань у метрах від точки p до відрізка ab ((lat, lon))."""
+    px, py = _m(*p, p[0]); ax, ay = _m(*a, p[0]); bx, by = _m(*b, p[0])
+    dx, dy = bx - ax, by - ay
+    t = 0 if dx == dy == 0 else max(0, min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)))
+    return math.hypot(px - ax - t * dx, py - ay - t * dy)
+
+
+def street_lines(streets):
+    """Ключ вулиці -> відрізки й точки OSM, біля яких мусить лежати будинок:
+    осі вулиць (шар roads кроку 2b і мережа кроку 2c) і, про запас, самі
+    адреси OSM цієї вулиці — малих провулків у шарі доріг буває немає."""
+    lines = collections.defaultdict(list)
+    raw = os.path.join(DATA, 'osm_risks_raw.json')
+    if os.path.exists(raw):
+        for w in json.load(open(raw, encoding='utf-8')).get('roads', []):
+            nm = (w.get('tags') or {}).get('name')
+            g = [(q['lat'], q['lon']) for q in w.get('geometry') or []]
+            if nm and len(g) > 1: lines[skey(nm)] += list(zip(g, g[1:]))
+    net = os.path.join(DATA, 'network.json')
+    if os.path.exists(net):
+        for it in json.load(open(net, encoding='utf-8')).get('items', []):
+            g = [tuple(q) for q in it[0]]
+            if it[1] and len(g) > 1: lines[skey(it[1])] += list(zip(g, g[1:]))
+    for ns, pts in streets.items():
+        lines[skey(ns)] += [(p, p) for p in pts]
+    return lines
+
+
+def in_kyiv(p, rings):
+    """Точка в одному з районів (data/borders.json, кільця [lat, lon])."""
+    la, lo = p
+    for ring in rings:
+        inside = False
+        for (a1, o1), (a2, o2) in zip(ring, ring[1:] + ring[:1]):
+            if (o1 > lo) != (o2 > lo) and la < (a2 - a1) * (lo - o1) / (o2 - o1) + a1:
+                inside = not inside
+        if inside:
+            return True
+    return False
+
+
+def kmda_index(streets):
+    """(ключ вулиці, номер) -> (lat, lon) лише для перевірених точок КМДА."""
+    rows = fetch_kmda()
+    lines = street_lines(streets)
+    rings = list(json.load(open(os.path.join(DATA, 'borders.json'), encoding='utf-8')).values())
+    st = collections.Counter(); cand = collections.defaultdict(list)
+    for s, h, la, lo in rows:
+        k = skey(s); p = (la, lo)
+        if not in_kyiv(p, rings):
+            st['поза Києвом'] += 1; continue
+        near = min((_seg_dist(p, a, b) for a, b in lines.get(k, ())), default=None)
+        if near is None:
+            st['вулиці немає в OSM'] += 1; continue
+        if near > KMDA_NEAR:
+            st[f'далі {KMDA_NEAR} м від своєї вулиці'] += 1; continue
+        cand[(k, nh(h))].append(p)
+    idx = {}
+    for key, ps in cand.items():
+        if max(math.hypot(*[x - y for x, y in zip(_m(*a, a[0]), _m(*b, a[0]))])
+               for a in ps for b in ps) > KMDA_DUP:
+            st['неоднозначна адреса'] += len(ps); continue
+        idx[key] = ps[0]; st['прийнято'] += len(ps)
+    print(f'   геокодер КМДА: {len(rows):,} адрес; ' + ', '.join(f'{k} {v:,}' for k, v in st.most_common()))
+    return idx
+
+
 def main():
     if not os.path.exists(DB): print('спочатку крок 1'); sys.exit(1)
     print('1) адресна база OpenStreetMap, тільки місто Київ')
@@ -176,7 +305,9 @@ def main():
 
     conn = sqlite3.connect(DB)
     conn.execute('DROP TABLE IF EXISTS geo')
-    conn.execute('CREATE TABLE geo(doc_id TEXT PRIMARY KEY, lat REAL, lon REAL, precision TEXT)')
+    # source — звідки точка: osm | kmda. Щоб точки геокодера можна було
+    # зняти одним фільтром, не перераховуючи решти.
+    conn.execute('CREATE TABLE geo(doc_id TEXT PRIMARY KEY, lat REAL, lon REAL, precision TEXT, source TEXT)')
     conn.commit()
 
     # Адреса з проходу по текстах (крок 6, data/teksty) перемагає адресу
@@ -211,15 +342,20 @@ def main():
     for (k, h), ll in exact.items():
         if h.isdigit(): nums[k].setdefault(int(h), ll)
 
+    kmda = kmda_index(streets) if KMDA_ON else {}
     out = []; st = collections.Counter()
     for doc, street, house, klass in todo:
         ns, h = norm(street), nh(house)
-        hit = None
+        hit = None; src = 'osm'
         if ' / ' in street:
             # перехрестя (addr.extract, level='cross'): «вул. X / вул. Y»
             hit = cross_point(*street.split(' / ', 1), streets, centro, tail)
         elif h and (ns, h) in exact:
             hit = (*exact[(ns, h)], 'house')
+        # Точний будинок КМДА — раніше за «20Б біля 20»: це сам будинок, а
+        # не місце поруч.
+        elif h and (skey(street), h) in kmda:
+            hit = (*kmda[(skey(street), h)], 'house'); src = 'kmda'
         elif h and klass == 'B' and (near := nearby(ns, h, exact, nums)):
             hit = near
         elif ns in centro:
@@ -229,9 +365,11 @@ def main():
             if len(cand) == 1:
                 k = cand[0]
                 hit = (*(exact.get((k, h)) or centro[k]), 'house' if (k, h) in exact else 'street')
-        if hit: out.append((doc, hit[0], hit[1], hit[2])); st[hit[2]] += 1
+        if hit:
+            out.append((doc, hit[0], hit[1], hit[2], src))
+            st[hit[2] + (' (КМДА)' if src == 'kmda' else '')] += 1
         else: st['не знайдено'] += 1
-    conn.executemany('INSERT OR REPLACE INTO geo VALUES(?,?,?,?)', out)
+    conn.executemany('INSERT OR REPLACE INTO geo VALUES(?,?,?,?,?)', out)
     conn.commit()
     print('\n=== ГОТОВО ===')
     for k, v in st.most_common():
