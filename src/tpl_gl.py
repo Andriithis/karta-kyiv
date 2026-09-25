@@ -378,18 +378,31 @@ for(let i=NL-2;i>=0;i--){const c=BB[i+1], b=BB[i];
 // вузла мають події, ONE — одна з них (коли ACT=1, кільце стає крапкою на
 // місці цієї адреси, як у вигляді «Адреси»; рішення 25.09).
 let SUM=[], TOT=[], ACT=[], ONE=[], LEAFV=[];
+// NP — скільки проблем у вузлі, PT — вид проблеми найбільшої з його адрес
+// (PTN — її подій): ромб на краю кільця має цей колір. PROBK — адреси з
+// проблемами за поточним фільтром, для ромбів вигляду «Адреси».
+let NP=[], PT=[], PTN=[], PROBK=[];
 function ringSums(st){
  const vm=new Map(st.vis.map(v=>[v[0],v])), mx=st.vis.length?st.vis[0][1]:1;
- SUM=[];TOT=[];ACT=[];ONE=[];
- for(let i=0;i<=NL;i++){const n=nOf(i); SUM.push(new Int32Array(n*NG)); TOT.push(new Int32Array(n)); ACT.push(new Int32Array(n)); ONE.push(new Int32Array(n).fill(-1))}
+ SUM=[];TOT=[];ACT=[];ONE=[];NP=[];PT=[];PTN=[];PROBK=[];
+ for(let i=0;i<=NL;i++){const n=nOf(i); SUM.push(new Int32Array(n*NG)); TOT.push(new Int32Array(n)); ACT.push(new Int32Array(n)); ONE.push(new Int32Array(n).fill(-1));
+  NP.push(new Int32Array(n)); PT.push(new Int32Array(n).fill(-1)); PTN.push(new Int32Array(n))}
  LEAFV=LEAF.map((pi,k)=>{const v=vm.get(P[pi]); if(!v) return null;
   TOT[NL][k]=v[1]; ACT[NL][k]=1; ONE[NL][k]=k;
   for(const g in v[4]) SUM[NL][k*NG+(+g)]=v[4][g];
-  return {n:v[1], th:v[2], r0:Math.max(2.8,Math.min(14,2.8+9.5*Math.pow(v[1]/Math.max(mx,1),.42)))}});
+  // Проблеми — тим самим правилом, що й у computeVis і у вікні адреси:
+  // проблема за прихованим видом для цього вигляду не проблема.
+  const pr=probsOf(P[pi]).filter(q=>q.thi===undefined||q.thi<0||st.GVIS.has(q.thi));
+  // Колір ромба — вид проблеми, як колір крапки-проблеми (computeVis).
+  const pt=v[3]?v[2]:((pr.find(q=>q.thi>=0)||{}).thi??v[2]);
+  if(pr.length){NP[NL][k]=pr.length; PT[NL][k]=pt; PTN[NL][k]=v[1]; PROBK.push(k)}
+  return {n:v[1], th:v[2], np:pr.length, pt, r0:Math.max(2.8,Math.min(14,2.8+9.5*Math.pow(v[1]/Math.max(mx,1),.42)))}});
  for(let i=NL;i>=1;i--){const s=SUM[i],t=TOT[i],a=ACT[i],o=ONE[i],ps=SUM[i-1],pt=TOT[i-1],pa=ACT[i-1],po=ONE[i-1];
+  const np=NP[i],pq=PT[i],pn=PTN[i],pnp=NP[i-1],ppq=PT[i-1],ppn=PTN[i-1];
   const n=nOf(i);
   for(let j=0;j<n;j++){ if(!t[j]) continue; const p=parOf(i,j);
    pt[p]+=t[j]; pa[p]+=a[j]; if(po[p]<0) po[p]=o[j];
+   if(np[j]){pnp[p]+=np[j]; if(pn[j]>ppn[p]){ppn[p]=pn[j]; ppq[p]=pq[j]}}
    for(let g=0;g<NG;g++) ps[p*NG+g]+=s[j*NG+g]}}
 }
 const rRing=n=>Math.min(30,10+3*Math.log2(Math.max(n,1)));
@@ -405,7 +418,7 @@ function nodeAt(i,j,box){
  const lon=one?P[LEAF[k]][1]:LV[i].c[2*j], lat=one?P[LEAF[k]][0]:LV[i].c[2*j+1];
  if(box&&(lon<box[0]||lon>box[2]||lat<box[1]||lat>box[3])) return null;
  if(one) return {dot:true,k,lon,lat,n:TOT[i][j]};
- return {dot:false,lon,lat,n:TOT[i][j],s:SUM[i].subarray(j*NG,(j+1)*NG),i,j};
+ return {dot:false,lon,lat,n:TOT[i][j],s:SUM[i].subarray(j*NG,(j+1)*NG),i,j,np:NP[i][j],pt:PT[i][j]};
 }
 // ---- МАЛЮВАННЯ: ВЛАСНИЙ ШАР WEBGL ----
 // Кільця, крапки й числа малює власний шар MapLibre (type 'custom') у тому
@@ -419,7 +432,7 @@ function nodeAt(i,j,box){
 // видами, дірка 0,62 r, згладжений край. Числа — з атласу цифр (одна
 // текстура, квадрат на літеру), а не шаром symbol: той брав би дані через
 // setData і фоновий воркер і під час розпаду відставав би на кадр-два.
-let VIS=[], HALO_C='#fff', INK_C='#111';
+let VIS=[], HALO_C='#fff', INK_C='#111', SHOWP=true;
 const easeIO=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
 let RINGS_ON=false;
 // Кольори теми — з CSS, але не в кожному кадрі: getComputedStyle на кадр
@@ -483,10 +496,11 @@ const VS_DISC=`attribute vec2 a_c; attribute vec2 a_o; attribute vec4 a_m; attri
 uniform vec2 u_view; varying vec2 v_p; varying vec4 v_m; varying vec4 v_q0; varying vec4 v_q1; varying vec3 v_col;
 void main(){ vec2 s=(a_c+a_o)/u_view*2.0-1.0; gl_Position=vec4(s.x,-s.y,0.0,1.0);
  v_p=a_o; v_m=a_m; v_q0=a_q0; v_q1=a_q1; v_col=a_col; }`;
-// v_m: r, внутрішній радіус, вид (0 — кільце, 1 — крапка), непрозорість.
+// v_m: r, внутрішній радіус, вид (0 — кільце, 1 — крапка, 2 — ромб, 3 —
+// суцільний контур кольору v_col), непрозорість.
 // v_q0, v_q1: межі дуг — накопичені частки видів 1..7 (порядок M.groups).
 const FS_DISC=`precision mediump float;
-uniform vec3 u_col[7]; uniform vec3 u_halo;
+uniform vec3 u_col[7]; uniform vec3 u_halo; uniform vec3 u_ink;
 varying vec2 v_p; varying vec4 v_m; varying vec4 v_q0; varying vec4 v_q1; varying vec3 v_col;
 void main(){ float d=length(v_p), r=v_m.x;
  if(v_m.z<0.5){
@@ -498,20 +512,30 @@ void main(){ float d=length(v_p), r=v_m.x;
   if(a<v_q1.z) c=u_col[6]; if(a<v_q1.y) c=u_col[5]; if(a<v_q1.x) c=u_col[4];
   if(a<v_q0.w) c=u_col[3]; if(a<v_q0.z) c=u_col[2]; if(a<v_q0.y) c=u_col[1]; if(a<v_q0.x) c=u_col[0];
   float al=cov*v_m.w; gl_FragColor=vec4(c*al,al);
- } else {
+ } else if(v_m.z<1.5){
   // крапка: заливка до r, гало 1,5 px по краю — як обвідка в шарі GL
   float cov=1.0-smoothstep(r+0.25,r+1.25,d); if(cov<=0.0) discard;
   vec3 c=mix(v_col,u_halo,smoothstep(r-1.25,r-0.25,d));
   float al=cov*v_m.w; gl_FragColor=vec4(c*al,al);
+ } else if(v_m.z<2.5){
+  // ромб: відстань «по діагоналях»; заливка до r, просвіт до r+2,2, чорнило до r+4,2
+  float e=(abs(v_p.x)+abs(v_p.y))*0.7071, h=r*0.7071;
+  float cov=1.0-smoothstep(h+2.97-0.5,h+2.97+0.5,e); if(cov<=0.0) discard;
+  vec3 c=mix(u_halo,u_ink,smoothstep(h+1.56-0.5,h+1.56+0.5,e));
+  c=mix(v_col,c,smoothstep(h-0.5,h+0.5,e));
+  float al=cov*v_m.w; gl_FragColor=vec4(c*al,al);
+ } else {
+  float cov=(1.0-smoothstep(r-0.5,r+0.5,d))*smoothstep(v_m.y-0.5,v_m.y+0.5,d);
+  if(cov<=0.0) discard; float al=cov*v_m.w; gl_FragColor=vec4(v_col*al,al);
  } }`;
 const VS_TXT=`attribute vec2 a_p; attribute vec2 a_uv; attribute float a_a; uniform vec2 u_view;
 varying vec2 v_uv; varying float v_a;
 void main(){ vec2 s=a_p/u_view*2.0-1.0; gl_Position=vec4(s.x,-s.y,0.0,1.0); v_uv=a_uv; v_a=a_a; }`;
 // Атлас у два рядки: угорі — самі цифри, унизу — їхнє гало, тим самим
 // розташуванням. Гало під цифрами, як strokeText під fillText.
-const FS_TXT=`precision mediump float; uniform sampler2D u_tex; uniform vec3 u_ink; uniform vec3 u_halo;
+const FS_TXT=`precision mediump float; uniform sampler2D u_tex; uniform vec3 u_ink; uniform vec3 u_halo; uniform float u_ha;
 varying vec2 v_uv; varying float v_a;
-void main(){ float f=texture2D(u_tex,v_uv).a, h=texture2D(u_tex,v_uv+vec2(0.0,0.5)).a;
+void main(){ float f=texture2D(u_tex,v_uv).a, h=texture2D(u_tex,v_uv+vec2(0.0,0.5)).a*u_ha;
  float al=max(f,h)*v_a; if(al<=0.0) discard;
  vec3 c=mix(u_halo,u_ink,f/max(max(f,h),1e-3)); gl_FragColor=vec4(c*al,al); }`;
 // ---- АТЛАС ЦИФР ----
@@ -552,37 +576,71 @@ const ringLayer={id:'k-rings', type:'custom', renderingMode:'2d',
  },
  onRemove(m,gl){gl.deleteProgram(this.pd); gl.deleteProgram(this.pt); gl.deleteBuffer(this.bd); gl.deleteBuffer(this.bt); gl.deleteTexture(this.tex)},
  render(gl){
-  const out=frameList(); if(!out.length) return;
+  const out=frameList();
+  // Ромби вигляду «Адреси» (і кілець з z15, де адреси малює шар GL):
+  // сталого розміру на кожній адресі з проблемою за фільтром.
+  const addrDiamonds=SHOWP&&!RINGS_ON&&MODE!=='heat'&&STYLE_OK;
+  if(!out.length&&!(addrDiamonds&&PROBK.length)) return;
   const cvs=map.getCanvas(), W=cvs.clientWidth, H=cvs.clientHeight, z=map.getZoom();
-  // ---- квадрати кілець і крапок ----
   let nd=0, nt=0;
-  const need=out.length*6*DISC_F; if(discBuf.length<need) discBuf=new Float32Array(need*2);
-  const texts=[];
-  for(const [o,al] of out){ if(o.x<-60||o.y<-60||o.x>W+60||o.y>H+60) continue;
-   let r, inner=0, kind, a, q=[1,1,1,1,1,1,1,1], col=[0,0,0];
-   if(o.dot){const v=LEAFV[o.k]; if(!v) continue; r=v.r0*zmulAt(z); kind=1; a=.94*al; col=rgb(PALA[v.th%PALA.length])}
-   else {r=rRing(o.n); inner=r*.62; kind=0; a=RING_OP*al;
-    let acc=0; for(let g=0;g<7;g++){acc+=g<NG?o.s[g]:0; q[g]=acc/o.n}
-    texts.push([o,al,inner])}
-   const ext=r+2;
+  const need=(out.length*3+PROBK.length+8)*6*DISC_F; if(discBuf.length<need) discBuf=new Float32Array(need*2);
+  const Q1=[1,1,1,1,1,1,1,1], C0=[0,0,0];
+  const quad=(x,y,ext,r,inner,kind,a,q,col)=>{
    for(const [cx_,cy_] of CORNERS){const b=nd*DISC_F;
-    discBuf[b]=o.x; discBuf[b+1]=o.y; discBuf[b+2]=cx_*ext; discBuf[b+3]=cy_*ext;
+    discBuf[b]=x; discBuf[b+1]=y; discBuf[b+2]=cx_*ext; discBuf[b+3]=cy_*ext;
     discBuf[b+4]=r; discBuf[b+5]=inner; discBuf[b+6]=kind; discBuf[b+7]=a;
     for(let g=0;g<8;g++) discBuf[b+8+g]=q[g];
-    discBuf[b+16]=col[0]; discBuf[b+17]=col[1]; discBuf[b+18]=col[2]; nd++}
+    discBuf[b+16]=col[0]; discBuf[b+17]=col[1]; discBuf[b+18]=col[2]; nd++}};
+  // Ромб: половина діагоналі h; навколо — просвіт кольору підкладки й
+  // контур чорнила (+2,2 і +4,2 px, як у макеті). Непрозорий: сигнал
+  // тримається формою, а не кольором.
+  const diamond=(x,y,h,a,col)=>quad(x,y,h+6,h,0,2,a,Q1,col);
+  const texts=[], ptexts=[], later=[];
+  const ink=rgb(INK_C);
+  // ---- кільця й крапки ----
+  for(const [o,al] of out){ if(o.x<-60||o.y<-60||o.x>W+60||o.y>H+60) continue;
+   if(o.dot){const v=LEAFV[o.k]; if(!v) continue; const r=v.r0*zmulAt(z);
+    // Адреса з проблемою в «Кільцях» — ромб за розміром подій (макет), не
+    // крапка: вона не ховається в кільце (розд. 6). Місце під нього дерево
+    // вже врахувало (map_clusters.r_addr).
+    if(v.np&&SHOWP){later.push(()=>diamond(o.x,o.y,Math.max(7,r)*1.25,al,rgb(YASKRAVA[v.pt%YASKRAVA.length]))); continue}
+    quad(o.x,o.y,r+2,r,0,1,.94*al,Q1,rgb(PALA[v.th%PALA.length])); continue}
+   const r=rRing(o.n), inner=r*.62, q=[1,1,1,1,1,1,1,1];
+   let acc=0; for(let g=0;g<7;g++){acc+=g<NG?o.s[g]:0; q[g]=acc/o.n}
+   quad(o.x,o.y,r+2,r,inner,0,RING_OP*al,q,C0);
+   texts.push([o.x,o.y+.5,fmtN(o.n),Math.max(9,Math.min(13,inner*.9)),al]);
+   if(o.np&&SHOWP){
+    // Кільце з проблемами — тонкий контур чорнила й ромб на краю (угорі
+    // праворуч); кілька проблем — один більший ромб із числом.
+    const rr=r+3, bx=o.x+rr*Math.SQRT1_2, by=o.y-rr*Math.SQRT1_2;
+    quad(o.x,o.y,rr+2,rr+1,rr-1,3,al,Q1,ink);
+    later.push(()=>diamond(bx,by,o.np>1?8.5:5.5,al,rgb(YASKRAVA[(o.pt>=0?o.pt:0)%YASKRAVA.length])));
+    if(o.np>1) ptexts.push([bx,by+.5,String(o.np),10,al])}
   }
+  if(addrDiamonds){
+   const b=map.getBounds(), pad=.1*(b.getNorth()-b.getSouth());
+   for(const k of PROBK){const pi=LEAF[k], la=P[pi][0], lo=P[pi][1], v=LEAFV[k];
+    if(lo<b.getWest()-pad||lo>b.getEast()+pad||la<b.getSouth()-pad||la>b.getNorth()+pad) continue;
+    const q_=map.project([lo,la]);
+    // Сталий розмір: на тисячах крапок великі ромби різали очі й закривали
+    // сусідів. Колір — той самий, що в крапки-проблеми під ним.
+    later.push(()=>diamond(q_.x,q_.y,5.5,1,rgb(PALA[v.pt%PALA.length])))}
+  }
+  for(const f of later) f();
   // ---- літери чисел ----
-  if(ATLAS){const A=ATLAS, tw=A.canvas.width, th=A.canvas.height;
-   let chars=0; for(const t of texts) chars+=fmtN(t[0].n).length;
-   if(txtBuf.length<chars*6*TXT_F) txtBuf=new Float32Array(chars*6*TXT_F*2);
-   for(const [o,al,inner] of texts){const s=fmtN(o.n), fs=Math.max(9,Math.min(13,inner*.9)), k=fs/ATL_PX;
-    const cw=A.cw*k, ch=A.ch*k, adv=A.adv*k; let x=o.x-adv*s.length/2+adv/2; const y=o.y+.5;
+  const glyphs=(list)=>{ if(!ATLAS) return;
+   const A=ATLAS, tw=A.canvas.width, th=A.canvas.height;
+   let chars=0; for(const t_ of list) chars+=t_[2].length;
+   if(txtBuf.length<(nt+chars)*6*TXT_F) {const nb=new Float32Array((nt+chars)*6*TXT_F*2); nb.set(txtBuf.subarray(0,nt*TXT_F)); txtBuf=nb}
+   for(const [cx0,y,s,fs,al] of list){const k=fs/ATL_PX;
+    const cw=A.cw*k, ch=A.ch*k, adv=A.adv*k; let x=cx0-adv*s.length/2+adv/2;
     for(const c of s){const gi=GLYPHS.indexOf(c); if(gi<0){x+=adv;continue}
      const u0=gi*A.cw/tw, u1=(gi+1)*A.cw/tw, v0=0, v1=A.ch/th;
      const x0=x-cw/2, x1=x+cw/2, y0=y-ch/2, y1=y+ch/2;
      for(const [px,py,u,v] of [[x0,y0,u0,v0],[x1,y0,u1,v0],[x1,y1,u1,v1],[x0,y0,u0,v0],[x1,y1,u1,v1],[x0,y1,u0,v1]]){
       const b=nt*TXT_F; txtBuf[b]=px; txtBuf[b+1]=py; txtBuf[b+2]=u; txtBuf[b+3]=v; txtBuf[b+4]=al; nt++}
-     x+=adv}}}
+     x+=adv}}};
+  glyphs(texts); const ntRing=nt; glyphs(ptexts);
   // ---- стан GL ----
   // MapLibre після власного шару сам відновлює свій стан (setDirty), але
   // масиви вершин прив'язані до його VAO — тож свій малюємо на порожньому.
@@ -592,7 +650,7 @@ const ringLayer={id:'k-rings', type:'custom', renderingMode:'2d',
   const bind=(p,buf,data,n,F,attrs)=>{gl.useProgram(p); gl.bindBuffer(gl.ARRAY_BUFFER,buf);
    gl.bufferData(gl.ARRAY_BUFFER,data.subarray(0,n*F),gl.STREAM_DRAW);
    const locs=[]; let off=0;
-   for(const [name,size] of attrs){const l=gl.getAttribLocation(p,name); off+=0;
+   for(const [name,size] of attrs){const l=gl.getAttribLocation(p,name);
     if(l>=0){gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l,size,gl.FLOAT,false,F*4,off*4); locs.push(l)}
     off+=size}
    gl.uniform2f(gl.getUniformLocation(p,'u_view'),W,H); return locs};
@@ -600,6 +658,7 @@ const ringLayer={id:'k-rings', type:'custom', renderingMode:'2d',
   if(nd){const locs=bind(this.pd,this.bd,discBuf,nd,DISC_F,[['a_c',2],['a_o',2],['a_m',4],['a_q0',4],['a_q1',4],['a_col',3]]);
    gl.uniform3fv(gl.getUniformLocation(this.pd,'u_col'),new Float32Array(YASKRAVA.flatMap(rgb)));
    gl.uniform3fv(gl.getUniformLocation(this.pd,'u_halo'),rgb(HALO_C));
+   gl.uniform3fv(gl.getUniformLocation(this.pd,'u_ink'),ink);
    gl.drawArrays(gl.TRIANGLES,0,nd); unbind(locs)}
   if(nt){gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,this.tex);
    if(this.texVer!==ATLAS_VER){gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);
@@ -609,9 +668,14 @@ const ringLayer={id:'k-rings', type:'custom', renderingMode:'2d',
     this.texVer=ATLAS_VER}
    const locs=bind(this.pt,this.bt,txtBuf,nt,TXT_F,[['a_p',2],['a_uv',2],['a_a',1]]);
    gl.uniform1i(gl.getUniformLocation(this.pt,'u_tex'),0);
-   gl.uniform3fv(gl.getUniformLocation(this.pt,'u_ink'),rgb(INK_C));
-   gl.uniform3fv(gl.getUniformLocation(this.pt,'u_halo'),rgb(HALO_C));
-   gl.drawArrays(gl.TRIANGLES,0,nt); unbind(locs)}
+   const uInk=gl.getUniformLocation(this.pt,'u_ink'), uHalo=gl.getUniformLocation(this.pt,'u_halo'), uHa=gl.getUniformLocation(this.pt,'u_ha');
+   // Числа на кільцях — чорнилом з гало кольору підкладки.
+   gl.uniform3fv(uInk,ink); gl.uniform3fv(uHalo,rgb(HALO_C)); gl.uniform1f(uHa,1);
+   if(ntRing) gl.drawArrays(gl.TRIANGLES,0,ntRing);
+   // Число на ромбі — біле з темною обвідкою: читається на будь-якому кольорі виду.
+   if(nt>ntRing){gl.uniform3fv(uInk,[1,1,1]); gl.uniform3fv(uHalo,[0,0,0]); gl.uniform1f(uHa,.6);
+    gl.drawArrays(gl.TRIANGLES,ntRing,nt-ntRing)}
+   unbind(locs)}
  }};
 // Шар кілець — найвищий з наших: над адресами. Власний шар не переживає
 // setStyle (його не можна описати в стилі), тож додаємо після кожного стилю.
@@ -664,7 +728,15 @@ window.kartaKilcia=()=>{const vm=new Map(LASTST.vis.map(v=>[v[0],v[1]]));
  seg.innerHTML=VIEWS.map(([k,n])=>`<button data-m="${k}" aria-pressed="${k===MODE}">${n}</button>`).join('');
  seg.onclick=e=>{const b=e.target.closest('[data-m]'); if(!b) return;
   MODE=b.dataset.m; try{localStorage.setItem('karta-vyhlyad',MODE)}catch(err){}
-  seg.querySelectorAll('button').forEach(x=>swSet(x,x===b)); draw()};}
+  seg.querySelectorAll('button').forEach(x=>swSet(x,x===b)); draw()};
+ // «◆ Проблеми» — ромби поверх обох виглядів (розд. 23, п. 2); вимикає їх,
+ // не ховаючи самих адрес.
+ seg.insertAdjacentHTML('afterend','<button id="fprob" class="pbtn2" aria-pressed="true" '+
+   'style="width:auto;align-self:flex-start;margin:6px 0 0;padding:4px 10px">◆ Проблеми</button>');
+ $('#fprob').onclick=e=>{SHOWP=!SHOWP; swSet(e.currentTarget,SHOWP); map.triggerRepaint()};}
+// Перевірка з консолі: скільки адрес із проблемами й скільки самих проблем
+// за поточним фільтром і районом — те, що карта показує ромбами.
+window.kartaProblemy=()=>({adres:PROBK.length, problem:PROBK.reduce((s,k)=>s+LEAFV[k].np,0)});
 // Підписки на панель — ті самі, що в tpl_draw, без подій карти Leaflet.
 document.querySelectorAll('#side input:not([data-r]):not([data-f]):not(#fquiet)').forEach(x=>x.addEventListener('change',draw));
 document.querySelectorAll('[data-r]').forEach(x=>x.addEventListener('change',drawRisks));
