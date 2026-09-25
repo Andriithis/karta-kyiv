@@ -3,6 +3,8 @@
 import os, re, sys, json, time, sqlite3, math, urllib.request, urllib.parse, urllib.error, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import step1c_teksty as TK      # частини проходу по текстах (крок 6)
+import addr as A
+import podii as PD
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
@@ -182,13 +184,20 @@ def main():
     # у якого прохід адреси не знайшов або вона прихована (АДРЕСА_N), на
     # карту вже не йде, хоч би що колись знайшов старий витяг.
     tk = TK.load_done()
-    todo = []
+    # Прийменник, що прилип до номера старим розбором («1/5 у м.Києві» ->
+    # «1/5У», «11 в м.Києві» -> «11В»), знімаємо тут, за текстом, з якого
+    # взято адресу, — тим самим addr.unglue, що й підпис точки в step3_map.
+    fab = PD.load_fab(conn)
+    todo = []; n_unglued = 0
     for doc, street, house in conn.execute("SELECT doc_id, street, house FROM events"):
         r = tk.get(doc)
         if r is not None:
             street, house = r['street'] or None, r['house'] or None
+        h2 = A.unglue(house, (r['addr_sentence'] or r['fab']) if r else fab.get(doc, ''))
+        n_unglued += h2 != house
         if street:
-            todo.append((doc, street, house, r['klass'] if r else ''))
+            todo.append((doc, street, h2, r['klass'] if r else ''))
+    print(f'   номер без прилиплого прийменника («1/5У» -> «1/5»): {n_unglued:,}')
     print(f'2) зіставлення заново: {len(todo):,} записів (з проходу по текстах: {len(tk):,})')
 
     tail = collections.defaultdict(list)

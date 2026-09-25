@@ -23,6 +23,7 @@ import map_layers
 import map_problems
 import map_clusters
 import podii as PD           # що рахується подією: вирок і постанова, не ухвала
+import addr as AD            # addr.unglue — номер без прилиплого прийменника
 import step1c_teksty as TK   # частини проходу по текстах (крок 6)
 from step2_geocode import BESIDE
 from map_problems import COURTS, SLUG
@@ -113,6 +114,12 @@ def vybir(c, print=print):
         print(f'витяги обставин: {len(fab):,}')
     else:
         print('витягів обставин немає — панель покаже перелік рішень без опису')
+    # Номер без прилиплого прийменника — той самий addr.unglue і той самий
+    # текст, що в step2_geocode: інакше точка стояла б на будинку 1/5, а
+    # підпис казав би «1/5У».
+    rows = [r[:6] + (AD.unglue(r[6], (TKD[r[0]]['addr_sentence'] or TKD[r[0]]['fab'])
+                               if r[0] in TKD else fab.get(r[0], '')),) + r[7:]
+            for r in rows]
 
     print('перевірка на адреси установ:')
     excl = detect_institutional(rows, load_excl())
