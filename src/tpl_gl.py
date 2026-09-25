@@ -40,6 +40,11 @@ const OFM_ATTR='OpenFreeMap © OpenMapTiles, дані © OpenStreetMap';
 // їх від шарів підкладки при зміні теми.
 const OURS='k-';
 let USING_FALLBACK=false;
+// STYLE_OK — чи можна вже додавати джерела. isStyleLoaded() тут не годиться:
+// він чекає ще й на всі плитки, і позначки з'являлися б лише після них.
+// Оголошено тут, до першого setBase: let нижче за виклик — це помилка, а не
+// «ще не визначено», і модуль падав би цілком (той самий урок, що з FICON).
+let STYLE_OK=false;
 // Запасна підкладка — растрові плитки CARTO за нашим ключем тієї самої теми.
 // {r} MapLibre не розуміє, тож @2x підставляємо самі.
 function cartoStyle(t){
@@ -166,9 +171,6 @@ map.addControl(new ThemeCtl(),'top-left');
 // Після кожного завантаження стилю: сюди наступні коміти додаватимуть
 // картинки (addImage не переживає setStyle) і фарбування наших шарів у
 // кольори теми.
-// STYLE_OK — чи можна вже додавати джерела. isStyleLoaded() тут не годиться:
-// він чекає ще й на всі плитки, і позначки з'являлися б лише після них.
-let STYLE_OK=false;
 function onStyleReady(){STYLE_OK=true; addrReady()}
 map.on('style.load',onStyleReady);
 function setTheme(t){
@@ -300,7 +302,9 @@ function openAt(i,ll){
   .setLngLat(ll||[p[1],p[0]]).setDOMContent(node).addTo(map);
  // Закрите вікно — людина пішла з цього місця: гасимо й «Що поруч».
  POPUP.on('close',clearNear);
- requestAnimationFrame(()=>keepClear(POPUP));
+ // Два кадри: у першому MapLibre ще тільки ставить вікно на місце, і його
+ // межі не справжні — зсуву тоді не було зовсім.
+ const pp=POPUP; requestAnimationFrame(()=>requestAnimationFrame(()=>keepClear(pp)));
 }
 // Адреса не має опинитися під карткою-навігатором. Карту зсуваємо рівно
 // настільки, щоб вікно лягло на вільну частину, — без наближення: людина
