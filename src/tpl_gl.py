@@ -187,6 +187,12 @@ map.on('styleimagemissing',e=>{ if(!String(e.id).startsWith(OURS)&&!map.hasImage
  map.addImage(e.id,{width:1,height:1,data:new Uint8Array(4)})});
 map.on('style.load',()=>clearTimeout(styleTimer));
 setBase(THEME);
+// Кільця й адреси — лише разом із підкладкою (розд. 25, А3): інакше на
+// старті вони секунду-дві висіли на порожньому тлі, і карта здавалася
+// зламаною. До першого повного кадру (load) — тонка смужка завантаження.
+let BASE_READY=false;
+{const bar=document.createElement('div'); bar.id='kload'; map.getContainer().appendChild(bar);
+ map.once('load',()=>{BASE_READY=true; bar.remove(); addrPaint(); map.triggerRepaint()});}
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-left');
 // У модулі змінні не глобальні, а паритет перевіряють з консолі браузера
 // (розміри позначок, шари, частота кадрів). Один явний вихід — сама карта.
@@ -228,16 +234,37 @@ const CITY={c:C0,z:11};
 function bboxOf(ring){let s=90,w=180,n=-90,e=-180;
  for(const q of ring){if(q[0]<s)s=q[0];if(q[0]>n)n=q[0];if(q[1]<w)w=q[1];if(q[1]>e)e=q[1]}
  return [[w,s],[e,n]]}
+// Відступи для fitBounds: картка праворуч (на телефоні — знизу) закриває
+// частину карти, і місто чи район мають лягти на вільну частину.
+function sidePad(){
+ const cont=map.getContainer(), cw=cont.clientWidth, ch=cont.clientHeight, p={top:24,bottom:24,left:24,right:24};
+ const side=document.getElementById('side');
+ if(side&&side.offsetWidth){const m=cont.getBoundingClientRect(), s=side.getBoundingClientRect();
+  // На телефоні картка знизу може бути з пів екрана — межа, щоб місту
+  // лишилося місце.
+  if(s.left-m.left<=cw/2) p.bottom=Math.min(ch*.55,m.bottom-s.top+16);
+  else p.right=Math.min(cw*.6,m.right-s.left+16)}
+ return p}
+// Межі всього міста — з меж районів.
+function cityBox(){let s=90,w=180,n=-90,e=-180;
+ for(const r of DBORD) for(const q of r){if(q[0]<s)s=q[0];if(q[0]>n)n=q[0];if(q[1]<w)w=q[1];if(q[1]>e)e=q[1]}
+ return DBORD.length?[[w,s],[e,n]]:null}
+// Увесь Київ (розд. 25, А3): на старті й після виходу з району. Раніше тут
+// був сталий центр і z11 — на вузькому екрані частина міста лишалася за
+// краєм, на широкому — під карткою.
+function fitCity(duration){const b=cityBox();
+ if(b) map.fitBounds(b,{padding:sidePad(),duration});
+ else map.flyTo({center:[CITY.c[1],CITY.c[0]],zoom:CITY.z,duration})}
 function enterDistrict(i,fly){
  if(M.only||!(i>=0&&i<DN.length)) return;
  CURD=i; paintScope();
- map.fitBounds(bboxOf(DBORD[i]),{padding:28,duration:fly===false?0:1150});
+ map.fitBounds(bboxOf(DBORD[i]),{padding:sidePad(),duration:fly===false?0:1150});
  if(location.hash.slice(1)!==DSLUG[i]) history.replaceState(null,'','#'+DSLUG[i]);
  onScopeChange();
 }
 function exitDistrict(){
  CURD=-1; paintScope();
- map.flyTo({center:[CITY.c[1],CITY.c[0]],zoom:CITY.z,duration:1000});
+ fitCity(1000);
  history.replaceState(null,'',location.pathname+location.search);
  onScopeChange();
 }
@@ -562,7 +589,7 @@ function addrLayerVisible(v){
 // поки ввімкнено «Схожі умови» чи потоки — приглушені (RING_A).
 function addrPaint(){
  if(!map.getLayer('k-addr')) return;
- const on=ADDR_VIS!==false&&MODE!=='prob';
+ const on=BASE_READY&&ADDR_VIS!==false&&MODE!=='prob';
  map.setPaintProperty('k-addr','circle-opacity',on?RING_A:0);
  map.setPaintProperty('k-addr','circle-stroke-opacity',on?1:0);
  map.setPaintProperty('k-addr-shadow','circle-opacity',on?1:0);
@@ -702,6 +729,7 @@ const ringLayer={id:'k-rings', type:'custom', renderingMode:'2d',
  },
  onRemove(m,gl){gl.deleteProgram(this.pd); gl.deleteProgram(this.pt); gl.deleteBuffer(this.bd); gl.deleteBuffer(this.bt); gl.deleteTexture(this.tex)},
  render(gl){
+  if(!BASE_READY) return;
   const out=frameList();
   // Ромби вигляду «Адреси» (і кілець з z15, де адреси малює шар GL):
   // сталого розміру на кожній адресі з проблемою за фільтром.
@@ -1263,4 +1291,4 @@ document.querySelectorAll('[data-f]').forEach(x=>x.addEventListener('change',dra
 map.on('zoomend',paintZoomGates);
 paintRows();draw();drawRisks();drawFacts();paintZoomGates();
 {const i=DSLUG.indexOf(decodeURIComponent(location.hash.slice(1)).toLowerCase());
- if(i>=0&&!M.only) enterDistrict(i,false); else paintDistrictList();}"""
+ if(i>=0&&!M.only) enterDistrict(i,false); else {paintDistrictList(); fitCity(0)}}"""

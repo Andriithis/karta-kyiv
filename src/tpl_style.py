@@ -43,6 +43,12 @@ LIBS_GL = r"""<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.10.0/
  padding:8px 0 0;margin-top:6px;box-shadow:0 -10px 10px -10px rgba(0,0,0,.28)}
 .maplibregl-popup .lpf .pbtn2{margin-top:0;flex:1;min-height:32px}
 .maplibregl-popup .hxl{font-size:10px;color:var(--faint);text-align:center;margin:-4px 0 7px}
+/* Смужка завантаження вгорі карти — доки не прийшла підкладка (розд. 25, А3). */
+#kload{position:absolute;top:0;left:0;right:0;height:3px;z-index:5;pointer-events:none;overflow:hidden}
+#kload::after{content:"";position:absolute;top:0;bottom:0;width:30%;background:var(--ink);opacity:.55;
+ animation:kload 1.1s ease-in-out infinite}
+@keyframes kload{from{left:-30%}to{left:100%}}
+@media (prefers-reduced-motion:reduce){#kload::after{animation:none;left:0;width:100%;opacity:.25}}
 .bd td.lpmorec{text-align:left;width:auto;padding-left:0;font-family:var(--sans)}
 .lpmore{background:none;border:0;padding:4px 0;min-height:28px;font:inherit;font-size:11.5px;color:var(--dim);
  cursor:pointer;text-decoration:underline}
