@@ -66,6 +66,12 @@ INITIAL = re.compile(r'\b([А-ЯІЇЄҐ])\.([А-ЯІЇЄҐ])')
 # 3 і 4 вікно адреси позначає як приблизні.
 PREC = {'house': 1, 'cross': 2, 'base': 3, 'interp': 4}
 POINT = {'house', 'base', 'interp'}
+# Лише точний будинок (RISHENNYA, розд. 24; рішення Андрія 26.09 — вмикаємо,
+# не чекаючи бази): «20Б -> 20» (base) і «між сусідами» (interp) — не місце
+# події, а здогад про нього, тож на карту й у лічильники не йдуть. Одна
+# константа, як KMDA_ON у step2_geocode: False повертає ці точки.
+LYSHE_BUDYNOK = True
+NE_BUDYNOK = {'base', 'interp'}
 MIN_EVENT_DATE = '2023-01-01'
 
 # Посилання стиснуте до 34 знаків — правило одне з кроком 0 (podii.docref).
@@ -174,6 +180,7 @@ def vybir(c, print=print):
     reps, case_docs, arts = [], {}, {}
     n_tk_gone = 0
     n_old = collections.Counter()
+    n_ne_budynok = collections.Counter()
     ev_year = {}         # рік події: фільтр «Рік» на карті — за подією, не рішенням
     for rep, g, lab, cats in merged:
         if rep[0] not in TKD and (cause.get(rep[0]), PD.theme(rep[2])) in tk_cases:
@@ -186,6 +193,12 @@ def vybir(c, print=print):
         ed = (TKD.get(rep[0]) or {}).get('date') or ''
         if (ed or rep[3] or '') < MIN_EVENT_DATE:
             n_old[PD.theme(rep[2])] += 1
+            continue
+        # Після злиття, за точкою представника: саме вона стала б точкою
+        # події. До злиття представником справи став би інший документ зі
+        # своєю адресою — і подія лишилася б на карті в чужому місці.
+        if LYSHE_BUDYNOK and rep[9] in NE_BUDYNOK:
+            n_ne_budynok[PD.theme(rep[2])] += 1
             continue
         ev_year[rep[0]] = (ed or rep[3])[:4]
         # підпис події — стаття, найтяжча в цьому виді справи (podii.label_cat)
@@ -200,6 +213,10 @@ def vybir(c, print=print):
     print(f'   одна подія на (справа, вид): {len(rows):,} документів -> {len(reps):,} подій')
     if n_tk_gone:
         print(f'   справ, яким прохід по текстах прибрав адресу: {n_tk_gone:,}')
+    if n_ne_budynok:
+        print(f'   не точний будинок («20Б -> 20», між сусідами; на карту не йдуть): '
+              f'{sum(n_ne_budynok.values()):,} — '
+              + ', '.join(f'{k} {v:,}' for k, v in n_ne_budynok.most_common()))
     if n_old:
         print(f'   подій з датою до {MIN_EVENT_DATE[:4]} (на карту не йдуть): {sum(n_old.values()):,} — '
               + ', '.join(f'{k} {v:,}' for k, v in n_old.most_common()))
