@@ -369,9 +369,11 @@ function keepClear(pp,at,off){
  if(r.top-dy<T) dy=r.top-T;
  if(dx||dy) map.panBy([dx,dy],{duration:450});
 }
-map.on('click','k-addr',e=>{ if(iconAt(e.point)) return;
+// Поки видно кільця, шар адрес лише прозорий, не вимкнений (addrLayerVisible):
+// клік і курсор над ним тоді належать кільцям.
+map.on('click','k-addr',e=>{ if(RINGS_ON||iconAt(e.point)) return;
  const f=e.features&&e.features[0]; if(f) openAt(f.properties.i)});
-map.on('mouseenter','k-addr',()=>{map.getCanvas().style.cursor='pointer'});
+map.on('mouseenter','k-addr',()=>{ if(!RINGS_ON) map.getCanvas().style.cursor='pointer'});
 map.on('mouseleave','k-addr',()=>{map.getCanvas().style.cursor=''});
 // ---- ПОШУК: КУДИ НАБЛИЖАТИ ----
 // Вікно відкриваємо, коли карта вже стала на місце, а не таймером навмання
@@ -485,12 +487,24 @@ function ringColors(){HALO_C=cssv('--halo')||'#fff'; INK_C=cssv('--ink')||'#111'
 ringColors();
 const rgb=h=>{h=(h||'#000').trim().replace('#',''); if(h.length===3) h=h.split('').map(c=>c+c).join('');
  return [0,2,4].map(i=>parseInt(h.substr(i,2),16)/255)};
-// Видимість шару адрес міняємо лише тоді, коли вона справді змінилася.
+// Шар адрес ховаємо прозорістю, а не visibility: шар із visibility:none
+// фоновий потік не розбирає, і після ввімкнення адреси з'являлися лише за
+// мить — на межі кілець і адрес карта блимала порожньою. Прозорість
+// міняється в тому самому кадрі. Міняємо лише тоді, коли справді змінилося.
 let ADDR_VIS=null;
 function addrLayerVisible(v){
- if(v===ADDR_VIS&&map.getLayer('k-addr')&&(map.getLayoutProperty('k-addr','visibility')!=='none')===v) return;
- ADDR_VIS=v;
- for(const id of ['k-addr','k-addr-shadow']) if(map.getLayer(id)) map.setLayoutProperty(id,'visibility',v?'visible':'none');
+ if(v===ADDR_VIS) return;
+ ADDR_VIS=v; addrPaint();
+}
+// Прозорість шару адрес: схований (кільця) — 0; у «Проблемах» крапки
+// невидимі, але лишаються під ромбами, щоб по ромбу можна було клікнути;
+// поки ввімкнено «Схожі умови» чи потоки — приглушені (RING_A).
+function addrPaint(){
+ if(!map.getLayer('k-addr')) return;
+ const on=ADDR_VIS!==false&&MODE!=='prob';
+ map.setPaintProperty('k-addr','circle-opacity',on?RING_A:0);
+ map.setPaintProperty('k-addr','circle-stroke-opacity',on?1:0);
+ map.setPaintProperty('k-addr-shadow','circle-opacity',on?1:0);
 }
 // Що видно в цьому кадрі: [[вузол з x, y], непрозорість]. Та сама логіка,
 // що й була: рівень за зумом, перетікання до наступного — лише під час зуму.
@@ -507,7 +521,14 @@ function frameList(){
  const fr=f0-zi, e=zi+1>NL?0:(map.isZooming()?easeIO(Math.min(1,fr)):Math.round(fr));
  const out=[];
  if(e<=0||e>=1){const i=e>=1?zi+1:zi;
-  if(i>=NL) return out;
+  // Рівень «самі адреси» (з z14,75 без руху зуму, округленням) — кілець
+  // немає, адреси малює шар GL. Досі тут кільця зникали, а шар адрес
+  // чекав рівно z15 — і між ними карта була порожня (помилка 26.09).
+  // Шар адрес стане видимим лише з наступного кадру (прозорість міняють
+  // після кадру) — на цей один кадр адреси крапками малює шар кілець.
+  if(i>=NL){RINGS_ON=false;
+   if(ADDR_VIS!==true){for(let j=0,n=nOf(NL);j<n;j++){const o=nodeAt(NL,j,box); if(o) out.push([pr(o),1])} map.triggerRepaint()}
+   return out}
   for(let j=0,n=nOf(i);j<n;j++){const o=nodeAt(i,j,box); if(o) out.push([pr(o),1])}
  } else {
   const i0=zi, i1=zi+1, par=new Map();
@@ -727,10 +748,11 @@ const ringLayer={id:'k-rings', type:'custom', renderingMode:'2d',
 // полотном: після зміни стилю кільця стають під них, а не на самий верх.
 function ringsReady(){ if(!map.getLayer('k-rings')) map.addLayer(ringLayer,map.getLayer('k-fact-dot')?'k-fact-dot':undefined) }
 // Видимість шару адрес — після кадру, а не всередині шару: міняти стиль
-// посеред малювання не можна.
+// посеред малювання не можна. Мірило — чи малював цей кадр кільця
+// (RINGS_ON з frameList), а не поріг зуму: так між кільцями й адресами
+// немає проміжку, коли не видно ні тих, ні тих.
 map.on('render',()=>{ if(!STYLE_OK) return;
- const z=map.getZoom(), zi=Math.min(NL,Math.floor(Math.max(0,(z-TZ0)/TDZ)+1e-9));
- addrLayerVisible(MODE!=='rings'||zi>=NL)});
+ addrLayerVisible(MODE!=='rings'||!RINGS_ON)});
 // Кінець руху — ще один кадр: після зуму перетікання має стати на рівень.
 map.on('moveend',()=>requestAnimationFrame(()=>map.triggerRepaint()));
 // Клік: кільце — переліт до його адрес, не глибше ніж на 2,5 кроку зуму від
@@ -887,7 +909,7 @@ function drawRisks(){
  dim=dim||fOn.length>0;
  layerVis('k-pop',rOn('pop'));
  RING_A=dim?RING_DIM:RING_OP;
- if(map.getLayer('k-addr')) map.setPaintProperty('k-addr','circle-opacity',RING_A);
+ addrPaint();
  map.triggerRepaint();
 }
 // ---- РАЙОНИ: МЕЖІ, МАСКА, ПІДСВІТКА ----
@@ -1116,7 +1138,7 @@ function ctxEvents(){
  const tip=(e,h)=>{ if(!h){TIP.remove();return} TIP.setLngLat(e.lngLat).setHTML(h).addTo(map)};
  // Смуга тонка — ловимо її з запасом у кілька пікселів.
  const near=(p,ids)=>ids.length?map.queryRenderedFeatures([[p.x-4,p.y-4],[p.x+4,p.y+4]],{layers:ids}):[];
- const onEvent=p=>(RINGS_ON&&hitRing(p))||map.queryRenderedFeatures(p,{layers:['k-addr'].filter(id=>map.getLayer(id))}).length;
+ const onEvent=p=>RINGS_ON?!!hitRing(p):map.queryRenderedFeatures(p,{layers:['k-addr'].filter(id=>map.getLayer(id))}).length>0;
  map.on('mousemove',e=>{
   const ic=iconAt(e.point);
   if(ic){ if(map.getSource('k-dist')) distHover(-1); return tip(e,iconTip(ic))}
