@@ -27,6 +27,8 @@ LIBS_GL = r"""<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.10.0/
 .k-tip b{display:block;margin-bottom:2px}
 .k-tip span{display:block;color:var(--dim);font-size:11px}
 .rpop .sub{display:block;color:var(--dim);font-size:11.5px}
+/* Високе вікно вулиці прокручується всередині (висоту ставить keepClear). */
+.maplibregl-popup .rpop{overflow-y:auto;overscroll-behavior:contain}
 </style>"""
 HEAD_TPL = r"""<!DOCTYPE html><html lang="uk"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">

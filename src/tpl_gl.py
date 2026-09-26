@@ -344,27 +344,46 @@ function openAt(i,ll){
 // Межі вікна рахуємо від точки адреси й розміру вікна, а не від його
 // прямокутника на екрані: у перші кадри MapLibre ще не поставив вікно на
 // місце, і прямокутник показував лівий верхній кут карти.
+//
+// Вікно видно цілком (розд. 23, п. 9): висоту обмежуємо вільним місцем по
+// вертикалі — високе вікно прокручується всередині, а не вилазить за край;
+// кнопки масштабу й теми ліворуч угорі вікно теж не закриває.
 function keepClear(pp,at,off){
  const el=pp&&pp.getElement(); if(!el) return;
- const w=el.offsetWidth, h=el.offsetHeight, q=map.project(at);
- const cw=map.getContainer().clientWidth, ch=map.getContainer().clientHeight, pad=12;
- const r={left:q.x-w/2,right:q.x+w/2,top:q.y-off-h,bottom:q.y};
+ const cont=map.getContainer(), cw=cont.clientWidth, ch=cont.clientHeight, pad=12, TIP=12;
+ const box=e=>{ if(!e||!e.offsetWidth) return null;
+  const m=cont.getBoundingClientRect(), s=e.getBoundingClientRect();
+  return {left:s.left-m.left,right:s.right-m.left,top:s.top-m.top,bottom:s.bottom-m.top}};
  let L=pad, R=cw-pad, T=pad, B=ch-pad;
- const side=$('#side');
- if(side&&side.offsetWidth){
-  const m=map.getContainer().getBoundingClientRect(), s=side.getBoundingClientRect();
-  const c={left:s.left-m.left,right:s.right-m.left,top:s.top-m.top,bottom:s.bottom-m.top};
-  // Праворуч угорі на широкому екрані, знизу на всю ширину на телефоні.
-  if(c.left<=cw/2) B=Math.min(B,c.top-pad);
-  else if(r.top<c.bottom&&r.bottom>c.top) R=Math.min(R,c.left-pad);
- }
+ // Картка праворуч угорі на широкому екрані, знизу на всю ширину на телефоні.
+ const c=box($('#side')), phone=!!c&&c.left<=cw/2;
+ if(phone) B=Math.min(B,c.top-pad);
+ // Кнопки ліворуч угорі. Якщо поруч із ними вікну не вміститися (вузький
+ // екран), вікно стоїть нижче за них.
+ const k=box(cont.querySelector('.maplibregl-ctrl-top-left'));
+ if(k&&cw-(k.right+pad)-pad<el.offsetWidth) T=Math.max(T,k.bottom+pad);
+ // Прокрутка — у вмісті вікна (.lp — адреса й вулиця, .rpop — вулиця
+ // «Схожих умов»); 24 — внутрішні поля вікна.
+ const sc=el.querySelector('.lp,.rpop');
+ if(sc) sc.style.maxHeight=Math.max(120,Math.min(560,B-T-off-TIP-24))+'px';
+ const w=el.offsetWidth, h=el.offsetHeight, q=map.project(at);
+ const r={left:q.x-w/2,right:q.x+w/2,top:q.y-off-TIP-h,bottom:q.y};
+ if(c&&!phone&&r.top<c.bottom&&r.bottom>c.top) R=Math.min(R,c.left-pad);
  let dx=0,dy=0;
  if(r.right>R) dx=r.right-R;
  if(r.left-dx<L) dx=r.left-L;
  if(r.bottom>B) dy=r.bottom-B;
  if(r.top-dy<T) dy=r.top-T;
+ // Вікно, що налізло на кнопки ліворуч угорі, опускаємо під них, а якщо
+ // знизу місця немає — зсуваємо праворуч від них.
+ if(k){const t=r.top-dy, b=r.bottom-dy, l=r.left-dx;
+  if(l<k.right+pad&&t<k.bottom+pad){
+   const down=k.bottom+pad-t, right=k.right+pad-l;
+   if(b+down<=B) dy-=down; else if(r.right-dx+right<=R) dx-=right}}
  if(dx||dy) map.panBy([dx,dy],{duration:450});
 }
+// Esc закриває вікно адреси чи вулиці (панель рішень Esc закриває сама, tpl_core).
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&POPUP) POPUP.remove()});
 // Поки видно кільця, шар адрес лише прозорий, не вимкнений (addrLayerVisible):
 // клік і курсор над ним тоді належать кільцям.
 map.on('click','k-addr',e=>{ if(RINGS_ON||iconAt(e.point)) return;
@@ -770,6 +789,9 @@ map.on('click',e=>{
  const o=hitRing(e.point); if(!o) return;
  CLICK_TAKEN=true;
  if(o.dot) return openAt(LEAF[o.k]);
+ // Кільце вікна не має — веде до своїх адрес; вікно попереднього місця
+ // зайве там, куди летимо.
+ if(POPUP) POPUP.remove();
  const q=o.j*4, bb=BB[o.i], z=map.getZoom();
  const side=$('#side'), W=map.getContainer().clientWidth;
  const right=side&&side.offsetWidth&&W>700?side.offsetWidth+40:40;
@@ -1125,8 +1147,9 @@ function simPopup(f,ll){
  }
  if(POPUP) POPUP.remove();
  clearNear();
- POPUP=new maplibregl.Popup({maxWidth:'320px',focusAfterOpen:false,closeOnClick:false}).setLngLat(ll).setDOMContent(w).addTo(map);
+ POPUP=new maplibregl.Popup({maxWidth:'320px',anchor:'bottom',focusAfterOpen:false,closeOnClick:false}).setLngLat(ll).setDOMContent(w).addTo(map);
  POPUP.on('close',()=>clearNear());
+ keepClear(POPUP,[ll.lng,ll.lat],0);
 }
 const simIds=()=>SIMK.flatMap(gi=>['k-sim-'+gi,'k-simq-'+gi]).filter(id=>map.getLayer(id)&&map.getLayoutProperty(id,'visibility')==='visible');
 function ctxEvents(){
