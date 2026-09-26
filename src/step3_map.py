@@ -78,6 +78,15 @@ MIN_EVENT_DATE = '2023-01-01'
 docref = PD.docref
 
 
+def ev_date(tk, decision):
+    """Дата події з проходу по текстах — лише якщо вона не пізніша за саме
+    рішення: подія не може статися після суду. Так відсіюються описки в
+    текстах («06.11.20524» дало подію 2052 року), які прохід уже записав.
+    Інакше '' — і тоді береться дата рішення, як для подій без дати."""
+    d = (tk or {}).get('date') or ''
+    return d if d and (not decision or d <= decision) else ''
+
+
 def main(district=None, out=None):
     """Збирає карту. Версія одна: поділу на викладацьку й слухацьку немає —
     проблеми бачать усі, слухач копає причину далі за SARA."""
@@ -190,7 +199,7 @@ def vybir(c, print=print):
         # а не рішення (рішення 24.09, п.3). Старіші лишаються в даних.
         # Дати події немає — рахуємо за датою рішення: рік на карті один, і
         # «раніше 2023» туди не йде так само (рішення 24.09, п.4).
-        ed = (TKD.get(rep[0]) or {}).get('date') or ''
+        ed = ev_date(TKD.get(rep[0]), rep[3])
         if (ed or rep[3] or '') < MIN_EVENT_DATE:
             n_old[PD.theme(rep[2])] += 1
             continue
@@ -237,9 +246,11 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
     li = {k: i for i, k in enumerate(labels)}
     ck = sorted({r[1] for r in rows}); ci = {v: i for i, v in enumerate(ck)}
 
+    # Роки — усі, що є серед подій (від MIN_EVENT_DATE). Кошика «раніше» для
+    # малих років більше немає (розд. 25, А7): події до 2023 на карту не йдуть,
+    # а малим «роком» виявлялася лише описка в даті (2052).
     yc = collections.Counter(ev_year[r[0]] for r in rows)
-    yrs = sorted(y for y, n in yc.items() if n >= 200 and y.isdigit())
-    ykeys = yrs + (['раніше'] if sum(n for y, n in yc.items() if y not in yrs) else [])
+    ykeys = sorted(y for y in yc if y.isdigit())
     yi = {y: i for i, y in enumerate(ykeys)}
     print('роки:', ', '.join(ykeys))
     print(f'статей після злиття: {len(labels)} (було би {len({r[2] for r in rows})} за кодами)')
@@ -272,12 +283,12 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
         # Панель показує дату й час самої події з проходу: дата рішення буває
         # на місяць пізніше («2026-04-22 · 23:00» при події 21.03.2026). Нема
         # дати події — дата рішення з позначкою «рішення» (рішення 24.09).
-        ed = (tk or {}).get('date') or ''
+        ed = ev_date(tk, date)
         et = (tk or {}).get('time') or ''
         if et[:2].isdigit():
             tm = et
         agg[(round(la, 5), round(lo, 5))].append(
-            (ci[court], li[lb], yi.get(ev_year[doc], yi.get('раніше', 0)),
+            (ci[court], li[lb], yi.get(ev_year[doc], 0),
              int(tm[:2]) if tm and tm[:2].isdigit() else -1,
              PREC.get(prec, 0), date, street or '', house or '',
              *extra.get(doc, ('', '')),

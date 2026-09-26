@@ -134,7 +134,8 @@ def load_events():
             for doc, court, cat, date, tm, street, house, *_ in V['rows']:
                 tk = V['TKD'].get(doc) or {}
                 et = tk.get('time') or ''
-                out.append((court, cat, tk.get('date') or date, street, house,
+                # та сама дата події, що й на карті (step3_map.ev_date)
+                out.append((court, cat, M3.ev_date(tk, date) or date, street, house,
                             et if et[:2].isdigit() else tm))
             return out
     except Exception as e:
