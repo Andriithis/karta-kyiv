@@ -259,9 +259,15 @@ function cityBox(){let s=90,w=180,n=-90,e=-180;
 // Увесь Київ (розд. 25, А3): на старті й після виходу з району. Раніше тут
 // був сталий центр і z11 — на вузькому екрані частина міста лишалася за
 // краєм, на широкому — під карткою.
+// Зум — рівно на рівень дерева кілець (кратний кроку 0,5), трохи дрібніше
+// за «впритул»: поза рухом зуму береться найближчий рівень, а його кільця
+// розраховані на свій зум; між рівнями, на z9,8, два кільця вже налазили.
 function fitCity(duration){const b=cityBox();
- if(b) map.fitBounds(b,{padding:sidePad(),duration});
- else map.flyTo({center:[CITY.c[1],CITY.c[0]],zoom:CITY.z,duration})}
+ if(!b) return map.flyTo({center:[CITY.c[1],CITY.c[0]],zoom:CITY.z,duration});
+ let cam=null; try{cam=map.cameraForBounds(b,{padding:sidePad()})}catch(e){}
+ if(!cam) return map.fitBounds(b,{padding:sidePad(),duration});
+ const z=Math.max(TZ0,TZ0+Math.floor((cam.zoom-TZ0)/TDZ+1e-6)*TDZ);
+ map.easeTo({center:cam.center,zoom:z,duration})}
 function enterDistrict(i,fly){
  if(M.only||!(i>=0&&i<DN.length)) return;
  CURD=i; paintScope();
