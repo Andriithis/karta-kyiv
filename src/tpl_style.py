@@ -43,6 +43,12 @@ LIBS_GL = r"""<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.10.0/
  padding:8px 0 0;margin-top:6px;box-shadow:0 -10px 10px -10px rgba(0,0,0,.28)}
 .maplibregl-popup .lpf .pbtn2{margin-top:0;flex:1;min-height:32px}
 .maplibregl-popup .hxl{font-size:10px;color:var(--faint);text-align:center;margin:-4px 0 7px}
+/* Чипи (рік, час доби, кольори, «тихі вулиці») — однакові скрізь (розд. 25,
+   А7): вибраний — залитий чорнилом, невибраний — контур, видимий на
+   підкладці (--dim, а не ледь помітний --rule). Висота ~32 px — ціль кліку. */
+#adv .chip,#side .chip{padding:6px 10px;min-height:30px;border:1px solid var(--dim);border-radius:5px;
+ background:var(--panel);color:var(--ink);line-height:1.2}
+#adv .chip[aria-pressed="true"],#side .chip[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
 /* Смужка завантаження вгорі карти — доки не прийшла підкладка (розд. 25, А3). */
 #kload{position:absolute;top:0;left:0;right:0;height:3px;z-index:5;pointer-events:none;overflow:hidden}
 #kload::after{content:"";position:absolute;top:0;bottom:0;width:30%;background:var(--ink);opacity:.55;

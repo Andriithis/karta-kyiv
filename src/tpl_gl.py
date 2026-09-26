@@ -414,6 +414,7 @@ function openAt(i,ll){
  const p=P[i], st=LASTST||computeVis(), v=st.vis.find(x=>x[0]===p);
  const node=shapePopup(!p[3]?streetHTML(p,st):v?popupHTML(...v,st):hiddenHTML(p),p[3]?v:null);
  if(POPUP) POPUP.remove();
+ advOpen(false);
  clearNear();
  const off=ll?0:rNow(i), at=ll||[p[1],p[0]];
  // Вікно завжди над адресою. Без сталого боку MapLibre сам перебирав, куди
@@ -470,8 +471,13 @@ function keepClear(pp,at,off){
    if(b+down<=B) dy-=down; else if(r.right-dx+right<=R) dx-=right}}
  if(dx||dy) map.panBy([dx,dy],{duration:450});
 }
-// Esc закриває вікно адреси чи вулиці (панель рішень Esc закриває сама, tpl_core).
-document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&POPUP) POPUP.remove()});
+// Esc закриває вікно адреси чи вулиці й «Розширено» (панель рішень Esc
+// закриває сама, tpl_core).
+document.addEventListener('keydown',e=>{ if(e.key!=='Escape') return;
+ if(POPUP) POPUP.remove(); advOpen(false)});
+// Одна відкрита панель за раз (розд. 25, А7): «Розширено» і вікно адреси
+// водночас не відкриті — картка «Статті» лягала поверх вікна.
+$('#advbtn').addEventListener('click',()=>{ if(!$('#adv').hidden&&POPUP) POPUP.remove()});
 // Поки видно кільця, шар адрес лише прозорий, не вимкнений (addrLayerVisible):
 // клік і курсор над ним тоді належать кільцям (addrAt це враховує). Клік —
 // за зоною addrAt, а не за самим колом: дрібну адресу інакше не влучити.
@@ -1208,6 +1214,7 @@ function simPopup(f,ll){
  if(v.method) h+=`<div class="rmeth">${esc(bezSliv(v.method))}</div>`;
  const an=v.slug?('#t-'+v.slug):'';
  h+=`<a class="rdoc" href="doslidzhennya.html${(it[1]&&it[1]!=='без назви')?('?st='+encodeURIComponent(it[1])):''}${an}" target="_blank" rel="noopener">Розбір вулиці в дослідженні ↗</a></div>`;
+ advOpen(false);
  const w=document.createElement('div'); w.innerHTML=h;
  // Чинники моделі поруч — якщо модель їх назвала; інакше просто все, що є
  // в 250 м (як bindRisk у tpl_map).
@@ -1273,7 +1280,7 @@ function ctxEvents(){
   const ic=iconAt(e.point); if(ic) return tip(e,iconTip(ic));
   if(CLICK_TAKEN||onEvent(e.point)) return;
   const s=near(e.point,simIds())[0]; if(s){TIP.remove(); return simPopup(s,e.lngLat)}
-  if(POPUP) POPUP.remove()});
+  if(POPUP) POPUP.remove(); advOpen(false)});
 }
 // ---- ВИГЛЯД: «Кільця · Адреси · Проблеми» (розд. 23, п. 7 і 9) ----
 // Замість «Події · Проблеми · Теплова» спільної панелі — лише в GL-збірці.
