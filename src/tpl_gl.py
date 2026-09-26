@@ -199,7 +199,7 @@ map.addControl(new ThemeCtl(),'top-left');
 // Після кожного завантаження стилю: сюди наступні коміти додаватимуть
 // картинки (addImage не переживає setStyle) і фарбування наших шарів у
 // кольори теми.
-function onStyleReady(){STYLE_OK=true; addrReady(); ctxReady(); drawRisks()}
+function onStyleReady(){STYLE_OK=true; addrReady(); ctxReady(); distReady(); drawRisks(); paintScope()}
 map.on('style.load',onStyleReady);
 function setTheme(t){
  if(!OFM[t]||t===THEME) return;
@@ -213,13 +213,12 @@ function setTheme(t){
  setBase(t);
 }
 // ---- РАЙОНИ ----
-// Перехід у район працює вже в каркасі: від нього залежать лічильники панелі.
-// Маска й межі на карті — у коміті районів.
+// Вхід і вихід — з панелі (меню «Район») або адресою #desna; межі, маску й
+// підсвітку малює paintScope у JS_GL_DRAW.
 const CITY={c:C0,z:11};
 function bboxOf(ring){let s=90,w=180,n=-90,e=-180;
  for(const q of ring){if(q[0]<s)s=q[0];if(q[0]>n)n=q[0];if(q[1]<w)w=q[1];if(q[1]>e)e=q[1]}
  return [[w,s],[e,n]]}
-function paintScope(){}
 function enterDistrict(i,fly){
  if(M.only||!(i>=0&&i<DN.length)) return;
  CURD=i; paintScope();
@@ -417,13 +416,19 @@ let SUM=[], TOT=[], ACT=[], ONE=[], LEAFV=[];
 // (PTN — її подій): ромб на краю кільця має цей колір. PROBK — адреси з
 // проблемами за поточним фільтром, для ромбів вигляду «Адреси».
 let NP=[], PT=[], PTN=[], PROBK=[];
+// SX, SY — суми координат адрес вузла з подіями за фільтром. У районі
+// кільце стає в їхній центр, а не в центр кластера з дерева: дерево рахує
+// центр за всіма адресами міста, і кільце з подіями Подолу могло стояти
+// за межею Подолу, під затемненням.
+let SX=[], SY=[];
 function ringSums(st){
  const vm=new Map(st.vis.map(v=>[v[0],v])), mx=st.vis.length?st.vis[0][1]:1;
- SUM=[];TOT=[];ACT=[];ONE=[];NP=[];PT=[];PTN=[];PROBK=[];
+ SUM=[];TOT=[];ACT=[];ONE=[];NP=[];PT=[];PTN=[];PROBK=[];SX=[];SY=[];
  for(let i=0;i<=NL;i++){const n=nOf(i); SUM.push(new Int32Array(n*NG)); TOT.push(new Int32Array(n)); ACT.push(new Int32Array(n)); ONE.push(new Int32Array(n).fill(-1));
-  NP.push(new Int32Array(n)); PT.push(new Int32Array(n).fill(-1)); PTN.push(new Int32Array(n))}
+  NP.push(new Int32Array(n)); PT.push(new Int32Array(n).fill(-1)); PTN.push(new Int32Array(n));
+  SX.push(new Float64Array(n)); SY.push(new Float64Array(n))}
  LEAFV=LEAF.map((pi,k)=>{const v=vm.get(P[pi]); if(!v) return null;
-  TOT[NL][k]=v[1]; ACT[NL][k]=1; ONE[NL][k]=k;
+  TOT[NL][k]=v[1]; ACT[NL][k]=1; ONE[NL][k]=k; SX[NL][k]=P[pi][1]; SY[NL][k]=P[pi][0];
   for(const g in v[4]) SUM[NL][k*NG+(+g)]=v[4][g];
   // Проблеми — тим самим правилом, що й у computeVis і у вікні адреси:
   // проблема за прихованим видом для цього вигляду не проблема.
@@ -437,6 +442,7 @@ function ringSums(st){
   const n=nOf(i);
   for(let j=0;j<n;j++){ if(!t[j]) continue; const p=parOf(i,j);
    pt[p]+=t[j]; pa[p]+=a[j]; if(po[p]<0) po[p]=o[j];
+   SX[i-1][p]+=SX[i][j]; SY[i-1][p]+=SY[i][j];
    if(np[j]){pnp[p]+=np[j]; if(pn[j]>ppn[p]){ppn[p]=pn[j]; ppq[p]=pq[j]}}
    for(let g=0;g<NG;g++) ps[p*NG+g]+=s[j*NG+g]}}
 }
@@ -450,7 +456,9 @@ const fmtN=v=>v>=10000?Math.round(v/1000)+'k':v>=1000?(v/1000).toFixed(1).replac
 function nodeAt(i,j,box){
  if(!TOT.length||!TOT[i][j]) return null;
  const one=ACT[i][j]===1, k=one?ONE[i][j]:-1;
- const lon=one?P[LEAF[k]][1]:LV[i].c[2*j], lat=one?P[LEAF[k]][0]:LV[i].c[2*j+1];
+ const own=CURD>=0&&!one;
+ const lon=one?P[LEAF[k]][1]:own?SX[i][j]/ACT[i][j]:LV[i].c[2*j],
+       lat=one?P[LEAF[k]][0]:own?SY[i][j]/ACT[i][j]:LV[i].c[2*j+1];
  if(box&&(lon<box[0]||lon>box[2]||lat<box[1]||lat>box[3])) return null;
  if(one) return {dot:true,k,lon,lat,n:TOT[i][j]};
  return {dot:false,lon,lat,n:TOT[i][j],s:SUM[i].subarray(j*NG,(j+1)*NG),i,j,np:NP[i][j],pt:PT[i][j]};
@@ -752,7 +760,7 @@ window.kartaKilcia=()=>{const vm=new Map(LASTST.vis.map(v=>[v[0],v[1]]));
  return VIS.filter(o=>!o.dot).map(o=>{let s=0, a=0;
   const walk=(i,j)=>{ if(i===NL){const n=vm.get(P[LEAF[j]]); if(n){s+=n;a++} return}
    for(const c of CH[i][j]) walk(i+1,c)};
-  walk(o.i,o.j); return {na_kilci:o.n, suma_adres:s, adres:a}})};
+  walk(o.i,o.j); return {na_kilci:o.n, suma_adres:s, adres:a, lon:o.lon, lat:o.lat}})};
 // ---- ШАРИ ПІД ПОДІЯМИ: СХОЖІ УМОВИ, ПОТОКИ, НАСЕЛЕННЯ, ТЕПЛОВА ----
 // Видимість шару міняємо лише тоді, коли вона справді змінилася.
 function layerVis(id,v){ if(!map.getLayer(id)) return;
@@ -879,6 +887,54 @@ function drawRisks(){
  if(map.getLayer('k-addr')) map.setPaintProperty('k-addr','circle-opacity',RING_A);
  map.triggerRepaint();
 }
+// ---- РАЙОНИ: МЕЖІ, МАСКА, ПІДСВІТКА ----
+// Те саме, що в tpl_map: на міському огляді — межі всіх районів пунктиром і
+// ледь помітна заливка, під курсором район підсвічується; у районі — лише
+// його межа суцільною лінією, решта міста під затемненням кольору підкладки.
+// Входять і виходять з району в панелі (меню «Район») — клік по карті
+// лишається за кільцями й адресами: у щільному центрі межу району однаково
+// не влучити, її закривають позначки.
+// Затемнення — багатокутник на весь світ з діркою-районом. У Leaflet рамку
+// доводилося перебудовувати з кожним рухом (полотно обрізало великий
+// багатокутник); MapLibre малює світовий багатокутник як є.
+const WORLD=[[-180,-85],[180,-85],[180,85],[-180,85],[-180,-85]];
+const ringLL=r=>{const c=r.map(q=>[q[1],q[0]]); const a=c[0], b=c[c.length-1];
+ if(a[0]!==b[0]||a[1]!==b[1]) c.push(a); return c};
+let DIST_HOVER=-1;
+function distReady(){
+ if(!DN.length||M.only||map.getSource('k-dist')) return;
+ const before=map.getLayer('k-pop')?'k-pop':(map.getLayer('k-addr-shadow')?'k-addr-shadow':undefined);
+ map.addSource('k-dist',{type:'geojson',data:fc(DN.map((nm,i)=>({type:'Feature',id:i,
+  geometry:{type:'Polygon',coordinates:[ringLL(DBORD[i])]},properties:{i}})))});
+ map.addSource('k-mask',{type:'geojson',data:fc([])});
+ map.addLayer({id:'k-mask',type:'fill',source:'k-mask',paint:{'fill-opacity':.78}},before);
+ map.addLayer({id:'k-dist-fill',type:'fill',source:'k-dist',
+  paint:{'fill-opacity':['case',['boolean',['feature-state','hover'],false],.13,.05]}},before);
+ // Пунктир 7/5 px, як у Leaflet: у MapLibre довжини рисок — у товщинах лінії.
+ map.addLayer({id:'k-dist-line',type:'line',source:'k-dist',
+  paint:{'line-width':1.8,'line-dasharray':[7/1.8,5/1.8],
+   'line-opacity':['case',['boolean',['feature-state','hover'],false],.95,.85]}},before);
+ map.addLayer({id:'k-dist-sel',type:'line',source:'k-dist',filter:['==',['get','i'],-1],
+  paint:{'line-width':1.8,'line-opacity':1}},before);
+}
+function paintScope(){
+ if(!STYLE_OK||!map.getSource('k-dist')) return;
+ const dim=cssv('--dim'), ground=cssv('--ground'), city=CURD<0;
+ map.setPaintProperty('k-dist-fill','fill-color',dim);
+ for(const id of ['k-dist-line','k-dist-sel']) map.setPaintProperty(id,'line-color',dim);
+ map.setPaintProperty('k-mask','fill-color',ground);
+ layerVis('k-dist-fill',city); layerVis('k-dist-line',city);
+ map.setFilter('k-dist-sel',['==',['get','i'],CURD]);
+ map.getSource('k-mask').setData(fc(city?[]:[{type:'Feature',properties:{},
+  geometry:{type:'Polygon',coordinates:[WORLD,ringLL(DBORD[CURD])]}}]));
+ if(!city) distHover(-1);
+}
+function distHover(i){
+ if(i===DIST_HOVER) return;
+ if(DIST_HOVER>=0) map.setFeatureState({source:'k-dist',id:DIST_HOVER},{hover:false});
+ DIST_HOVER=i;
+ if(i>=0) map.setFeatureState({source:'k-dist',id:i},{hover:true});
+}
 // ---- ПІДКАЗКИ Й ВІКНО ВУЛИЦІ ----
 // Слова «ризик» і «прогноз» у новій карті не вживаємо (розд. 23, п. 8); текст
 // методики приходить з двигуна з «за прогнозом» — міняємо на місці.
@@ -937,7 +993,7 @@ function ctxEvents(){
  const near=(p,ids)=>ids.length?map.queryRenderedFeatures([[p.x-4,p.y-4],[p.x+4,p.y+4]],{layers:ids}):[];
  const onEvent=p=>(RINGS_ON&&hitRing(p))||map.queryRenderedFeatures(p,{layers:['k-addr'].filter(id=>map.getLayer(id))}).length;
  map.on('mousemove',e=>{
-  if(onEvent(e.point)){TIP.remove(); return}
+  if(onEvent(e.point)){TIP.remove(); if(map.getSource('k-dist')) distHover(-1); return}
   const s=near(e.point,simIds())[0];
   if(s){const {v,q,it}=simItem(s); map.getCanvas().style.cursor='pointer';
    return tip(e,`<b>${esc(it[1])}</b><span>${esc(simLine(v,it,q))}. Клікніть для деталей</span>`)}
@@ -948,9 +1004,14 @@ function ctxEvents(){
   const pp=map.getLayoutProperty('k-pop','visibility')==='visible'&&map.queryRenderedFeatures(e.point,{layers:['k-pop']})[0];
   if(pp) return tip(e,`<b>${pp.properties.n.toLocaleString('uk')} осіб</b>`);
   if(!RINGS_ON) map.getCanvas().style.cursor='';
+  // Район під курсором — підсвітка й назва, лише на міському огляді.
+  const d=CURD<0&&map.getLayer('k-dist-fill')&&map.queryRenderedFeatures(e.point,{layers:['k-dist-fill']})[0];
+  if(d){const i=d.properties.i, np=(M.dprob||[])[i]||0; distHover(i);
+   return tip(e,`<b>${esc(DN[i])}</b>`+(np?`<span>${np} ${pl(np,'проблема','проблеми','проблем')}</span>`:''))}
+  if(map.getSource('k-dist')) distHover(-1);
   tip(e,null);
  });
- map.on('mouseout',()=>TIP.remove());
+ map.on('mouseout',()=>{TIP.remove(); if(map.getSource('k-dist')) distHover(-1)});
  // Клік по смузі — вікно вулиці. Кільце чи адреса під курсором важливіші:
  // їхні власні обробники вже відкривають своє.
  map.on('click',e=>{ if(onEvent(e.point)) return;
