@@ -29,6 +29,23 @@ LIBS_GL = r"""<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.10.0/
 .rpop .sub{display:block;color:var(--dim);font-size:11.5px}
 /* Високе вікно вулиці прокручується всередині (висоту ставить keepClear). */
 .maplibregl-popup .rpop{overflow-y:auto;overscroll-behavior:contain}
+/* Вікно адреси (розд. 25, А1). × — зона кліку 36 px. Прокрутка без
+   системного повзунка: у вузькому вікні він з'їдав місце й виглядав чужим;
+   що нижче є ще, видно з тіні над закріпленими кнопками. */
+.maplibregl-popup-close-button{width:36px;height:36px;font-size:20px;line-height:36px;
+ color:var(--dim);border-radius:0 8px 0 8px;z-index:2}
+.maplibregl-popup-close-button:hover{background:var(--sunk);color:var(--ink)}
+.maplibregl-popup .lp,.maplibregl-popup .rpop{scrollbar-width:none}
+.maplibregl-popup .lp::-webkit-scrollbar,.maplibregl-popup .rpop::-webkit-scrollbar{display:none}
+.maplibregl-popup .lph{position:sticky;top:0;z-index:1;background:var(--panel);padding:0 30px 4px 0;margin-bottom:2px}
+.maplibregl-popup .lph b{margin-bottom:2px}
+.maplibregl-popup .lpf{position:sticky;bottom:0;z-index:1;background:var(--panel);display:flex;gap:6px;
+ padding:8px 0 0;margin-top:6px;box-shadow:0 -10px 10px -10px rgba(0,0,0,.28)}
+.maplibregl-popup .lpf .pbtn2{margin-top:0;flex:1;min-height:32px}
+.maplibregl-popup .hxl{font-size:10px;color:var(--faint);text-align:center;margin:-4px 0 7px}
+.bd td.lpmorec{text-align:left;width:auto;padding-left:0;font-family:var(--sans)}
+.lpmore{background:none;border:0;padding:4px 0;min-height:28px;font:inherit;font-size:11.5px;color:var(--dim);
+ cursor:pointer;text-decoration:underline}
 </style>"""
 HEAD_TPL = r"""<!DOCTYPE html><html lang="uk"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">

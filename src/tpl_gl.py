@@ -322,9 +322,48 @@ function rNow(i){
 // Вміст — той самий вузол, що й у Leaflet (popupHTML з tpl_core): склад
 // подій, картки проблем, «Усі рішення (N)».
 let POPUP=null;
+// ---- ВИГЛЯД ВІКНА АДРЕСИ (розд. 25, А1) ----
+// Вміст спільний із запасною картою (popupHTML, streetHTML з tpl_core), тож
+// тут лише перекладаємо готовий вузол: адреса закріплена вгорі, «Що поруч» і
+// «Усі рішення» — унизу, їх видно завжди, хоч який довгий перелік між ними;
+// підсумок — одним рядком; статей — п'ять, решта під «ще N».
+const ART_SHOW=5;
+function shapePopup(node,v){
+ const lp=node.querySelector('.lp'); if(!lp) return node;
+ const head=document.createElement('div'); head.className='lph';
+ for(const el of [...lp.children]){ if(el.matches('.cbadge,b,.an')) head.appendChild(el); else break }
+ lp.prepend(head);
+ if(v){const [p,n,th,byProblem,cnt,thMaj]=v;
+  // «34 події · переважає порядок, 25» замість двох рядків.
+  const tts=[...lp.querySelectorAll(':scope > .tt')];
+  if(tts.length&&thMaj!==null){
+   const k=cnt[thMaj], nm=lc(shortOf(thMaj));
+   let t=`${fmt(n)} ${pl(n,'подія','події','подій')} · `+(k===n?`усі — ${nm}`:`переважає ${nm}, ${fmt(k)}`);
+   // Колір точки — за проблемою, а переважає інше: це кажемо, бо інакше колір
+   // і рядок суперечили б мовчки (так само в tpl_core).
+   if(byProblem&&th!==thMaj) t+=` · колір — за проблемою (${lc(shortOf(th))})`;
+   tts[0].textContent=t; tts.slice(1).forEach(x=>x.remove());
+  }
+ }
+ // Перші п'ять статей, решта — під «ще N».
+ const tb=lp.querySelector(':scope > table.bd');
+ if(tb){const rows=[...tb.rows];
+  if(rows.length>ART_SHOW+1){const rest=rows.slice(ART_SHOW); rest.forEach(r=>r.hidden=true);
+   const tr=tb.insertRow(), td=tr.insertCell(); td.colSpan=2; td.className='lpmorec';
+   const b=document.createElement('button'); b.className='lpmore'; b.textContent=`ще ${rest.length}`;
+   b.onclick=()=>{rest.forEach(r=>r.hidden=false); tr.remove()}; td.appendChild(b)}}
+ // Під гістограмою — що саме на осі.
+ const hx=lp.querySelector(':scope > .hx');
+ if(hx) hx.insertAdjacentHTML('afterend','<div class="hxl">година доби</div>');
+ // Головні дії — унизу, закріплені.
+ const acts=[...lp.querySelectorAll(':scope > button[data-na], :scope > button[data-all]')];
+ if(acts.length){const foot=document.createElement('div'); foot.className='lpf';
+  acts.forEach(b=>foot.appendChild(b)); lp.appendChild(foot)}
+ return node;
+}
 function openAt(i,ll){
  const p=P[i], st=LASTST||computeVis(), v=st.vis.find(x=>x[0]===p);
- const node=!p[3]?streetHTML(p,st):v?popupHTML(...v,st):hiddenHTML(p);
+ const node=shapePopup(!p[3]?streetHTML(p,st):v?popupHTML(...v,st):hiddenHTML(p),p[3]?v:null);
  if(POPUP) POPUP.remove();
  clearNear();
  const off=ll?0:rNow(i), at=ll||[p[1],p[0]];
