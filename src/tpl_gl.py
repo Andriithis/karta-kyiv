@@ -183,8 +183,11 @@ map.on('error',e=>{if(!STYLE_OK){console.warn('Помилка стилю:',e&&e.
 // У стилях OpenFreeMap шар лісу просить картинку wood-pattern, якої в
 // їхньому наборі немає, — у консолі сипалися попередження. Бракує картинки
 // підкладки — ставимо порожню; наші (k-…) додаються з кожним стилем самі.
-map.on('styleimagemissing',e=>{ if(!String(e.id).startsWith(OURS)&&!map.hasImage(e.id))
- map.addImage(e.id,{width:1,height:1,data:new Uint8Array(4)})});
+// Саме резолвером, а не подією styleimagemissing: у 6.10 подія приходить
+// разом із попередженням, тобто вже пізно; резолвер питають раніше, і він
+// переходить у кожен новий стиль сам.
+map.setMissingStyleImageResolver(id=>{ if(!String(id).startsWith(OURS)&&!map.hasImage(id))
+ map.addImage(id,{width:1,height:1,data:new Uint8Array(4)})});
 map.on('style.load',()=>clearTimeout(styleTimer));
 setBase(THEME);
 // Кільця й адреси — лише разом із підкладкою (розд. 25, А3): інакше на
