@@ -1237,7 +1237,14 @@ function ctxEvents(){
  map.on('mousemove',e=>{
   const ic=iconAt(e.point);
   if(ic){ if(map.getSource('k-dist')) distHover(-1); return tip(e,iconTip(ic))}
-  if(onEvent(e.point)){TIP.remove(); if(map.getSource('k-dist')) distHover(-1);
+  if(onEvent(e.point)){ if(map.getSource('k-dist')) distHover(-1);
+   // Кільце — що в ньому: «1 300 подій · 12 адрес · 2 проблеми» (розд. 25,
+   // А6). Число в центрі кільця скорочене (1,3k), тут — повне.
+   const o=RINGS_ON&&hitRing(e.point);
+   if(o&&!o.dot){const a=ACT[o.i][o.j], np=NP[o.i][o.j];
+    return tip(e,`<b>${fmt(o.n)} ${pl(o.n,'подія','події','подій')} · ${fmt(a)} ${pl(a,'адреса','адреси','адрес')}`+
+     (np?` · ${np} ${pl(np,'проблема','проблеми','проблем')}`:'')+'</b>')}
+   TIP.remove();
    // Над кільцем курсор ставить обробник кілець; над адресою — тут.
    if(!RINGS_ON) map.getCanvas().style.cursor='pointer'; return}
   const s=near(e.point,simIds())[0];
