@@ -225,7 +225,7 @@ def page(title, lead, body, back='index.html', script=''):
     return ('<!DOCTYPE html><html lang="uk"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<title>{esc(title)}</title><style>{CSS}</style></head><body><div class="wrap">'
-            f'<header><a class="back" href="{back}">← до карт</a>'
+            f'<header><a class="back" href="{back}">← до карти</a>'
             f'<h1>{esc(title)}</h1><div class="sub">{lead}</div></header>'
             f'{body}</div>{script}</body></html>')
 

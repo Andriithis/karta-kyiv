@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Карта на MapLibre GL — друга збірка, kyiv-gl.html.
+"""Карта на MapLibre GL — головна сторінка сайту (index.html) з 26.09.2026.
 
 Мета кроку 5 — паритет із Leaflet-версією: те саме, нічого більше. Цей файл
 будується комітами. У каркасі: завантаження бібліотеки, перевірка WebGL,
@@ -12,17 +12,19 @@ JS_GL_LOAD стоїть першим у модулі, JS_GL_MAP — після t
 після tpl_core. Порядок той самий, що й у Leaflet-збірці.
 """
 JS_GL_LOAD = r"""// Без WebGL векторна карта не намалюється зовсім — тоді одразу на
-// Leaflet-версію з тими самими параметрами адреси, щоб посилання на район
-// (#desna) не губилося.
+// запасну Leaflet-збірку з тими самими параметрами адреси, щоб посилання на
+// район (#desna) не губилося. Не на kyiv.html: це тепер переадресація сюди ж,
+// і вийшло б коло.
+const ZAPAS='karta-zapasna.html';
 {let ok=false;
  try{const c=document.createElement('canvas');ok=!!(c.getContext('webgl2')||c.getContext('webgl'))}catch(e){}
- if(!ok){location.replace('kyiv.html'+location.search+location.hash);throw new Error('немає WebGL')}}
+ if(!ok){location.replace(ZAPAS+location.search+location.hash);throw new Error('немає WebGL')}}
 // MapLibre 6.x — лише ES-модуль, глобального maplibregl більше немає.
 // Точна версія: оновлення бібліотеки має бути нашим рішенням, а не сюрпризом.
 let maplibregl;
 try{const m_=await import('https://unpkg.com/maplibre-gl@6.10.0/dist/maplibre-gl.mjs');
  maplibregl=m_.default||m_}
-catch(e){location.replace('kyiv.html'+location.search+location.hash);throw e}"""
+catch(e){location.replace(ZAPAS+location.search+location.hash);throw e}"""
 
 JS_GL_MAP = r"""// Дерево кластерів для «Кілець» рахується при збірці (map_clusters): без
 // нього браузер не знає, хто чий нащадок, і розпад кільця при наближенні

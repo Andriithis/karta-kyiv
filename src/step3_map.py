@@ -34,7 +34,20 @@ LAST_VYBIR = None       # відібрані події останньої зб�
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data'); DB = os.path.join(DATA, 'events.db')
-OUT  = os.path.join(ROOT, 'site', 'kyiv.html')
+# Типова карта з 26.09 — нова, на MapLibre, і вона ж головна сторінка сайту
+# (index.html). Leaflet-збірка лишається лише запасною для браузера без
+# WebGL: під іншою назвою й без посилань на неї, щоб на неї не потрапляли
+# випадково. OUT — саме вона: check_build перевіряє Leaflet-збірку.
+OUT  = os.path.join(ROOT, 'site', 'karta-zapasna.html')
+GL_NAME = 'index.html'
+# Старі адреси карти. На них є посилання в роздатках і закладках, тож вони
+# не зникають, а переводять на головну з тим самим районом (#desna).
+OLD_NAMES = ('kyiv.html', 'kyiv-gl.html')
+REDIRECT = ('<!DOCTYPE html><html lang="uk"><head><meta charset="utf-8">'
+            '<title>Карта правопорушень Києва</title>'
+            "<script>location.replace('./'+location.search+location.hash)</script>"
+            '<noscript><meta http-equiv="refresh" content="0; url=./"></noscript>'
+            '</head><body><a href="./">Карта правопорушень Києва</a></body></html>')
 NETW  = os.path.join(DATA, 'network.json')
 RISKF = os.path.join(DATA, 'risk.json')
 BORD  = os.path.join(DATA, 'borders.json')
@@ -383,13 +396,18 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
 
     open(dst, 'w', encoding='utf-8').write(html)
     print(f'готово: {os.path.basename(dst)} ({os.path.getsize(dst)/1048576:.1f} МБ)')
-    # Друга збірка, MapLibre, поруч із першою. Поки що лише міська карта:
-    # районні файли переходять разом із перемиканням типової версії, і тоді
-    # досить поставити GL_DISTRICTS = True.
+    # Збірка MapLibre поруч із запасною. Районних файлів у GL немає: район
+    # відкривається в міській карті (#desna). GL_DISTRICTS — на випадок, якщо
+    # вони знову знадобляться.
     if district is None or GL_DISTRICTS:
-        dst_gl = dst[:-len('.html')] + '-gl.html'
+        odir = os.path.dirname(dst) or '.'
+        dst_gl = (os.path.join(odir, GL_NAME) if district is None
+                  else dst[:-len('.html')] + '-gl.html')
+        if district is None:
+            for nm in OLD_NAMES:
+                open(os.path.join(odir, nm), 'w', encoding='utf-8').write(REDIRECT)
         # Дерево кластерів — лише для GL: Leaflet-версія кілець не малює, і
-        # kyiv.html від нього не змінюється ні на байт.
+        # запасна збірка від нього не змінюється ні на байт.
         tree = json.dumps(map_clusters.build(P), separators=(',', ':'))
         print(f'   дерево кластерів: {len(tree)/1024:.0f} КБ')
         open(dst_gl, 'w', encoding='utf-8').write(fill(TPL_GL).replace('__TREE__', tree))
