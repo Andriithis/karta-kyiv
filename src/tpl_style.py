@@ -16,7 +16,18 @@ LIBS_LEAFLET = r"""<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/
 # MapLibre 6.x поставляється лише як ES-модуль: dist/maplibre-gl.js більше
 # немає, тож сам JS підтягує скрипт сторінки через import (див. step3_tpl).
 # Тут лише стилі бібліотеки. Версія точна — оновлення не має приходити саме.
-LIBS_GL = r"""<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.10.0/dist/maplibre-gl.css">"""
+LIBS_GL = r"""<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.10.0/dist/maplibre-gl.css">
+<style>
+/* Лише для MapLibre-збірки: запасна Leaflet-карта цих правил не має.
+   Підказка при наведенні на смугу, потік чи населення — як .rt у Leaflet. */
+.k-tip{pointer-events:none}
+.k-tip .maplibregl-popup-content{padding:6px 9px;font:12px var(--sans);border:1px solid var(--rule);
+ border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.18)}
+.k-tip .maplibregl-popup-tip{display:none}
+.k-tip b{display:block;margin-bottom:2px}
+.k-tip span{display:block;color:var(--dim);font-size:11px}
+.rpop .sub{display:block;color:var(--dim);font-size:11.5px}
+</style>"""
 HEAD_TPL = r"""<!DOCTYPE html><html lang="uk"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Карта правопорушень Києва</title>

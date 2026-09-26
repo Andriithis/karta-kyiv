@@ -199,7 +199,7 @@ map.addControl(new ThemeCtl(),'top-left');
 // Після кожного завантаження стилю: сюди наступні коміти додаватимуть
 // картинки (addImage не переживає setStyle) і фарбування наших шарів у
 // кольори теми.
-function onStyleReady(){STYLE_OK=true; addrReady()}
+function onStyleReady(){STYLE_OK=true; addrReady(); ctxReady(); drawRisks()}
 map.on('style.load',onStyleReady);
 function setTheme(t){
  if(!OFM[t]||t===THEME) return;
@@ -239,10 +239,9 @@ window.addEventListener('hashchange',()=>{
 });
 // ---- ЗАГЛУШКИ ----
 // Ті самі імена, що й у Leaflet-збірці, — tpl_core кличе саме їх. Кожна
-// стане справжньою у своєму коміті (крок 9): ризик, потоки й теплова — 7,
-// чинники й «Що поруч» — 9.
+// стане справжньою у своєму коміті (крок 9): чинники й «Що поруч» — 9.
+// drawRisks («Схожі умови», потоки, населення) — у JS_GL_DRAW.
 let heatOn=false;
-function drawRisks(){}
 function drawFacts(){}
 function showNear(){return 0}
 function showAllNear(){return 0}
@@ -288,7 +287,7 @@ function addrReady(){
    // Малюється за зростанням ключа: великі адреси знизу, дрібні зверху, як у
    // Leaflet; адреси-проблеми — поверх усіх.
    layout:{'circle-sort-key':['get','k']},
-   paint:{'circle-radius':radiusBy(0),'circle-color':['get','c'],'circle-opacity':RING_OP,
+   paint:{'circle-radius':radiusBy(0),'circle-color':['get','c'],'circle-opacity':RING_A,
     'circle-stroke-width':1.5}});
  }
  // Гало й тінь — кольори теми з CSS: шари переходять у новий стиль як є,
@@ -304,7 +303,14 @@ function draw(){
  heatOn=(MODE==='heat');
  ringSums(st); map.triggerRepaint();
  if(!STYLE_OK||!map.getSource('k-addr')) return;
- // Теплова — у коміті ризику й потоків; поки що в цьому режимі позначок немає.
+ // Теплова — вбудованим шаром heatmap з тією самою вагою, що в Leaflet:
+ // там адреса давала min(n,20) точок, тут — одну точку вагою min(n,20).
+ // Стеля 20 — щоб одна вулиця з сотнями ДТП не випалювала пів міста.
+ if(map.getSource('k-heat')){
+  map.getSource('k-heat').setData({type:'FeatureCollection',features:heatOn?st.vis.map(([p,n])=>({
+   type:'Feature',geometry:{type:'Point',coordinates:[p[1],p[0]]},properties:{w:Math.min(n,20)}})):[]});
+  layerVis('k-heat',heatOn);
+ }
  const vis=heatOn?[]:st.vis, mx=vis.length?vis[0][1]:1;
  map.getSource('k-addr').setData({type:'FeatureCollection',features:vis.map(([p,n,th])=>({
   type:'Feature',geometry:{type:'Point',coordinates:[p[1],p[0]]},
@@ -386,7 +392,10 @@ function focusStreet(i,pts){afterMove(()=>openAt(i,map.getCenter())); focusBound
 // немає, адреси малює шар GL.
 const TZ0=TREE.z0, TDZ=TREE.dz, LV=TREE.lv, NL=LV.length, LEAF=TREE.leaf, NG=M.groups.length;
 // Непрозорість ~86% — однакова для кілець і крапок (розд. 23, п. 3).
-const RING_OP=.86;
+// Поки ввімкнено «Схожі умови» чи потоки, кільця й крапки прозоріші (~0,45):
+// смуги лежать під ними, і повна заливка їх закривала б (доповнення 17.09).
+const RING_OP=.86, RING_DIM=.45;
+let RING_A=RING_OP;
 const nOf=i=>i===NL?LEAF.length:LV[i].c.length/2;
 // Батько вузла j рівня i (i>=1) — на рівні i-1.
 const parOf=(i,j)=>LV[i-1].of[j];
@@ -630,10 +639,10 @@ const ringLayer={id:'k-rings', type:'custom', renderingMode:'2d',
     // крапка: вона не ховається в кільце (розд. 6). Місце під нього дерево
     // вже врахувало (map_clusters.r_addr).
     if(v.np&&SHOWP){later.push(()=>diamond(o.x,o.y,Math.max(7,r)*1.25,al,rgb(PALA[v.pt%PALA.length]))); continue}
-    quad(o.x,o.y,r+2,r,0,1,RING_OP*al,Q1,rgb(PALA[v.th%PALA.length])); continue}
+    quad(o.x,o.y,r+2,r,0,1,RING_A*al,Q1,rgb(PALA[v.th%PALA.length])); continue}
    const r=rRing(o.n), inner=r*.62, q=[1,1,1,1,1,1,1,1];
    let acc=0; for(let g=0;g<7;g++){acc+=g<NG?o.s[g]:0; q[g]=acc/o.n}
-   quad(o.x,o.y,r+2,r,inner,0,RING_OP*al,q,C0);
+   quad(o.x,o.y,r+2,r,inner,0,RING_A*al,q,C0);
    texts.push([o.x,o.y+.5,fmtN(o.n),Math.max(9,Math.min(13,inner*.9)),al]);
    if(o.np&&SHOWP){
     // Кільце з проблемами — тонкий контур чорнила й ромб на краю (угорі
@@ -744,6 +753,209 @@ window.kartaKilcia=()=>{const vm=new Map(LASTST.vis.map(v=>[v[0],v[1]]));
   const walk=(i,j)=>{ if(i===NL){const n=vm.get(P[LEAF[j]]); if(n){s+=n;a++} return}
    for(const c of CH[i][j]) walk(i+1,c)};
   walk(o.i,o.j); return {na_kilci:o.n, suma_adres:s, adres:a}})};
+// ---- ШАРИ ПІД ПОДІЯМИ: СХОЖІ УМОВИ, ПОТОКИ, НАСЕЛЕННЯ, ТЕПЛОВА ----
+// Видимість шару міняємо лише тоді, коли вона справді змінилася.
+function layerVis(id,v){ if(!map.getLayer(id)) return;
+ const want=v?'visible':'none'; if(map.getLayoutProperty(id,'visibility')!==want) map.setLayoutProperty(id,'visibility',want)}
+// Лінія в координатах MapLibre і завжди в одному напрямку (захід -> схід).
+// line-offset відкладається від напрямку лінії: той самий відрізок,
+// записаний у двох видах навспак, поклав би обидві смуги на один бік — і
+// вони б перекрилися. Тож напрямок вирівнюємо самі.
+const lineLL=pts=>{const c=pts.map(q=>[q[1],q[0]]), a=c[0], b=c[c.length-1];
+ return (a[0]>b[0]||(a[0]===b[0]&&a[1]>b[1]))?c.reverse():c};
+// «Схожі умови» (розд. 23, п. 8) — нинішній шар моделі під новою назвою:
+// карта показує, де середовище схоже на місця з подіями, а не передбачає
+// їх (VYZNACHENNYA-PROBLEMY, 7.2 і 9). Мало б іти модель лише середовища
+// (pB), але в нинішньому risk.json вулиці впорядковано моделлю «разом»
+// (pC, середовище + історія подій; step4_engine, зміна 7 вересня), а pB є
+// лише в переліку «тихих вулиць». Лишаємо pC до перенавчання (Б1).
+//
+// Окремий шар line на кожен вид зі сталим зсувом: вид завжди на своєму
+// місці довкола осі вулиці, симетрично, тож смуги лежать поруч і не
+// перекриваються, хоч скільки видів увімкнено. Крок ~2,5 px на міському
+// огляді й більший зблизька, товщина трохи менша за крок — між смугами
+// лишається просвіт.
+const SIMK=Object.keys(RISKOF).map(Number).sort((a,b)=>a-b).filter(gi=>{
+ const v=R.lines[RISKOF[gi]]; return v&&!v.nodata&&(v.items||[]).length});
+const SIM_STEP=[[10,2.2],[13,2.5],[15,3.5],[17,5.5],[19,8]];
+const zStep=f=>['interpolate',['linear'],['zoom'],...SIM_STEP.flatMap(([z,s])=>[z,f(s)])];
+const simOff=k=>zStep(s=>(k-(SIMK.length-1)/2)*s);
+// Потоки (tpl_map): три шари нейтрального кольору чорнила, кожен зі своїм
+// зсувом (−4 / 0 / +4 px). Колір подій їм не дістається: інакше потік до
+// транспорту читався б як ще один вид правопорушень.
+const FLOWS=[['flow_school',-4,'🎒'],['flow_transit',0,'🚌'],['flow_shop',4,'🛒']].filter(f=>R.lines&&R.lines[f[0]]);
+const fc=features=>({type:'FeatureCollection',features});
+const lineF=(pts,props)=>({type:'Feature',geometry:{type:'LineString',coordinates:lineLL(pts)},properties:props});
+// Значки потоків — картинками (addImage), а не текстом-емодзі в шарі
+// symbol: емодзі сервер гліфів MapLibre не малює. addImage не переживає
+// setStyle, тож картинки — після кожного стилю, у кольорах теми.
+function flowImages(){
+ const d=Math.max(1,Math.min(2,devicePixelRatio||1)), s=Math.round(22*d);
+ for(const [k,,ch] of FLOWS){const id='k-ic-'+k; if(map.hasImage(id)) map.removeImage(id);
+  const c=document.createElement('canvas'); c.width=c.height=s; const g=c.getContext('2d');
+  g.fillStyle=cssv('--panel')||'#fff'; g.strokeStyle=cssv('--ink')||'#111'; g.lineWidth=1.2*d;
+  g.beginPath(); g.arc(s/2,s/2,s/2-1.5*d,0,2*Math.PI); g.fill(); g.stroke();
+  g.font=`${Math.round(12*d)}px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif`;
+  g.textAlign='center'; g.textBaseline='middle'; g.fillText(ch,s/2,s/2+.5*d);
+  map.addImage(id,g.getImageData(0,0,s,s),{pixelRatio:d})}
+}
+// Скільки найбільших відрізків кожного потоку отримують значок. Решту
+// значків, що налізли б на сусідні, прибирає сама карта (без накладання).
+const FLOW_ICONS=80;
+let CTX_EVENTS=false;
+function ctxReady(){
+ flowImages();
+ if(map.getSource('k-pop')) return;   // джерела й шари пережили setStyle (carry)
+ const before=map.getLayer('k-addr-shadow')?'k-addr-shadow':undefined;
+ const add=(l)=>map.addLayer({...l,layout:{...(l.layout||{}),visibility:'none'}},before);
+ // Населення — найнижче, під усім: це тло, а не сигнал.
+ const pmx=Math.max(1,...POP.map(p=>p[2]));
+ map.addSource('k-pop',{type:'geojson',data:fc(POP.map(p=>({type:'Feature',
+  geometry:{type:'Point',coordinates:[p[1],p[0]]},properties:{n:p[2],s:Math.sqrt(p[2]/pmx)}})))});
+ add({id:'k-pop',type:'circle',source:'k-pop',
+  paint:{'circle-radius':['+',5,['*',16,['get','s']]],'circle-color':'#4b6fa8',
+   'circle-opacity':['+',.10,['*',.28,['get','s']]]}});
+ for(const [k,off] of FLOWS){const v=R.lines[k], mx=Math.max(1,...v.items.map(x=>x[2]));
+  map.addSource('k-flow-'+k,{type:'geojson',data:fc(v.items.map((it,i)=>lineF(it[0],{i,s:Math.sqrt(it[2]/mx)})))});
+  add({id:'k-flow-'+k,type:'line',source:'k-flow-'+k,layout:{'line-cap':'round'},
+   paint:{'line-offset':off,'line-width':['+',.8,['*',3.2,['get','s']]],
+    'line-opacity':['max',.10,['*',.42,['get','s']]]}});
+ }
+ SIMK.forEach((gi,k)=>{const v=R.lines[RISKOF[gi]];
+  map.addSource('k-sim-'+gi,{type:'geojson',data:fc(
+   v.items.map((it,i)=>lineF(it[0],{i,q:0,rk:it[2]})).concat(
+   (v.quiet||[]).map((it,i)=>lineF(it[0],{i,q:1,rk:0}))))});
+ });
+ // Спершу світлі підкладки всіх видів, потім самі смуги: підкладка
+ // сусіднього виду не лягає поверх смуги (на строкатій підкладці тонка
+ // лінія інакше губиться серед вулиць — узято з tpl_map).
+ SIMK.forEach((gi,k)=>add({id:'k-simh-'+gi,type:'line',source:'k-sim-'+gi,filter:['==',['get','q'],0],
+  layout:{'line-cap':'round'},paint:{'line-offset':simOff(k),'line-width':zStep(s=>s+2),'line-opacity':.5}}));
+ SIMK.forEach((gi,k)=>{
+  add({id:'k-sim-'+gi,type:'line',source:'k-sim-'+gi,filter:['==',['get','q'],0],
+   layout:{'line-cap':'round'},
+   // Прозорість за рангом вулиці: верх переліку — насичено, хвіст — блідо.
+   paint:{'line-offset':simOff(k),'line-width':zStep(s=>s*.85),
+    'line-opacity':['max',.35,['*',.85,['/',['get','rk'],100]]]}});
+  // «Тихі вулиці» — подій не було, умови ті самі: пунктиром на тому самому місці.
+  add({id:'k-simq-'+gi,type:'line',source:'k-sim-'+gi,filter:['==',['get','q'],1],
+   paint:{'line-offset':simOff(k),'line-width':zStep(s=>s*.85),'line-opacity':.6,'line-dasharray':[2,1.5]}});
+ });
+ // Значки потоків — на найбільших відрізках, над лініями.
+ map.addSource('k-flow-ic',{type:'geojson',data:fc(FLOWS.flatMap(([k])=>
+  R.lines[k].items.slice().sort((a,b)=>b[2]-a[2]).slice(0,FLOW_ICONS).map(it=>{
+   const c=lineLL(it[0]); return {type:'Feature',geometry:{type:'Point',coordinates:c[c.length>>1]},
+    properties:{f:k,n:it[2]}}})))});
+ add({id:'k-flow-ic',type:'symbol',source:'k-flow-ic',minzoom:11,
+  layout:{'icon-image':['concat','k-ic-',['get','f']],'icon-allow-overlap':false,'icon-padding':4,
+   'symbol-sort-key':['-',0,['get','n']]}});
+ // Теплова — над шарами тла, під позначками.
+ map.addSource('k-heat',{type:'geojson',data:fc([])});
+ add({id:'k-heat',type:'heatmap',source:'k-heat',
+  paint:{'heatmap-weight':['get','w'],
+   'heatmap-intensity':['interpolate',['linear'],['zoom'],10,.05,15,.25],
+   'heatmap-radius':['interpolate',['linear'],['zoom'],10,14,15,34],
+   // Та сама шкала, що в leaflet.heat за замовчуванням.
+   'heatmap-color':['interpolate',['linear'],['heatmap-density'],0,'rgba(0,0,255,0)',
+     .4,'blue',.6,'cyan',.7,'lime',.8,'yellow',1,'red'],
+   'heatmap-opacity':.8}});
+ if(!CTX_EVENTS){CTX_EVENTS=true; ctxEvents()}
+}
+const rOn=k=>{const x=document.querySelector(`[data-r="${k}"]`); return !!(x&&x.checked)};
+function drawRisks(){
+ if(!STYLE_OK||!map.getSource('k-pop')) return;
+ const quiet=!!($('#fquiet')||{}).checked, halo=cssv('--halo'), ink=cssv('--ink');
+ let dim=false;
+ SIMK.forEach(gi=>{const on=rOn(RISKOF[gi]); dim=dim||on;
+  layerVis('k-simh-'+gi,on); layerVis('k-sim-'+gi,on); layerVis('k-simq-'+gi,on&&quiet);
+  map.setPaintProperty('k-simh-'+gi,'line-color',halo);
+  for(const id of ['k-sim-'+gi,'k-simq-'+gi]) map.setPaintProperty(id,'line-color',PALA[gi%PALA.length])});
+ const fOn=FLOWS.filter(([k])=>rOn(k)).map(([k])=>k);
+ for(const [k] of FLOWS){layerVis('k-flow-'+k,fOn.includes(k)); map.setPaintProperty('k-flow-'+k,'line-color',ink)}
+ map.setFilter('k-flow-ic',['in',['get','f'],['literal',fOn]]); layerVis('k-flow-ic',fOn.length>0);
+ dim=dim||fOn.length>0;
+ layerVis('k-pop',rOn('pop'));
+ RING_A=dim?RING_DIM:RING_OP;
+ if(map.getLayer('k-addr')) map.setPaintProperty('k-addr','circle-opacity',RING_A);
+ map.triggerRepaint();
+}
+// ---- ПІДКАЗКИ Й ВІКНО ВУЛИЦІ ----
+// Слова «ризик» і «прогноз» у новій карті не вживаємо (розд. 23, п. 8); текст
+// методики приходить з двигуна з «за прогнозом» — міняємо на місці.
+const bezSliv=s=>String(s||'').replace(/за прогнозом/g,'за оцінкою моделі').replace(/прогноз/g,'оцінка');
+// Скільки разів — з правильним відмінком (той самий raz, що в tpl_map).
+function raz(n){
+ const v=Math.round(n*10)/10, t=String(v).replace('.',',');
+ if(!Number.isInteger(v)) return t+' раза';
+ const a=v%10, b=v%100;
+ if(a===1&&b!==11) return t+' раз';
+ if(a>=2&&a<=4&&(b<12||b>14)) return t+' рази';
+ return t+' разів';
+}
+const nfmt=n=>(Math.round(n*10)/10).toLocaleString('uk');
+// Чинники САМЕ ЦІЄЇ вулиці — як factRows у tpl_map. Кожен рядок — виміряна
+// річ, яку можна перевірити на місці. Слова «причина» тут немає навмисно.
+function factRows(fx){
+ if(!fx||!fx.length) return '';
+ const rows=fx.map(f=>{
+  const [label,val,med,ratio,isCount]=f;
+  const cmp=(med===null||med===undefined) ? ''
+    : (isCount&&!med) ? ' <i>на більшості вулиць — жодного</i>'
+    : ` <i>звичайно ${nfmt(med)}</i>`;
+  const r=(ratio&&ratio>=1.2)?`<div class="fr">де цього більше — подій у ${raz(ratio)} більше</div>`:'';
+  return `<tr><td>${label}${r}</td><td class="fv"><b>${nfmt(val)}</b>${cmp}</td></tr>`;
+ }).join('');
+ return `<div class="rwhy">Що виміряно на цьому відрізку</div><table class="fx">${rows}</table>`;
+}
+// Рядок про вулицю — спільний для підказки й вікна.
+function simLine(v,it,quiet){
+ return v.title+' — '+(quiet?'подій не зафіксовано, але умови ті самі'
+  :`верхні ${101-it[2]}% за схожістю умов`+((it[3]|0)>0?`, подій уже було: ${it[3]}`:', подій ще не було'))}
+function simItem(f){const gi=+f.layer.id.split('-').pop(), v=R.lines[RISKOF[gi]], q=!!f.properties.q;
+ return {v,q,it:(q?v.quiet:v.items)[f.properties.i]}}
+function simPopup(f,ll){
+ const {v,q,it}=simItem(f);
+ let h=`<div class="rpop"><b>${esc(it[1])}</b><span class="sub">${esc(simLine(v,it,q))}</span>`;
+ // Чинники цієї вулиці — головне у вікні, тому стоять першими, до методики.
+ h+=factRows(it[4]);
+ if(!(it[4]&&it[4].length))
+  h+='<div class="rwhy">Модель не виділила на цьому відрізку жодної піднятої ознаки — оцінку дала здебільшого історія подій.</div>';
+ if(v.method) h+=`<div class="rmeth">${esc(bezSliv(v.method))}</div>`;
+ const an=v.slug?('#t-'+v.slug):'';
+ h+=`<a class="rdoc" href="doslidzhennya.html${(it[1]&&it[1]!=='без назви')?('?st='+encodeURIComponent(it[1])):''}${an}" target="_blank" rel="noopener">Розбір вулиці в дослідженні ↗</a></div>`;
+ if(POPUP) POPUP.remove();
+ clearNear();
+ POPUP=new maplibregl.Popup({maxWidth:'320px',focusAfterOpen:false}).setLngLat(ll).setHTML(h).addTo(map);
+ POPUP.on('close',clearNear);
+}
+const simIds=()=>SIMK.flatMap(gi=>['k-sim-'+gi,'k-simq-'+gi]).filter(id=>map.getLayer(id)&&map.getLayoutProperty(id,'visibility')==='visible');
+function ctxEvents(){
+ // Підказка при наведенні — як sticky tooltip у Leaflet.
+ const TIP=new maplibregl.Popup({closeButton:false,closeOnClick:false,className:'k-tip',offset:14,maxWidth:'280px'});
+ const tip=(e,h)=>{ if(!h){TIP.remove();return} TIP.setLngLat(e.lngLat).setHTML(h).addTo(map)};
+ // Смуга тонка — ловимо її з запасом у кілька пікселів.
+ const near=(p,ids)=>ids.length?map.queryRenderedFeatures([[p.x-4,p.y-4],[p.x+4,p.y+4]],{layers:ids}):[];
+ const onEvent=p=>(RINGS_ON&&hitRing(p))||map.queryRenderedFeatures(p,{layers:['k-addr'].filter(id=>map.getLayer(id))}).length;
+ map.on('mousemove',e=>{
+  if(onEvent(e.point)){TIP.remove(); return}
+  const s=near(e.point,simIds())[0];
+  if(s){const {v,q,it}=simItem(s); map.getCanvas().style.cursor='pointer';
+   return tip(e,`<b>${esc(it[1])}</b><span>${esc(simLine(v,it,q))}. Клікніть для деталей</span>`)}
+  const fl=near(e.point,FLOWS.map(([k])=>'k-flow-'+k).filter(id=>map.getLayoutProperty(id,'visibility')==='visible'))[0];
+  if(fl){const k=fl.layer.id.slice(7), v=R.lines[k], it=v.items[fl.properties.i];
+   return tip(e,`<b>${esc(it[1]||'без назви')}</b><span>${esc(v.title)} — ~${it[2].toLocaleString('uk')} осіб</span>`+
+    (v.when?`<span>${esc(v.when)}</span>`:''))}
+  const pp=map.getLayoutProperty('k-pop','visibility')==='visible'&&map.queryRenderedFeatures(e.point,{layers:['k-pop']})[0];
+  if(pp) return tip(e,`<b>${pp.properties.n.toLocaleString('uk')} осіб</b>`);
+  if(!RINGS_ON) map.getCanvas().style.cursor='';
+  tip(e,null);
+ });
+ map.on('mouseout',()=>TIP.remove());
+ // Клік по смузі — вікно вулиці. Кільце чи адреса під курсором важливіші:
+ // їхні власні обробники вже відкривають своє.
+ map.on('click',e=>{ if(onEvent(e.point)) return;
+  const s=near(e.point,simIds())[0]; if(s){TIP.remove(); simPopup(s,e.lngLat)}});
+}
 // ---- ВИГЛЯД: «Кільця · Адреси · Теплова» (розд. 23, п. 7) ----
 // Замість «Події · Проблеми · Теплова» спільної панелі — лише в GL-збірці.
 // Окремого режиму «лише проблеми» немає: ромби проблем лягають поверх (коміт 5).
