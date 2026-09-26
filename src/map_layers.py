@@ -195,6 +195,9 @@ def build(district, labels):
                 'kind': v.get('kind', 'theme'),
                 'group': L.THEMES.get(parent, parent),
                 'hit': int(100 * v['hit']),
+                # усього відрізків, які оцінювала модель (step4_engine); до
+                # перенавчання його немає, і карта пише «місце N із 200»
+                'nseg': ER.get(th, {}).get('відрізків'),
                 'theme': gi[0] if gi else 0,
                 'why': why_text(ER.get(th, {}).get('фактори', [])),
                 'factors': [[n_, round(float(c_), 3)] for n_, c_ in ER.get(th, {}).get('фактори', []) if c_ > 0][:12],

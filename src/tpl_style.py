@@ -27,6 +27,10 @@ LIBS_GL = r"""<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.10.0/
 .k-tip b{display:block;margin-bottom:2px}
 .k-tip span{display:block;color:var(--dim);font-size:11px}
 .rpop .sub{display:block;color:var(--dim);font-size:11.5px}
+/* Чинники вулиці: права колонка переноситься — інакше «на більшості вулиць —
+   жодного» в один рядок стискала назви чинника до трьох слів на рядок. */
+.maplibregl-popup .rpop table.fx td.fv{white-space:normal;width:38%}
+.maplibregl-popup .rpop table.fx td.fv i{display:block}
 /* Високе вікно вулиці прокручується всередині (висоту ставить keepClear). */
 .maplibregl-popup .rpop{overflow-y:auto;overscroll-behavior:contain}
 /* Вікно адреси (розд. 25, А1). × — зона кліку 36 px. Прокрутка без

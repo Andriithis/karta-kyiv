@@ -1171,9 +1171,6 @@ function iconAt(p){ if(!map.getLayer('k-near-ic')) return null;
  return map.queryRenderedFeatures([[p.x-3,p.y-3],[p.x+3,p.y+3]],{layers:['k-near-ic']})[0]||null}
 const iconTip=f=>`<b>${esc(f.properties.s)}</b>`;
 // ---- ПІДКАЗКИ Й ВІКНО ВУЛИЦІ ----
-// Слова «ризик» і «прогноз» у новій карті не вживаємо (розд. 23, п. 8); текст
-// методики приходить з двигуна з «за прогнозом» — міняємо на місці.
-const bezSliv=s=>String(s||'').replace(/за прогнозом/g,'за оцінкою моделі').replace(/прогноз/g,'оцінка');
 // Скільки разів — з правильним відмінком (той самий raz, що в tpl_map).
 function raz(n){
  const v=Math.round(n*10)/10, t=String(v).replace('.',',');
@@ -1192,28 +1189,40 @@ function factRows(fx){
   const [label,val,med,ratio,isCount]=f;
   const cmp=(med===null||med===undefined) ? ''
     : (isCount&&!med) ? ' <i>на більшості вулиць — жодного</i>'
-    : ` <i>звичайно ${nfmt(med)}</i>`;
+    // «звичайно 0» читалося як «так і має бути» (розд. 25, А8)
+    : ` <i>у середньому по місту ${nfmt(med)}</i>`;
   const r=(ratio&&ratio>=1.2)?`<div class="fr">де цього більше — подій у ${raz(ratio)} більше</div>`:'';
   return `<tr><td>${label}${r}</td><td class="fv"><b>${nfmt(val)}</b>${cmp}</td></tr>`;
  }).join('');
  return `<div class="rwhy">Що виміряно на цьому відрізку</div><table class="fx">${rows}</table>`;
 }
-// Рядок про вулицю — спільний для підказки й вікна.
-function simLine(v,it,quiet){
+// Рядок про вулицю — спільний для підказки й вікна. Місце вулиці — серед
+// усіх відрізків міста (розд. 25, А8). «Верхні 97%» було місцем у переліку
+// з 200 вулиць, а читалося як «гірша за 97% міста», тобто навпаки. Доки
+// двигун не записав, скільки відрізків оцінював (nseg, з перенавчанням Б1),
+// кажемо чесно: місце в переліку.
+const pctUA=x=>(x<1?(Math.ceil(x*10)/10):Math.ceil(x)).toLocaleString('uk');
+function simPlace(v,i){
+ return v.nseg?`серед ${pctUA(100*(i+1)/v.nseg)}% вулиць міста з найсхожішими умовами`
+  :`місце ${i+1} із ${v.items.length} вулиць міста з найсхожішими умовами`}
+function simLine(v,it,quiet,i){
  return v.title+' — '+(quiet?'подій не зафіксовано, але умови ті самі'
-  :`верхні ${101-it[2]}% за схожістю умов`+((it[3]|0)>0?`, подій уже було: ${it[3]}`:', подій ще не було'))}
-function simItem(f){const gi=+f.layer.id.split('-').pop(), v=R.lines[RISKOF[gi]], q=!!f.properties.q;
- return {v,q,it:(q?v.quiet:v.items)[f.properties.i]}}
+  :simPlace(v,i)+((it[3]|0)>0?`, подій уже було: ${it[3]}`:', подій ще не було'))}
+function simItem(f){const gi=+f.layer.id.split('-').pop(), v=R.lines[RISKOF[gi]], q=!!f.properties.q, i=f.properties.i;
+ return {v,q,i,it:(q?v.quiet:v.items)[i]}}
 function simPopup(f,ll){
- const {v,q,it}=simItem(f);
- let h=`<div class="rpop"><b>${esc(it[1])}</b><span class="sub">${esc(simLine(v,it,q))}</span>`;
+ const {v,q,i,it}=simItem(f);
+ let h=`<div class="rpop"><b>${esc(it[1])}</b><span class="sub">${esc(simLine(v,it,q,i))}</span>`;
  // Чинники цієї вулиці — головне у вікні, тому стоять першими, до методики.
  h+=factRows(it[4]);
  if(!(it[4]&&it[4].length))
   h+='<div class="rwhy">Модель не виділила на цьому відрізку жодної піднятої ознаки — оцінку дала здебільшого історія подій.</div>';
- if(v.method) h+=`<div class="rmeth">${esc(bezSliv(v.method))}</div>`;
+ // Про модель — один рядок і посилання на звіт (розд. 25, А8): абзац методики
+ // у вікні вулиці ніхто не читав, а головне в ньому — чинники — уже вище.
+ // Звіт «Схожі умови» (розд. 25, Б2) ще будується; доти — нинішнє дослідження.
  const an=v.slug?('#t-'+v.slug):'';
- h+=`<a class="rdoc" href="doslidzhennya.html${(it[1]&&it[1]!=='без назви')?('?st='+encodeURIComponent(it[1])):''}${an}" target="_blank" rel="noopener">Розбір вулиці в дослідженні ↗</a></div>`;
+ h+=`<div class="rmeth">Оцінка моделі за умовами довкола вулиці й подіями, що вже були. `+
+  `<a class="rdoc" style="display:inline;margin:0" href="doslidzhennya.html${(it[1]&&it[1]!=='без назви')?('?st='+encodeURIComponent(it[1])):''}${an}" target="_blank" rel="noopener">Як пораховано ↗</a></div></div>`;
  advOpen(false);
  const w=document.createElement('div'); w.innerHTML=h;
  // Чинники моделі поруч — якщо модель їх назвала; інакше просто все, що є
@@ -1255,8 +1264,8 @@ function ctxEvents(){
    // Над кільцем курсор ставить обробник кілець; над адресою — тут.
    if(!RINGS_ON) map.getCanvas().style.cursor='pointer'; return}
   const s=near(e.point,simIds())[0];
-  if(s){const {v,q,it}=simItem(s); map.getCanvas().style.cursor='pointer';
-   return tip(e,`<b>${esc(it[1])}</b><span>${esc(simLine(v,it,q))}. Клікніть для деталей</span>`)}
+  if(s){const {v,q,i,it}=simItem(s); map.getCanvas().style.cursor='pointer';
+   return tip(e,`<b>${esc(it[1])}</b><span>${esc(simLine(v,it,q,i))}. Клікніть для деталей</span>`)}
   const fl=near(e.point,FLOWS.map(([k])=>'k-flow-'+k).filter(id=>map.getLayoutProperty(id,'visibility')==='visible'))[0];
   if(fl){const k=fl.layer.id.slice(7), v=R.lines[k], it=v.items[fl.properties.i];
    return tip(e,`<b>${esc(it[1]||'без назви')}</b><span>${esc(v.title)} — ~${it[2].toLocaleString('uk')} осіб</span>`+
