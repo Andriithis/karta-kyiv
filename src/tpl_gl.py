@@ -1012,6 +1012,7 @@ const WORLD=[[-180,-85],[180,-85],[180,85],[-180,85],[-180,-85]];
 const ringLL=r=>{const c=r.map(q=>[q[1],q[0]]); const a=c[0], b=c[c.length-1];
  if(a[0]!==b[0]||a[1]!==b[1]) c.push(a); return c};
 let DIST_HOVER=-1;
+const DIST_TIP_Z=13;
 function distReady(){
  if(!DN.length||M.only||map.getSource('k-dist')) return;
  const before=map.getLayer('k-pop')?'k-pop':(map.getLayer('k-addr-shadow')?'k-addr-shadow':undefined);
@@ -1224,8 +1225,9 @@ function ctxEvents(){
   const pp=map.getLayoutProperty('k-pop','visibility')==='visible'&&map.queryRenderedFeatures(e.point,{layers:['k-pop']})[0];
   if(pp) return tip(e,`<b>${pp.properties.n.toLocaleString('uk')} осіб</b>`);
   if(!RINGS_ON) map.getCanvas().style.cursor='';
-  // Район під курсором — підсвітка й назва, лише на міському огляді.
-  const d=CURD<0&&map.getLayer('k-dist-fill')&&map.queryRenderedFeatures(e.point,{layers:['k-dist-fill']})[0];
+  // Район під курсором — підсвітка й назва, лише на міському огляді (до
+  // z13, розд. 25, А4): ближче вона спливала над кожною вулицею й заважала.
+  const d=CURD<0&&map.getZoom()<DIST_TIP_Z&&map.getLayer('k-dist-fill')&&map.queryRenderedFeatures(e.point,{layers:['k-dist-fill']})[0];
   if(d){const i=d.properties.i, np=(M.dprob||[])[i]||0; distHover(i);
    return tip(e,`<b>${esc(DN[i])}</b>`+(np?`<span>${np} ${pl(np,'проблема','проблеми','проблем')}</span>`:''))}
   if(map.getSource('k-dist')) distHover(-1);
