@@ -248,7 +248,7 @@ window.addEventListener('hashchange',()=>{
 // Ті самі імена, що й у Leaflet-збірці, — tpl_core кличе саме їх:
 // drawRisks, drawFacts, showNear, showAllNear, clearNear — у JS_GL_DRAW.
 // Кнопка «Що поруч» у вікні адреси (tpl_core) пам'ятає себе в nearButton.
-let heatOn=false, nearButton=null;"""
+let nearButton=null;"""
 
 JS_GL_DRAW = r"""// ---- АДРЕСИ ----
 // Одне джерело GeoJSON, одна точка на адресу. Фільтр міняє лише дані
@@ -296,23 +296,19 @@ function addrReady(){
  draw();
 }
 function draw(){
+ // У «Проблемах» computeVis (tpl_core, MODE 'prob') лишає самі адреси з
+ // проблемами — з них і ромби, і невидимі крапки під ними для кліку.
  const st=computeVis(); LASTST=st;
- heatOn=(MODE==='heat');
  ringSums(st); map.triggerRepaint();
  if(!STYLE_OK||!map.getSource('k-addr')) return;
- // Теплова — вбудованим шаром heatmap з тією самою вагою, що в Leaflet:
- // там адреса давала min(n,20) точок, тут — одну точку вагою min(n,20).
- // Стеля 20 — щоб одна вулиця з сотнями ДТП не випалювала пів міста.
- if(map.getSource('k-heat')){
-  map.getSource('k-heat').setData({type:'FeatureCollection',features:heatOn?st.vis.map(([p,n])=>({
-   type:'Feature',geometry:{type:'Point',coordinates:[p[1],p[0]]},properties:{w:Math.min(n,20)}})):[]});
-  layerVis('k-heat',heatOn);
- }
- const vis=heatOn?[]:st.vis, mx=vis.length?vis[0][1]:1;
+ addrPaint();
+ const vis=st.vis, mx=vis.length?vis[0][1]:1;
  map.getSource('k-addr').setData({type:'FeatureCollection',features:vis.map(([p,n,th])=>({
   type:'Feature',geometry:{type:'Point',coordinates:[p[1],p[0]]},
   properties:{i:PIDX.get(p),c:PALA[th%PALA.length],
-   r0:Math.max(2.8,Math.min(14,2.8+9.5*Math.pow(n/Math.max(mx,1),.42))),
+   // У «Проблемах» крапка невидима й служить лише мішенню для кліку під
+   // ромбом, тож вона завбільшки з ромб, а не з кількість подій.
+   r0:MODE==='prob'?8:Math.max(2.8,Math.min(14,2.8+9.5*Math.pow(n/Math.max(mx,1),.42))),
    k:(probsOf(p).length?1e6:0)-n}}))});
 }
 // Радіус позначки зараз — щоб хвостик вікна ставав на її край, а не в центр.
@@ -372,7 +368,14 @@ function keepClear(pp,at,off){
 // Поки видно кільця, шар адрес лише прозорий, не вимкнений (addrLayerVisible):
 // клік і курсор над ним тоді належать кільцям.
 map.on('click','k-addr',e=>{ if(RINGS_ON||iconAt(e.point)) return;
- const f=e.features&&e.features[0]; if(f) openAt(f.properties.i)});
+ const f=e.features&&e.features[0]; if(f){CLICK_TAKEN=true; openAt(f.properties.i)}});
+// Клік уже відкрив вікно чи повів до кільця — загальний обробник (ctxEvents)
+// його не чіпає. Питати карту «що під курсором» там уже пізно: вікно
+// зсуває карту під себе, а з «меншим рухом» у системі — миттєво, і клік по
+// адресі виглядав би кліком по порожньому місцю, що закриває вікно.
+let CLICK_TAKEN=false;
+map.on('mousedown',()=>{CLICK_TAKEN=false});
+map.on('touchstart',()=>{CLICK_TAKEN=false});
 map.on('mouseenter','k-addr',()=>{ if(!RINGS_ON) map.getCanvas().style.cursor='pointer'});
 map.on('mouseleave','k-addr',()=>{map.getCanvas().style.cursor=''});
 // ---- ПОШУК: КУДИ НАБЛИЖАТИ ----
@@ -644,7 +647,8 @@ const ringLayer={id:'k-rings', type:'custom', renderingMode:'2d',
   const out=frameList();
   // Ромби вигляду «Адреси» (і кілець з z15, де адреси малює шар GL):
   // сталого розміру на кожній адресі з проблемою за фільтром.
-  const addrDiamonds=SHOWP&&!RINGS_ON&&MODE!=='heat'&&STYLE_OK;
+  // У режимі «Проблеми» ромби — усе, що є на карті, тож кнопка їх не гасить.
+  const addrDiamonds=(SHOWP||MODE==='prob')&&!RINGS_ON&&STYLE_OK;
   if(!out.length&&!(addrDiamonds&&PROBK.length)) return;
   const cvs=map.getCanvas(), W=cvs.clientWidth, H=cvs.clientHeight, z=map.getZoom();
   let nd=0, nt=0;
@@ -764,6 +768,7 @@ function hitRing(pt){let best=null, bd=1e9; const z=map.getZoom();
 map.on('click',e=>{
  if(!RINGS_ON||iconAt(e.point)) return;
  const o=hitRing(e.point); if(!o) return;
+ CLICK_TAKEN=true;
  if(o.dot) return openAt(LEAF[o.k]);
  const q=o.j*4, bb=BB[o.i], z=map.getZoom();
  const side=$('#side'), W=map.getContainer().clientWidth;
@@ -882,16 +887,8 @@ function ctxReady(){
  add({id:'k-flow-ic',type:'symbol',source:'k-flow-ic',minzoom:11,
   layout:{'icon-image':['concat','k-ic-',['get','f']],'icon-allow-overlap':false,'icon-padding':4,
    'symbol-sort-key':['-',0,['get','n']]}});
- // Теплова — над шарами тла, під позначками.
- map.addSource('k-heat',{type:'geojson',data:fc([])});
- add({id:'k-heat',type:'heatmap',source:'k-heat',
-  paint:{'heatmap-weight':['get','w'],
-   'heatmap-intensity':['interpolate',['linear'],['zoom'],10,.05,15,.25],
-   'heatmap-radius':['interpolate',['linear'],['zoom'],10,14,15,34],
-   // Та сама шкала, що в leaflet.heat за замовчуванням.
-   'heatmap-color':['interpolate',['linear'],['heatmap-density'],0,'rgba(0,0,255,0)',
-     .4,'blue',.6,'cyan',.7,'lime',.8,'yellow',1,'red'],
-   'heatmap-opacity':.8}});
+ // Теплової на новій карті немає (розд. 23, п. 9): на міському огляді вона
+ // була суцільною червоною плямою й нічого не розрізняла.
  if(!CTX_EVENTS){CTX_EVENTS=true; ctxEvents()}
 }
 const rOn=k=>{const x=document.querySelector(`[data-r="${k}"]`); return !!(x&&x.checked)};
@@ -1166,25 +1163,29 @@ function ctxEvents(){
  map.on('click',e=>{
   // Значок — підказка й на дотик: на телефоні наведення немає.
   const ic=iconAt(e.point); if(ic) return tip(e,iconTip(ic));
-  if(onEvent(e.point)) return;
+  if(CLICK_TAKEN||onEvent(e.point)) return;
   const s=near(e.point,simIds())[0]; if(s){TIP.remove(); return simPopup(s,e.lngLat)}
   if(POPUP) POPUP.remove()});
 }
-// ---- ВИГЛЯД: «Кільця · Адреси · Теплова» (розд. 23, п. 7) ----
+// ---- ВИГЛЯД: «Кільця · Адреси · Проблеми» (розд. 23, п. 7 і 9) ----
 // Замість «Події · Проблеми · Теплова» спільної панелі — лише в GL-збірці.
-// Окремого режиму «лише проблеми» немає: ромби проблем лягають поверх (коміт 5).
-{const VIEWS=[['rings','Кільця'],['addr','Адреси'],['heat','Теплова']];
+// «Проблеми» — самі ромби проблем, без подій, як колишній режим «Проблеми»
+// (MODE 'prob' спільного computeVis). Теплову прибрано 26.09. Збережена в
+// браузері «Теплова» відкривається як «Кільця».
+{const VIEWS=[['rings','Кільця'],['addr','Адреси'],['prob','Проблеми']];
  let v=null; try{v=localStorage.getItem('karta-vyhlyad')}catch(e){}
  MODE=VIEWS.some(x=>x[0]===v)?v:'rings';
  const seg=$('#fcat');
  seg.innerHTML=VIEWS.map(([k,n])=>`<button data-m="${k}" aria-pressed="${k===MODE}">${n}</button>`).join('');
- seg.onclick=e=>{const b=e.target.closest('[data-m]'); if(!b) return;
-  MODE=b.dataset.m; try{localStorage.setItem('karta-vyhlyad',MODE)}catch(err){}
-  seg.querySelectorAll('button').forEach(x=>swSet(x,x===b)); draw()};
- // «◆ Проблеми» — ромби поверх обох виглядів (розд. 23, п. 2); вимикає їх,
- // не ховаючи самих адрес.
+ // «◆ Проблеми» — ромби поверх «Кілець» і «Адрес» (розд. 23, п. 2); вимикає
+ // їх, не ховаючи самих адрес. У «Проблемах» кнопці нічого робити.
  seg.insertAdjacentHTML('afterend','<button id="fprob" class="pbtn2" aria-pressed="true" '+
    'style="width:auto;align-self:flex-start;margin:6px 0 0;padding:4px 10px">◆ Проблеми</button>');
+ $('#fprob').hidden=MODE==='prob';
+ seg.onclick=e=>{const b=e.target.closest('[data-m]'); if(!b) return;
+  MODE=b.dataset.m; try{localStorage.setItem('karta-vyhlyad',MODE)}catch(err){}
+  $('#fprob').hidden=MODE==='prob';
+  seg.querySelectorAll('button').forEach(x=>swSet(x,x===b)); draw()};
  $('#fprob').onclick=e=>{SHOWP=!SHOWP; swSet(e.currentTarget,SHOWP); map.triggerRepaint()};}
 // ---- ПЕРЕМИКАЧ ПАЛІТР — у «Розширено», поруч з роком і часом доби ----
 {const top=document.querySelector('#adv .advtop');
