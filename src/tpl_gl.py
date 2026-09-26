@@ -195,7 +195,11 @@ setBase(THEME);
 // зламаною. До першого повного кадру (load) — тонка смужка завантаження.
 let BASE_READY=false;
 {const bar=document.createElement('div'); bar.id='kload'; map.getContainer().appendChild(bar);
- map.once('load',()=>{BASE_READY=true; bar.remove(); addrPaint(); map.triggerRepaint()});}
+ const ready=()=>{ if(BASE_READY) return; BASE_READY=true; bar.remove(); addrPaint(); map.triggerRepaint()};
+ map.once('load',ready);
+ // load чекає на всі плитки першого кадру; якщо якась так і не прийде,
+ // кільця не мають зникнути назавжди — не довше 6 с.
+ setTimeout(ready,6000);}
 map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-left');
 // У модулі змінні не глобальні, а паритет перевіряють з консолі браузера
 // (розміри позначок, шари, частота кадрів). Один явний вихід — сама карта.
@@ -297,6 +301,21 @@ const zmulAt=z=>{if(z<=ZMUL[0][0])return ZMUL[0][1];
  return ZMUL[ZMUL.length-1][1]};
 const radiusBy=add=>['interpolate',['linear'],['zoom'],
  ...ZMUL.flatMap(([z,m])=>[z,['+',['*',['get','r0'],m],add]])];
+// Радіус адреси без множника зуму. Найменший — 3,6 px, а не 2,8, як у
+// Leaflet (розд. 25, А5): адреса з однією подією на огляді була пилинкою,
+// і в неї не влучали ні оком, ні мишею.
+const R0_MIN=3.6;
+const r0Of=(n,mx)=>Math.max(R0_MIN,Math.min(14,R0_MIN+9.5*Math.pow(n/Math.max(mx,1),.42)));
+// Невидима зона кліку — не менше 16 px у діаметрі навколо центру адреси
+// (WCAG 2.5.8 просить 24 px на ціль; на щільній карті це з'їло б сусідів,
+// тож 16 — і з сусідів береться найближча до курсора).
+const HIT_R=8;
+function addrAt(p){ if(RINGS_ON||!map.getLayer('k-addr')) return null;
+ const fs=map.queryRenderedFeatures([[p.x-HIT_R-14,p.y-HIT_R-14],[p.x+HIT_R+14,p.y+HIT_R+14]],{layers:['k-addr']});
+ let best=null, bd=1e9; const zm=zmulAt(map.getZoom());
+ for(const f of fs){const q=map.project(f.geometry.coordinates), d=Math.hypot(q.x-p.x,q.y-p.y);
+  if(d<=Math.max(HIT_R,f.properties.r0*zm+1.5)&&d<bd){bd=d; best=f}}
+ return best}
 // Від цього зуму — тінь під позначками, як клас deep у Leaflet (там z15).
 const DEEP_Z=14;
 const PIDX=new Map(P.map((p,i)=>[p,i]));
@@ -338,7 +357,7 @@ function draw(){
   properties:{i:PIDX.get(p),c:PALA[th%PALA.length],
    // У «Проблемах» крапка невидима й служить лише мішенню для кліку під
    // ромбом, тож вона завбільшки з ромб, а не з кількість подій.
-   r0:MODE==='prob'?8:Math.max(2.8,Math.min(14,2.8+9.5*Math.pow(n/Math.max(mx,1),.42))),
+   r0:MODE==='prob'?8:r0Of(n,mx),
    k:(probsOf(p).length?1e6:0)-n}}))});
 }
 // Радіус позначки зараз — щоб хвостик вікна ставав на її край, а не в центр.
@@ -346,7 +365,7 @@ function rNow(i){
  const st=LASTST, v=st&&st.vis.find(x=>x[0]===P[i]);
  if(!v) return 0;
  const mx=st.vis[0][1];
- return Math.max(2.8,Math.min(14,2.8+9.5*Math.pow(v[1]/Math.max(mx,1),.42)))*zmulAt(map.getZoom())+1.5;
+ return r0Of(v[1],mx)*zmulAt(map.getZoom())+1.5;
 }
 // ---- ВІКНО АДРЕСИ ----
 // Вміст — той самий вузол, що й у Leaflet (popupHTML з tpl_core): склад
@@ -454,9 +473,10 @@ function keepClear(pp,at,off){
 // Esc закриває вікно адреси чи вулиці (панель рішень Esc закриває сама, tpl_core).
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&POPUP) POPUP.remove()});
 // Поки видно кільця, шар адрес лише прозорий, не вимкнений (addrLayerVisible):
-// клік і курсор над ним тоді належать кільцям.
-map.on('click','k-addr',e=>{ if(RINGS_ON||iconAt(e.point)) return;
- const f=e.features&&e.features[0]; if(f){CLICK_TAKEN=true; openAt(f.properties.i)}});
+// клік і курсор над ним тоді належать кільцям (addrAt це враховує). Клік —
+// за зоною addrAt, а не за самим колом: дрібну адресу інакше не влучити.
+map.on('click',e=>{ if(iconAt(e.point)) return;
+ const f=addrAt(e.point); if(f){CLICK_TAKEN=true; openAt(f.properties.i)}});
 // Клік уже відкрив вікно чи повів до кільця — загальний обробник (ctxEvents)
 // його не чіпає. Питати карту «що під курсором» там уже пізно: вікно
 // зсуває карту під себе, а з «меншим рухом» у системі — миттєво, і клік по
@@ -464,8 +484,6 @@ map.on('click','k-addr',e=>{ if(RINGS_ON||iconAt(e.point)) return;
 let CLICK_TAKEN=false;
 map.on('mousedown',()=>{CLICK_TAKEN=false});
 map.on('touchstart',()=>{CLICK_TAKEN=false});
-map.on('mouseenter','k-addr',()=>{ if(!RINGS_ON) map.getCanvas().style.cursor='pointer'});
-map.on('mouseleave','k-addr',()=>{map.getCanvas().style.cursor=''});
 // ---- ПОШУК: КУДИ НАБЛИЖАТИ ----
 // Вікно відкриваємо, коли карта вже стала на місце, а не таймером навмання
 // (причину див. у tpl_draw, afterMove).
@@ -530,7 +548,7 @@ function ringSums(st){
   // Колір ромба — вид проблеми, як колір крапки-проблеми (computeVis).
   const pt=v[3]?v[2]:((pr.find(q=>q.thi>=0)||{}).thi??v[2]);
   if(pr.length){NP[NL][k]=pr.length; PT[NL][k]=pt; PTN[NL][k]=v[1]; PROBK.push(k)}
-  return {n:v[1], th:v[2], np:pr.length, pt, r0:Math.max(2.8,Math.min(14,2.8+9.5*Math.pow(v[1]/Math.max(mx,1),.42)))}});
+  return {n:v[1], th:v[2], np:pr.length, pt, r0:r0Of(v[1],mx)}});
  for(let i=NL;i>=1;i--){const s=SUM[i],t=TOT[i],a=ACT[i],o=ONE[i],ps=SUM[i-1],pt=TOT[i-1],pa=ACT[i-1],po=ONE[i-1];
   const np=NP[i],pq=PT[i],pn=PTN[i],pnp=NP[i-1],ppq=PT[i-1],ppn=PTN[i-1];
   const n=nOf(i);
@@ -593,7 +611,9 @@ function addrLayerVisible(v){
 function addrPaint(){
  if(!map.getLayer('k-addr')) return;
  const on=BASE_READY&&ADDR_VIS!==false&&MODE!=='prob';
- map.setPaintProperty('k-addr','circle-opacity',on?RING_A:0);
+ // Зблизька (з z15) крапок мало й вони великі — трохи щільніша заливка
+ // читається краще (розд. 25, А5).
+ map.setPaintProperty('k-addr','circle-opacity',on?['interpolate',['linear'],['zoom'],14.5,RING_A,15.5,Math.min(1,RING_A+.08)]:0);
  map.setPaintProperty('k-addr','circle-stroke-opacity',on?1:0);
  map.setPaintProperty('k-addr-shadow','circle-opacity',on?1:0);
 }
@@ -1213,11 +1233,13 @@ function ctxEvents(){
  const tip=(e,h)=>{ if(!h){TIP.remove();return} TIP.setLngLat(e.lngLat).setHTML(h).addTo(map)};
  // Смуга тонка — ловимо її з запасом у кілька пікселів.
  const near=(p,ids)=>ids.length?map.queryRenderedFeatures([[p.x-4,p.y-4],[p.x+4,p.y+4]],{layers:ids}):[];
- const onEvent=p=>RINGS_ON?!!hitRing(p):map.queryRenderedFeatures(p,{layers:['k-addr'].filter(id=>map.getLayer(id))}).length>0;
+ const onEvent=p=>RINGS_ON?!!hitRing(p):!!addrAt(p);
  map.on('mousemove',e=>{
   const ic=iconAt(e.point);
   if(ic){ if(map.getSource('k-dist')) distHover(-1); return tip(e,iconTip(ic))}
-  if(onEvent(e.point)){TIP.remove(); if(map.getSource('k-dist')) distHover(-1); return}
+  if(onEvent(e.point)){TIP.remove(); if(map.getSource('k-dist')) distHover(-1);
+   // Над кільцем курсор ставить обробник кілець; над адресою — тут.
+   if(!RINGS_ON) map.getCanvas().style.cursor='pointer'; return}
   const s=near(e.point,simIds())[0];
   if(s){const {v,q,it}=simItem(s); map.getCanvas().style.cursor='pointer';
    return tip(e,`<b>${esc(it[1])}</b><span>${esc(simLine(v,it,q))}. Клікніть для деталей</span>`)}
