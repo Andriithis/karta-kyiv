@@ -85,7 +85,26 @@ function cartoStyle(t){
 // виходить «Khreshchatyk Street Хрещатик». Беремо українську назву, а де її
 // немає — основну з OSM (у Києві вона теж українська).
 const UK_NAME=['coalesce',['get','name:uk'],['get','name']];
-function patchStyle(s){
+// Темна тема — сутінковий сірий (розд. 25, рішення 27.09): стиль dark
+// OpenFreeMap майже чорний (земля #0c0c0c), вода й дороги ледь відрізнялися
+// від тла, і на проєкторі карта ставала чорною плямою. Ті самі кольори, що
+// в затвердженому MAKET-KROK10. Кольори видів — з розд. 23, п. 4.
+const DUSK={background:'#2b2f36',water:'#27384b',waterway:'#27384b',landuse_residential:'#2f333b',
+ landcover_wood:'#2e3831',landuse_park:'#2e3831',building:'#373c45',highway_path:'#3c414a',highway_minor:'#434953',
+ highway_major_casing:'rgba(20,22,26,.55)',highway_major_inner:'#50565f',highway_major_subtle:'#4a5059',
+ highway_motorway_casing:'rgba(20,22,26,.55)',highway_motorway_inner:'#5b626d',highway_motorway_subtle:'#4a5059',
+ railway:'#555b65',railway_transit:'#555b65',railway_minor:'#4d535c',railway_dashline:'#2b2f36',
+ railway_transit_dashline:'#2b2f36',railway_minor_dashline:'#2b2f36',boundary_state:'#666d78',
+ 'boundary_country_z0-4':'#666d78','boundary_country_z5-':'#666d78','aeroway-area':'#33373f','aeroway-runway':'#3b4048'};
+const DUSK_TEXT='#b9c0cb';   // підписи: 7,3:1 до землі
+function duskStyle(layers){
+ for(const l of layers){
+  if(l.type==='symbol'){l.paint={...(l.paint||{}),'text-color':DUSK_TEXT,'text-halo-color':DUSK.background}; continue}
+  const c=DUSK[l.id]; if(!c) continue;
+  const k=l.type==='background'?'background-color':l.type==='fill'?'fill-color':l.type==='line'?'line-color':null;
+  if(k) l.paint={...(l.paint||{}),[k]:c}}
+}
+function patchStyle(s,t){
  // Щити доріг: у positron три шари щитів (два — американські), їхній фільтр
  // порівнює ref_length, якого в наших плитках немає, — звідси попередження в
  // консолі на кожне завантаження. Номери трас на карті правопорушень не
@@ -132,6 +151,9 @@ function patchStyle(s){
      'text-padding':2},
     paint:{'text-color':tc,'text-halo-color':th,'text-halo-width':1,'text-opacity':.75}});
  }
+ // Наші підписи (парки, метро, номери) додано вище — перефарбовуються разом
+ // із підписами стилю.
+ if(t==='temna') duskStyle(layers);
  return {...s,layers};
 }
 // setStyle скидає все, що ми додали. transformStyle (є в 6.10) переносить
@@ -152,7 +174,7 @@ function setBase(t){
  STYLE_OK=false;
  USING_FALLBACK=false; clearTimeout(styleTimer); setAttr(OFM_ATTR);
  styleTimer=setTimeout(()=>fallback(t),8000);
- map.setStyle(OFM[t],{transformStyle:(prev,next)=>carry(prev,patchStyle(next))});
+ map.setStyle(OFM[t],{transformStyle:(prev,next)=>carry(prev,patchStyle(next,t))});
 }
 function fallback(t){
  if(USING_FALLBACK) return;

@@ -18,6 +18,13 @@ LIBS_LEAFLET = r"""<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/
 # Тут лише стилі бібліотеки. Версія точна — оновлення не має приходити саме.
 LIBS_GL = r"""<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.10.0/dist/maplibre-gl.css">
 <style>
+/* Темна тема нової карти — сутінковий сірий, не чорний (розд. 25, рішення
+   27.09 за MAKET-KROK10): на проєкторі майже чорна карта ставала плямою.
+   Підкладку перефарбовує tpl_gl (patchStyle); тут — картки й тексти.
+   html body — щоб переважити спільні змінні тем, які стоять нижче. */
+html body[data-t="temna"]{--panel:#1f232a;--sunk:#272c34;--ink:#eceef2;--dim:#a3aab6;--faint:#8a92a0;
+ --rule:#343a44;--ground:#2b2f36;--halo:#2b2f36;--glass:rgba(31,35,42,.82);--card:rgba(31,35,42,.95);
+ --shadow:drop-shadow(0 1px 2px rgba(0,0,0,.45));--card-shadow:0 6px 24px rgba(0,0,0,.35),0 1px 3px rgba(0,0,0,.3)}
 /* Лише для MapLibre-збірки: запасна Leaflet-карта цих правил не має.
    Підказка при наведенні на смугу, потік чи населення — як .rt у Leaflet. */
 .k-tip{pointer-events:none}
