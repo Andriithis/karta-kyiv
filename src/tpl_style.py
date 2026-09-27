@@ -67,6 +67,11 @@ html body[data-t="temna"] .maplibregl-ctrl-group button+button{border-top-color:
 #adv .chip,#side .chip{padding:6px 10px;min-height:30px;border:1px solid var(--dim);border-radius:5px;
  background:var(--panel);color:var(--ink);line-height:1.2}
 #adv .chip[aria-pressed="true"],#side .chip[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+/* Порожні стани (AUDYT-3, № 7–8): пошук без збігів і фільтр без подій. */
+.sgnone{padding:8px 9px;font-size:12.5px;color:var(--dim)}
+#kempty{position:absolute;top:16px;left:50%;transform:translateX(-50%);z-index:4;max-width:min(420px,calc(100% - 32px));
+ background:var(--card);color:var(--ink);box-shadow:var(--card-shadow);border-radius:8px;padding:9px 14px;
+ font-size:13px;text-align:center;pointer-events:none}
 /* Смужка завантаження вгорі карти — доки не прийшла підкладка (розд. 25, А3). */
 #kload{position:absolute;top:0;left:0;right:0;height:3px;z-index:5;pointer-events:none;overflow:hidden}
 #kload::after{content:"";position:absolute;top:0;bottom:0;width:30%;background:var(--ink);opacity:.55;

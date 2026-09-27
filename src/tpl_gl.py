@@ -377,6 +377,7 @@ function draw(){
  // проблемами — з них і ромби, і невидимі крапки під ними для кліку.
  const st=computeVis(); LASTST=st;
  ringSums(st); map.triggerRepaint();
+ emptyState(st);
  if(!STYLE_OK||!map.getSource('k-addr')) return;
  addrPaint();
  const vis=st.vis, mx=vis.length?vis[0][1]:1;
@@ -502,7 +503,11 @@ function keepClear(pp,at,off){
 // Esc закриває вікно адреси чи вулиці й «Розширено» (панель рішень Esc
 // закриває сама, tpl_core).
 document.addEventListener('keydown',e=>{ if(e.key!=='Escape') return;
- if(POPUP) POPUP.remove(); advOpen(false)});
+ if(POPUP) POPUP.remove(); advOpen(false); $('#fd').hidden=true});
+// Меню «Район» закривається кліком повз нього (AUDYT-3, № 6): відкрите, воно
+// лишалося висіти над переліком посилань, доки не оберуть район.
+document.addEventListener('click',e=>{ const fd=$('#fd');
+ if(fd&&!fd.hidden&&!e.target.closest('#fd,#dbtn')) fd.hidden=true});
 // Одна відкрита панель за раз (розд. 25, А7): «Розширено» і вікно адреси
 // водночас не відкриті — картка «Статті» лягала поверх вікна.
 $('#advbtn').addEventListener('click',()=>{ if(!$('#adv').hidden&&POPUP) POPUP.remove()});
@@ -1317,7 +1322,9 @@ function ctxEvents(){
   const ic=iconAt(e.point); if(ic) return tip(e,iconTip(ic));
   if(CLICK_TAKEN||onEvent(e.point)) return;
   const s=near(e.point,simIds())[0]; if(s){TIP.remove(); return simPopup(s,e.lngLat)}
-  if(POPUP) POPUP.remove(); advOpen(false)});
+  // Клік по порожній карті закриває все, що відкрито над нею, — і панель
+  // рішень теж (AUDYT-3, № 5).
+  if(POPUP) POPUP.remove(); advOpen(false); closePanel()});
 }
 // ---- ВИГЛЯД: «Кільця · Адреси · Проблеми» (розд. 23, п. 7 і 9) ----
 // Замість «Події · Проблеми · Теплова» спільної панелі — лише в GL-збірці.
@@ -1339,6 +1346,25 @@ function ctxEvents(){
   $('#fprob').hidden=MODE==='prob';
   seg.querySelectorAll('button').forEach(x=>swSet(x,x===b)); draw()};
  $('#fprob').onclick=e=>{SHOWP=!SHOWP; swSet(e.currentTarget,SHOWP); map.triggerRepaint()};}
+// Пошук без збігів — так і кажемо (AUDYT-3, № 7): досі підказки просто
+// зникали, і було незрозуміло, чи пошук узагалі спрацював. Обробник стоїть
+// після спільного (tpl_core suggest), тож SUG уже пораховано.
+qEl.addEventListener('input',()=>{ if(norm(qEl.value)&&!SUG.length){
+ sg.innerHTML='<div class="sgnone">Такої адреси немає серед подій карти</div>'; sg.hidden=false}});
+// Фільтр без жодної події (AUDYT-3, № 8): порожня карта без пояснення
+// читалася як збій. Рядок над картою — що саме порожнє й що змінити.
+{const e=document.createElement('div'); e.id='kempty'; e.hidden=true; map.getContainer().appendChild(e);}
+// Елемент шукаємо за id, а не тримаємо в const: draw() може прийти раніше,
+// ніж виконається рядок вище.
+function emptyState(st){
+ const EMPTY=document.getElementById('kempty'); if(!EMPTY) return;
+ const none=!st.vis.length;
+ EMPTY.hidden=!none; if(!none) return;
+ EMPTY.textContent=MODE==='prob'
+  ?'За поточним фільтром проблем немає — увімкніть інші види чи роки'
+  :CURD>=0?'У цьому районі за поточним фільтром подій немає — увімкніть інші види, роки чи час доби'
+  :'За поточним фільтром подій немає — увімкніть інші види, роки чи час доби';
+}
 // Перемикача «Об'єкти довкола» в панелі нової карти немає (розд. 23, п. 9):
 // об'єкти — лише через «Що поруч» у вікні адреси. Розмітка панелі спільна з
 // запасною картою, тож кнопку прибираємо тут.
