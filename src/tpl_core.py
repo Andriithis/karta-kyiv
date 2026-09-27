@@ -35,11 +35,12 @@ Object.keys(R.lines||{}).forEach(k=>{const v=R.lines[k];
   RISKOF[v.theme|0]=k});
 $('#fasub').insertAdjacentHTML('beforeend',Object.keys(RISKOF).map(gi=>
  `<input type="checkbox" data-r="${RISKOF[gi]}">`).join('')+'<input type="checkbox" id="fquiet">');
-// Короткі назви видів з макета. До перегрупування (крок 6) видів лишається
-// сім; ключ — повна назва з M.groups, щоб не залежати від порядку.
+// Короткі назви видів з макета. Видів шість (розд. 18, виконано 27.09):
+// «Середовище» розійшлося в Порядок і Майно. Ключ — повна назва з M.groups,
+// щоб не залежати від порядку.
 const SHORT={'Громадський порядок':'Порядок','Алкоголь і торгівля':'Торгівля',
  'Наркотики':'Наркотики','Насильство проти особи':'Насильство','Майнові':'Майно',
- 'Дорожній рух':'Дорожній рух','Середовище і майно громади':'Середовище'};
+ 'Дорожній рух':'Дорожній рух'};
 const shortOf=gi=>SHORT[M.groups[gi][0]]||M.groups[gi][0];
 const artOn=i=>{const b=document.querySelector(`[data-a="${i}"]`);return !!(b&&b.checked)};
 const setArt=(i,v)=>{const b=document.querySelector(`[data-a="${i}"]`);if(b)b.checked=v};

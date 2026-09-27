@@ -291,7 +291,9 @@ def main():
         else: s = cache[ck] = sg.nearest(la, lo, SNAP_M)
         if s is None: continue
         lb = L.CODE.get(cat)
-        if not lb: continue
+        # «Поза видами» (статті колишнього «Середовища», яких немає в таблиці
+        # розд. 18) — не вчимо: карта їх не показує, і шару для них не буде.
+        if not lb or lb[0] not in L.ORDER: continue
         sim = M.simgroup(cat)
         hit += 1
         y = (date or '')[:4]

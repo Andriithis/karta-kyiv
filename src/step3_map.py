@@ -190,6 +190,7 @@ def vybir(c, print=print):
     n_tk_gone = 0
     n_old = collections.Counter()
     n_ne_budynok = collections.Counter()
+    n_poza = collections.Counter()
     ev_year = {}         # рік події: фільтр «Рік» на карті — за подією, не рішенням
     for rep, g, lab, cats in merged:
         if rep[0] not in TKD and (cause.get(rep[0]), PD.theme(rep[2])) in tk_cases:
@@ -209,6 +210,12 @@ def vybir(c, print=print):
         if LYSHE_BUDYNOK and rep[9] in NE_BUDYNOK:
             n_ne_budynok[PD.theme(rep[2])] += 1
             continue
+        # Шість видів (розд. 18): статті поза таблицею видів і невідомі коди на
+        # карту й у звіти не йдуть — але й не зникають мовчки: нижче друкується,
+        # скільки їх і які.
+        if PD.theme(rep[2]) not in L.ORDER:
+            n_poza[(L.CODE.get(rep[2]) or ('', 'невідомий код ' + rep[2]))[1]] += 1
+            continue
         ev_year[rep[0]] = (ed or rep[3])[:4]
         # підпис події — стаття, найтяжча в цьому виді справи (podii.label_cat)
         reps.append(rep[:2] + (lab,) + rep[3:])
@@ -222,6 +229,8 @@ def vybir(c, print=print):
     print(f'   одна подія на (справа, вид): {len(rows):,} документів -> {len(reps):,} подій')
     if n_tk_gone:
         print(f'   справ, яким прохід по текстах прибрав адресу: {n_tk_gone:,}')
+    print(f'   поза шістьма видами (на карту не йдуть): {sum(n_poza.values()):,}'
+          + (' — ' + '; '.join(f'{k} {v:,}' for k, v in n_poza.most_common()) if n_poza else ''))
     if n_ne_budynok:
         print(f'   не точний будинок («20Б -> 20», між сусідами; на карту не йдуть): '
               f'{sum(n_ne_budynok.values()):,} — '
@@ -236,13 +245,11 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
     """Сама карта з відібраних подій (vybir)."""
 
     # ---- злиття кодів у назви ----
-    cnt = collections.Counter()
-    for r in rows:
-        lb = L.CODE.get(r[2])
-        if lb: cnt[lb] += 1
-        else: cnt[('СЕР', 'інші (код ' + r[2] + ')')] += 1
+    # Невідомих кодів і «поза видами» тут уже немає — їх відсіяв vybir (шість
+    # видів, розд. 18), тож кожна подія має свій вид.
+    cnt = collections.Counter(L.CODE[r[2]] for r in rows)
 
-    labels = sorted(cnt, key=lambda k: (L.ORDER.index(k[0]) if k[0] in L.ORDER else 9, -cnt[k]))
+    labels = sorted(cnt, key=lambda k: (L.ORDER.index(k[0]), -cnt[k]))
     li = {k: i for i, k in enumerate(labels)}
     ck = sorted({r[1] for r in rows}); ci = {v: i for i, v in enumerate(ck)}
 
@@ -263,7 +270,7 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
 
     agg = collections.defaultdict(list)
     for doc, court, cat, date, tm, street, house, la, lo, prec in rows:
-        lb = L.CODE.get(cat) or ('СЕР', 'інші (код ' + cat + ')')
+        lb = L.CODE[cat]
         tk = TKD.get(doc)
         if tk is not None:
             # фабула й клас — з проходу; шкідлива фабула на сайт не йде
