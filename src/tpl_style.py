@@ -25,6 +25,13 @@ LIBS_GL = r"""<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@6.10.0/
 html body[data-t="temna"]{--panel:#1f232a;--sunk:#272c34;--ink:#eceef2;--dim:#a3aab6;--faint:#8a92a0;
  --rule:#343a44;--ground:#2b2f36;--halo:#2b2f36;--glass:rgba(31,35,42,.82);--card:rgba(31,35,42,.95);
  --shadow:drop-shadow(0 1px 2px rgba(0,0,0,.45));--card-shadow:0 6px 24px rgba(0,0,0,.35),0 1px 3px rgba(0,0,0,.3)}
+/* Блідий текст (атрибуція, осі гістограми, номери статей) — не менше 4,5:1
+   (AUDYT-3, № 1): #9aa0a9 на білому давав 2,6:1. У темній — #8a92a0 (5:1). */
+html body,html body[data-t="svitla"]{--faint:#6f7680}
+/* «+ / −» бібліотеки — чорні значки; на темній картці їх не було видно
+   (AUDYT-3, № 2). */
+html body[data-t="temna"] .maplibregl-ctrl-group button .maplibregl-ctrl-icon{filter:invert(1) brightness(.9)}
+html body[data-t="temna"] .maplibregl-ctrl-group button+button{border-top-color:var(--rule)}
 /* Лише для MapLibre-збірки: запасна Leaflet-карта цих правил не має.
    Підказка при наведенні на смугу, потік чи населення — як .rt у Leaflet. */
 .k-tip{pointer-events:none}
