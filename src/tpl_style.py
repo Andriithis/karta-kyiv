@@ -67,6 +67,25 @@ html body[data-t="temna"] .maplibregl-ctrl-group button+button{border-top-color:
 #adv .chip,#side .chip{padding:6px 10px;min-height:30px;border:1px solid var(--dim);border-radius:5px;
  background:var(--panel);color:var(--ink);line-height:1.2}
 #adv .chip[aria-pressed="true"],#side .chip[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+/* Цілі кліку — не менше 32 px заввишки (AUDYT-3, № 9–11; WCAG 2.5.8 —
+   мінімум 24): «Район ▾» був 16 px, «Розширено ›» і перемикачі шарів — 20.
+   Ширина рядків і так на всю картку, додається лише висота. */
+#side .sw,#side .sel,#side .more,#side .type,#side .menu button,#side .menu a{min-height:32px;display:flex;align-items:center}
+#side .sw{justify-content:space-between}
+#side .more{padding:0}
+#side .modes button{min-height:32px;padding-top:6px}
+#side #fprob{min-height:32px}
+#side .search{min-height:36px}
+html .tsw button{min-height:32px;display:inline-flex;align-items:center}
+#adv .sw{min-height:32px;display:flex;align-items:center;justify-content:space-between}
+#adv .ag h5 button{min-height:28px;padding:0 4px}
+.maplibregl-ctrl-group button{width:32px;height:32px}
+#adv .chip{min-height:32px}
+/* «Розширено»: × — 36 px, прокрутка без системного повзунка (№ 10). */
+#adv .advh button{width:36px;height:36px;border-radius:6px;font-size:20px}
+#adv .advh button:hover{background:var(--sunk)}
+#adv{scrollbar-width:none}
+#adv::-webkit-scrollbar{display:none}
 /* Порожні стани (AUDYT-3, № 7–8): пошук без збігів і фільтр без подій. */
 .sgnone{padding:8px 9px;font-size:12.5px;color:var(--dim)}
 #kempty{position:absolute;top:16px;left:50%;transform:translateX(-50%);z-index:4;max-width:min(420px,calc(100% - 32px));
