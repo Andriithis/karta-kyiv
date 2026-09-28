@@ -598,7 +598,11 @@ function ringSums(st){
    if(np[j]){pnp[p]+=np[j]; if(pn[j]>ppn[p]){ppn[p]=pn[j]; ppq[p]=pq[j]}}
    for(let g=0;g<NG;g++) ps[p*NG+g]+=s[j*NG+g]}}
 }
-const rRing=n=>Math.min(30,10+3*Math.log2(Math.max(n,1)));
+// Кільця рівнів міського огляду (до z11) — на 30% менші (розд. 30, MAKET-START
+// «Б»). Множник той самий, що в map_clusters.ring_k: дерево розраховане саме
+// під ці радіуси, інакше кільця знову налізли б одне на одне.
+const ringK=i=>TZ0+i*TDZ<11?.7:1;
+const rRing=(n,i)=>Math.min(30,10+3*Math.log2(Math.max(n,1)))*(i===undefined?1:ringK(i));
 const fmtN=v=>v>=10000?Math.round(v/1000)+'k':v>=1000?(v/1000).toFixed(1).replace('.',',')+'k':String(v);
 // Що малює вузол j рівня i: кільце в центрі вузла, крапку на місці єдиної
 // адреси з подіями або нічого (подій за фільтром немає).
@@ -823,7 +827,7 @@ const ringLayer={id:'k-rings', type:'custom', renderingMode:'2d',
     // вже врахувало (map_clusters.r_addr).
     if(v.np&&SHOWP){later.push(()=>diamond(o.x,o.y,Math.max(7,r)*1.25,al,rgb(PALA[v.pt%PALA.length]))); continue}
     quad(o.x,o.y,r+2,r,0,1,RING_A*al,Q1,rgb(PALA[v.th%PALA.length])); continue}
-   const r=rRing(o.n), inner=r*.62, q=[1,1,1,1,1,1,1,1];
+   const r=rRing(o.n,o.i), inner=r*.62, q=[1,1,1,1,1,1,1,1];
    let acc=0; for(let g=0;g<7;g++){acc+=g<NG?o.s[g]:0; q[g]=acc/o.n}
    quad(o.x,o.y,r+2,r,inner,0,RING_A*al,q,C0);
    texts.push([o.x,o.y+.5,fmtN(o.n),Math.max(9,Math.min(13,inner*.9)),al]);
@@ -911,7 +915,7 @@ map.on('moveend',()=>requestAnimationFrame(()=>map.triggerRepaint()));
 // Клік: кільце — переліт до його адрес, не глибше ніж на 2,5 кроку зуму від
 // поточного (розд. 23, п. 6); крапка — вікно адреси, як у шарі GL.
 function hitRing(pt){let best=null, bd=1e9; const z=map.getZoom();
- for(const o of VIS){const r=o.dot?Math.max(6,LEAFV[o.k]?LEAFV[o.k].r0*zmulAt(z)+3:6):rRing(o.n)+3;
+ for(const o of VIS){const r=o.dot?Math.max(6,LEAFV[o.k]?LEAFV[o.k].r0*zmulAt(z)+3:6):rRing(o.n,o.i)+3;
   const d=Math.hypot(o.x-pt.x,o.y-pt.y); if(d<=r&&d<bd){bd=d;best=o}}
  return best}
 map.on('click',e=>{

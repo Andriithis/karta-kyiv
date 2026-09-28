@@ -24,12 +24,22 @@ import math, collections
 Z_TOP, Z_BOTTOM, DZ = 14.5, 8.0, 0.5
 R_MERGE = 48            # px: усе ближче зливається одразу (R у макеті)
 CELL = 70               # px: сітка пошуку сусідів; більша за два найбільші радіуси
+# Міський огляд (до z11) — кільця на 30% менші й радіус злиття 34 px
+# (MAKET-START, варіант Б; RISHENNYA, розд. 30): на старті було ~20 великих
+# кілець по 6–13k, одне лягало на підпис «Київ». Менше кільце менше
+# зливається — поділ міста дрібніший. Ближче — як було, щоб число в кільці
+# лишалося читабельним. Той самий множник — у браузері (tpl_gl, ringK).
+Z_SMALL, K_SMALL, R_MERGE_SMALL = 11, 0.7, 34
 
 
-def r_ring(n, prob):
+def ring_k(z):
+    return K_SMALL if z < Z_SMALL else 1
+
+
+def r_ring(n, prob, z=Z_SMALL):
     """Радіус кільця — той самий, що малює браузер; ромб проблеми з обвідкою
     чорнила вимагає трохи більше місця."""
-    return min(30, 10 + 3 * math.log2(max(n, 1))) + (4 if prob else 1.5)
+    return min(30, 10 + 3 * math.log2(max(n, 1))) * ring_k(z) + (4 if prob else 1.5)
 
 
 def zoom_mul(zl):
@@ -85,7 +95,8 @@ def build(P):
         z = Z_TOP - step * DZ
         k = 2 ** z
         rad = lambda o: (r_addr(o['n'], mx, z, o['pr']) if o['one']
-                         else r_ring(o['n'], o['pr']))
+                         else r_ring(o['n'], o['pr'], z))
+        RM = R_MERGE_SMALL if z < Z_SMALL else R_MERGE
         # 1) Усе ближче за R_MERGE — в одну групу, від найбільших вузлів.
         #    Сортування стале (при рівній вазі — за номером), щоб дві збірки
         #    на тих самих даних давали той самий файл.
@@ -93,20 +104,20 @@ def build(P):
         grid = collections.defaultdict(list)
         for a in order:
             o = nodes[a]
-            grid[(int(o['x'] * k // R_MERGE), int(o['y'] * k // R_MERGE))].append(a)
+            grid[(int(o['x'] * k // RM), int(o['y'] * k // RM))].append(a)
         used = [False] * len(nodes)
         groups = []
         for a in order:
             if used[a]: continue
             used[a] = True
             o, m = nodes[a], [a]
-            gi, gj = int(o['x'] * k // R_MERGE), int(o['y'] * k // R_MERGE)
+            gi, gj = int(o['x'] * k // RM), int(o['y'] * k // RM)
             for u in (gi - 1, gi, gi + 1):
                 for v in (gj - 1, gj, gj + 1):
                     for b in grid.get((u, v), ()):
                         if used[b]: continue
                         dx, dy = (nodes[b]['x'] - o['x']) * k, (nodes[b]['y'] - o['y']) * k
-                        if dx * dx + dy * dy <= R_MERGE * R_MERGE:
+                        if dx * dx + dy * dy <= RM * RM:
                             used[b] = True; m.append(b)
             groups.append(m)
         # 2) Доки кільця налазять одне на одне — зливаємо. Центр — зважений
