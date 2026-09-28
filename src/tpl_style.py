@@ -163,7 +163,11 @@ html .tsw button{min-height:32px;display:inline-flex;align-items:center}
 #kplace .kp-near li.hl .kp-nn{border-color:var(--ink)}
 #kplace .kp-ni{width:18px;text-align:center;flex:none}
 #kplace .kp-nd{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+#kfold{display:none}
 @media (max-width:700px){
+ #kfold{display:flex;align-items:center;justify-content:center;min-height:36px;margin-top:6px;border:1px solid var(--rule);
+  border-radius:6px;background:var(--panel);color:var(--ink);font:500 13px var(--sans);cursor:pointer}
+ #side.kmin>:not(.search):not(#kfold):not(.sugg){display:none}
  #kplace{top:auto;bottom:12px;left:12px;right:12px;width:auto;max-height:min(70vh,calc(100% - 80px))}
  body.kp-open #side{display:none}
 }
