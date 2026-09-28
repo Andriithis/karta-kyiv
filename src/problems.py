@@ -527,12 +527,37 @@ def run(V=None, log=print, FACT=None):
             if E4.seg_len(pts) < 40: continue
             segs[w['id']] = pts; names[w['id']] = (w.get('tags') or {}).get('name', '')
         if segs:
-            sg = E4.SegGrid(segs)
+            # Лінія — відрізок СВОЄЇ вулиці: подія прив'язується лише до
+            # відрізка з тією самою назвою. Без цього події з Хрещатика
+            # «прилипали» до сусіднього відрізка Б. Хмельницького.
+            from step2_geocode import skey
+            def slova(s):
+                return {w for w in skey(s or '').split() if len(w) >= 4}
+            sl = {sid: slova(nm) for sid, nm in names.items()}
+            by_name = collections.defaultdict(dict)
+            for sid in segs:
+                for w in sl[sid]: by_name[w][sid] = segs[sid]
+            grids = {}
             by = collections.defaultdict(list)
             cache = {}
             for i, e in enumerate(ev):
                 if id(e) in is_problem_ev or e['klas'] != 'B': continue
-                s = cache[e['p']] if e['p'] in cache else cache.setdefault(e['p'], sg.nearest(*e['p'], SNAP_M))
+                ws = slova(e['adr'].split(',')[0])
+                key = (e['p'], frozenset(ws))
+                if key not in cache:
+                    best = None
+                    for w in ws:
+                        if w not in by_name: continue
+                        g = grids.get(w) or grids.setdefault(w, E4.SegGrid(by_name[w]))
+                        s = g.nearest(*e['p'], SNAP_M)
+                        # одна назва має повністю входити в іншу: «Ав. Антонова»
+                        # в «Авіаконструктора Антонова» — так, «Північно-Сирецька»
+                        # у «Парково-Сирецьку» — ні
+                        if s is not None and (ws <= sl[s] or sl[s] <= ws):
+                            d = min(dist(e['p'], q) for q in segs[s])
+                            if best is None or d < best[0]: best = (d, s)
+                    cache[key] = best[1] if best else None
+                s = cache[key]
                 if s is not None: by[(e['sim'], s)].append((place[i][2], e))
             for (sim, sid), lst in by.items():
                 mc = collections.Counter(pl for pl, _e in lst)
