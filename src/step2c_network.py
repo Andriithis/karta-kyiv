@@ -108,7 +108,7 @@ def centers(els):
 
 def main():
     if not os.path.exists(RAW):
-        print('немає data/osm_risks_raw.json — спершу 2b-RISKS'); sys.exit(1)
+        print('немає data/osm_risks_raw.json — спершу крок 2b (src/step2b_risks.py)'); sys.exit(1)
     raw = json.load(open(RAW, encoding='utf-8'))
     roads, foot = raw.get('roads', []), raw.get('foot', [])
     houses = centers(raw.get('houses', []))
@@ -179,7 +179,7 @@ def main():
 
     if big / max(len(adj), 1) < 0.7:
         print('   !!! УВАГА: мережа сильно розірвана — імовірно, неповні дані foot/roads.')
-        print('   !!! Перезапустіть 2b-RISKS, видаливши data/osm_risks_raw.json')
+        print('   !!! Перезапустіть крок 2b, видаливши data/osm_risks_raw.json')
     # до якої компоненти належить перевірювана вулиця
     if len(sys.argv) > 1 and sys.argv[1].strip():
         q0 = sys.argv[1].strip().lower()

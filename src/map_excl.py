@@ -164,7 +164,7 @@ def detect_institutional(rows, manual):
         print(f'   установ з OpenStreetMap: {len(ust)}; адрес на них: {len(on_ust)}')
     else:
         print('   data/ustanovy.json немає — установи ловляться лише за числами '
-              '(запустіть 2b-RISKS, щоб додати будівлі з OpenStreetMap)')
+              '(запустіть крок 2b (src/step2b_risks.py), щоб додати будівлі з OpenStreetMap)')
 
     keep = load_keep()
     auto = {}

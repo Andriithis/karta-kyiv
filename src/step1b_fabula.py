@@ -19,7 +19,7 @@
 проблем з'являються в перші хвилини, а не наприкінці. Роботу можна
 перервати будь-коли, наступний запуск продовжить з того самого місця.
 
-Запуск: FABULY.bat
+Запуск: python src/step1b_fabula.py (разовий; FABULY.bat видалено 29.09)
 """
 import os, re, sys, csv, gzip, glob, time, sqlite3, threading, queue, collections
 import urllib.request

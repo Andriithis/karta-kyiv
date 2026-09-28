@@ -139,7 +139,7 @@ def build(district, labels):
                 'items': [[a, b] for a, b in vals]}
             print(f'   {title}: {len(vals):,} відрізків')
     else:
-        print('шар потоків відсутній (запустіть 2c-NETWORK) — карта буде без нього')
+        print('шар потоків відсутній (крок 2c, src/step2c_network.py) — карта буде без нього')
 
     ER = {}
     erp = os.path.join(DATA, 'engine_report.json')
