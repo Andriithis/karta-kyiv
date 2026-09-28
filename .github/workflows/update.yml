@@ -103,7 +103,8 @@ jobs:
             echo "перший тиждень місяця — перенавчаю модель автоматично"
           fi
           if [ "$RETRAIN" = "true" ]; then
-            pip install --quiet numpy scikit-learn
+            # statsmodels — покрокова регресія за BIC і негативна біноміальна (RTM, Б1)
+            pip install --quiet numpy scikit-learn statsmodels
             python src/step4_engine.py
           else
             echo "модель ризику цього запуску не перенавчається"
@@ -119,7 +120,7 @@ jobs:
         run: |
           git config user.name  "karta-bot"
           git config user.email "actions@github.com"
-          for f in data/events.csv.gz data/formy.csv.gz data/formy_dovidnyk.csv data/risks.json data/network.json data/vykluchennya.txt data/borders.json data/engine_report.json data/risk.json; do
+          for f in data/events.csv.gz data/formy.csv.gz data/formy_dovidnyk.csv data/risks.json data/network.json data/vykluchennya.txt data/borders.json data/engine_report.json data/risk.json data/radiusy.json data/problems_report.json ZVIT-KROK7.md; do
             [ -f "$f" ] && git add -f "$f" && echo "додано $f"
           done
           [ -d data/posylannya ] && git add -f data/posylannya && echo "додано data/posylannya"

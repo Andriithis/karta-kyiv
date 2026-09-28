@@ -90,7 +90,13 @@ const FCOL=['#f59e0b','#38bdf8','#a3a3a3'];   // притягують / збир
 // виконувався жодного разу.
 const FICON={bar_on:'🍺',bar_off:'🍾',shop24:'🛒',food:'🍽',finance:'💱',
  gambling:'🎰',fuel:'⛽',school:'🎒',univer:'🎓',health:'✚',market:'🏬',
- metro:'Ⓜ',busstop:'🚏',play:'🧸',abandon:'🏚',parking:'🅿',cctv:'📹'};
+ metro:'Ⓜ',busstop:'🚏',play:'🧸',abandon:'🏚',parking:'🅿',cctv:'📹',
+ // перелік Б1 (NAUKA.md, 28.09) — step2e_factors
+ b1_bars:'🍺',b1_alk:'🍾',b1_cafe:'🍽',b1_fastfood:'🍔',b1_pawn:'💍',b1_atm:'🏧',
+ b1_exchange:'💱',b1_fuel:'⛽',b1_school:'🎒',b1_univer:'🎓',b1_dorm:'🛏',
+ b1_hospital:'🏥',b1_pharmacy:'✚',b1_market:'🧺',b1_super:'🛒',b1_mall:'🏬',
+ b1_metro:'Ⓜ',b1_stops:'🚏',b1_play:'🧸',b1_underpass:'⤵',b1_abandon:'🏚',
+ b1_parking:'🅿',b1_garages:'🚗'};
 const FZOOM=14;                               // ближче за цей масштаб — показуємо позначки
 const RCOL={metro:'#38bdf8',busstop:'#7dd3fc',
  flow_school:'#fbbf24',flow_transit:'#38bdf8',flow_shop:'#f472b6'};

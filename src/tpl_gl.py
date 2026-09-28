@@ -403,6 +403,12 @@ let PLACE=null;   // {i, tab, open, pi, allArts, near, hl}
  map.getContainer().appendChild(c);}
 const placeEl=()=>document.getElementById('kplace');
 const NEAR_R=250;
+// Радіус кожного типу — з моделі (radiusy.json -> factors.json, поле r): тип
+// показується в колі, на якому він пов'язаний з подіями; не пов'язаний — у
+// найменшому, 50 м (PLAN-KROK7, розд. 3). До перенавчання — усі 250 м.
+const nearR=c=>c.r||NEAR_R;
+const NEAR_MAX=(F.cats||[]).length?Math.max(...F.cats.map(nearR)):NEAR_R;
+const NEAR_ONE=(F.cats||[]).every(c=>nearR(c)===nearR((F.cats||[])[0]||{}));
 // Події місця за поточним фільтром — індекси в p[4] (у тому самому порядку, що
 // й справи у spravy/<район>.json). Для проблеми — лише події її статей:
 // картка проблеми говорить тільки про проблему (рішення 28.09), решта подій
@@ -480,14 +486,25 @@ function nearList(p){
  if(!(F.cats||[]).length) return [];
  const my=111320, mx=111320*Math.cos(p[0]*Math.PI/180), out=[];
  F.cats.forEach(c=>c.pts.forEach(q=>{const dd=Math.hypot((q[0]-p[0])*my,(q[1]-p[1])*mx);
-  if(dd<=NEAR_R) out.push({c,q,d:Math.round(dd)})}));
+  if(dd<=nearR(c)) out.push({c,q,d:Math.round(dd)})}));
  return out.sort((a,b)=>a.d-b.d);
 }
+// Позначка проактивного виду (PLAN-KROK7, 7.2): біля «Що поруч» вона каже,
+// що частину таких подій поліція виявляє сама — тож об'єкти поруч можуть
+// говорити й про те, де вона частіше працює.
+function nearProakt(){
+ const d=placeData(); let gi=d.pr?d.pr.thi:undefined;
+ if(gi===undefined||gi<0){const g=new Array(M.groups.length).fill(0);
+  d.evs.forEach(k=>g[CATTH[d.p[4][k][1]]]++); gi=g.indexOf(Math.max(...g))}
+ const v=R.lines[RISKOF[gi]], m=v&&v.proakt;
+ if(!m) return '';
+ return `<div class="tt kp-pro">${esc(shortOf(gi))} — ${esc(m)}: `+(m==='проактивний вид'
+  ?'такі події поліція здебільшого виявляє сама.':'частину таких подій поліція виявляє сама.')+'</div>'}
 function nearHTML(){
- const L=PLACE.near;
- if(!L.length) return `<div class="kp-empty">У радіусі ${NEAR_R} м об'єктів із переліку немає.</div>`;
- return `<div class="tt">У радіусі ${NEAR_R} м. Які з них пояснюють скупчення — вирішує той, хто вийде на місце.</div>
-  <ol class="kp-near">${L.map((o,j)=>`<li data-near="${j+1}"${PLACE.hl===j+1?' class="hl"':''}><span class="kp-nn">${j+1}</span><span class="kp-ni">${FICON[o.c.k]||'•'}</span>${esc(o.c.n)}<span class="kp-nd">${o.d} м</span></li>`).join('')}</ol>`}
+ const L=PLACE.near, rtxt=NEAR_ONE?`У радіусі ${NEAR_MAX} м`:`Кожен тип — у своєму радіусі, до ${NEAR_MAX} м`;
+ if(!L.length) return `<div class="kp-empty">${rtxt} об'єктів із переліку немає.</div>`+nearProakt();
+ return `<div class="tt">${rtxt}. Які з них пояснюють скупчення — вирішує той, хто вийде на місце.</div>`+nearProakt()+`
+<ol class="kp-near">${L.map((o,j)=>`<li data-near="${j+1}"${PLACE.hl===j+1?' class="hl"':''}><span class="kp-nn">${j+1}</span><span class="kp-ni">${FICON[o.c.k]||'•'}</span>${esc(o.c.n)}<span class="kp-nd">${o.d} м</span></li>`).join('')}</ol>`}
 let DOCS_NOW={i:-1,cs:undefined};
 function renderPlace(){
  const el=placeEl(); if(!PLACE){el.hidden=true; document.body.classList.remove('kp-open'); return}
@@ -1077,6 +1094,12 @@ const lineLL=pts=>{const c=pts.map(q=>[q[1],q[0]]), a=c[0], b=c[c.length-1];
 // лишається просвіт.
 const SIMK=Object.keys(RISKOF).map(Number).sort((a,b)=>a-b).filter(gi=>{
  const v=R.lines[RISKOF[gi]]; return v&&!v.nodata&&(v.items||[]).length});
+// Легенда шару (PLAN-KROK7, 4 і 7.2): які види проактивні і для яких шару
+// немає, бо даних замало, — одним рядком під перемикачем.
+{const x=$('#friskx'), rows=Object.keys(RISKOF).map(Number).sort((a,b)=>a-b).map(gi=>{
+  const v=R.lines[RISKOF[gi]];
+  return v.nodata?`${shortOf(gi)} — даних замало`:v.proakt?`${shortOf(gi)} — ${v.proakt}`:''}).filter(Boolean);
+ if(x&&rows.length) x.insertAdjacentHTML('beforeend',`<div class="ksim-leg">${rows.map(esc).join(' · ')}</div>`)}
 const SIM_STEP=[[10,2.2],[13,2.5],[15,3.5],[17,5.5],[19,8]];
 const zStep=f=>['interpolate',['linear'],['zoom'],...SIM_STEP.flatMap(([z,s])=>[z,f(s)])];
 const simOff=k=>zStep(s=>(k-(SIMK.length-1)/2)*s);
@@ -1274,7 +1297,7 @@ const nearObj=(c,p,d)=>({type:'Feature',geometry:{type:'Point',coordinates:[p[1]
  properties:{t:'o',k:c.k,d:Math.round(d),s:`${c.n} — ${Math.round(d)} м`}});
 // Перелік картки місця — на карту тими самими номерами.
 function nearNumbered(p,list){
- nearShow(p[0],p[1],list.map(o=>nearObj(o.c,o.q,o.d)),[NEAR_R]);
+ nearShow(p[0],p[1],list.map(o=>nearObj(o.c,o.q,o.d)),[NEAR_MAX]);
  if(PLACE&&PLACE.hl) map.setFeatureState({source:'k-near',id:PLACE.hl},{hl:true});
 }
 // Підсвічує об'єкти, які модель порахувала для конкретної точки, з колами

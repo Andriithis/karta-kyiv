@@ -142,6 +142,8 @@ html .tsw button{min-height:32px;display:inline-flex;align-items:center}
 #kplace .kp-pch{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
 #kplace .kp-pct{font-size:14px;font-weight:600;margin:1px 0 3px}
 #kplace .kp-mod{margin-top:8px}
+#kplace .kp-pro{margin:4px 0 6px;color:var(--dim)}
+#friskx .ksim-leg{flex-basis:100%;font-size:12px;line-height:1.35;color:var(--dim);margin-top:2px}
 #kplace .kp-lnk{background:none;border:0;padding:0;min-height:30px;font:inherit;font-size:12.5px;color:var(--ink);
  text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 #kplace .kp-empty{color:var(--dim);font-size:12.5px;padding:6px 0}
