@@ -136,6 +136,37 @@ def save_dovidnyk(z):
     print('   довідник форм рішень:')
     for r in rows[1:]: print('      ' + ' — '.join(r))
 
+KATDIR = os.path.join(DATA, 'katehorii')
+
+def save_katehorii_dovidnyk(z):
+    """Довідники категорій справ і видів судочинства з дампу — щоб перелік
+    статей у labels.CODE звіряти з першоджерелом і бачити, чого ми не беремо
+    (чат «Проблеми», 28.09: ст. 51 КУпАП та інші). Пишемо як є, лише з
+    виправленим подвійним кодуванням."""
+    os.makedirs(KATDIR, exist_ok=True)
+    for n in z.namelist():
+        base = os.path.basename(n)
+        if not base.endswith('.csv') or base == 'documents.csv' or 'judgment_forms' in base:
+            continue
+        with z.open(n) as fh:
+            rows = [[unmojibake(x.strip('"')) for x in ln.rstrip('\r\n').split('\t')]
+                    for ln in io.TextIOWrapper(fh, encoding='utf-8', errors='replace')]
+        with open(os.path.join(KATDIR, 'dovidnyk_' + base), 'w', encoding='utf-8', newline='') as o:
+            for r in rows:
+                o.write('\t'.join(r) + '\n')
+        print(f'   довідник {base}: {len(rows) - 1:,} рядків')
+
+def save_katehorii_kyiv(year, cnt):
+    """Скільки київських документів у КОЖНІЙ категорії справ за рік, з
+    розбивкою за видом судочинства й формою рішення — і тих, що в карту не
+    йдуть. data/katehorii/kyiv_<рік>.csv"""
+    os.makedirs(KATDIR, exist_ok=True)
+    with open(os.path.join(KATDIR, f'kyiv_{year}.csv'), 'w', encoding='utf-8', newline='') as o:
+        o.write('category_code\tjustice_kind\tjudgment_code\tv_karti\tdokumentiv\n')
+        for (cat, jk, jc), n in sorted(cnt.items(), key=lambda x: -x[1]):
+            o.write(f'{cat}\t{jk}\t{jc}\t{1 if L.CODE.get(cat) else 0}\t{n}\n')
+    print(f'   katehorii/kyiv_{year}.csv: {len(cnt):,} поєднань категорія×вид×форма')
+
 def column(hdr, name, default):
     """Номер колонки за назвою з першого рядка дампу, а якщо назви немає —
     звичний номер. Порядок колонок у дампі вже мінявся між роками."""
@@ -170,6 +201,8 @@ def parse(zpath, year, write_kyiv):
     forms, links = {}, {}
     with zipfile.ZipFile(zpath) as z:
         save_dovidnyk(z)
+        save_katehorii_dovidnyk(z)
+        katcnt = collections.Counter()
         name = next(n for n in z.namelist() if n.endswith('documents.csv'))
         with z.open(name) as fh:
             txt = io.TextIOWrapper(fh, encoding='utf-8', errors='replace')
@@ -184,6 +217,8 @@ def parse(zpath, year, write_kyiv):
                 f = line.rstrip('\n').split('\t')
                 if len(f) < 12: continue
                 if f[1] not in COURTS: continue
+                if f[10] == '1':
+                    katcnt[(f[4].strip('"'), f[3].strip('"'), f[jc].strip().strip('"'))] += 1
                 lb = L.CODE.get(f[4])
                 if not lb or lb[0] in SKIP_THEME: continue
                 if f[10] != '1': continue
@@ -195,6 +230,7 @@ def parse(zpath, year, write_kyiv):
                     o.write(f'{f[0]}\t{f[1]}\t{COURTS[f[1]]}\t{lb[0]}\t{f[4]}\t{f[5]}\t{d}\t{f[9]}\t{code}\n')
                 found += 1; grp[lb[0]] += 1
             if o: o.close()
+    save_katehorii_kyiv(year, katcnt)
     if write_kyiv:
         os.replace(tmp, out)
         print(f'   прочитано {total:,}, відібрано {found:,} -> kyiv_{year}.csv')

@@ -9,7 +9,7 @@ name: Аналіз 1551
 on:
   push:
     branches: [main]
-    paths: ['src/zbir_1551.py', '.github/workflows/analiz1551.yml']
+    paths: ['src/zbir_1551.py', 'src/zbir_kamery.py', '.github/workflows/analiz1551.yml']
   schedule:
     - cron: '17 3 * * 1'
   workflow_dispatch:
@@ -38,21 +38,25 @@ jobs:
         run: |
           git fetch origin analiz-1551 || true
           git checkout origin/analiz-1551 -- data/1551 2>/dev/null || true
+          git checkout origin/analiz-1551 -- data/vidkryti 2>/dev/null || true
           git reset -q
       - name: Докачати й відібрати
         run: python src/zbir_1551.py ${{ github.event.inputs.months }}
+      - name: Камери фіксації швидкості
+        run: python src/zbir_kamery.py || true
       - name: Покласти в гілку analiz-1551
         run: |
           git config user.name  "karta-bot"
           git config user.email "actions@github.com"
           mv data/1551 /tmp/r1551
+          mkdir -p data/vidkryti && mv data/vidkryti /tmp/rvidkryti
           git fetch origin analiz-1551 || true
           if git rev-parse --verify origin/analiz-1551 >/dev/null 2>&1; then
             git checkout -B analiz-1551 origin/analiz-1551
           else
             git checkout --orphan analiz-1551 && git rm -rfq . || true
           fi
-          mkdir -p data && rm -rf data/1551 && cp -r /tmp/r1551 data/1551
-          git add -f data/1551
+          mkdir -p data && rm -rf data/1551 data/vidkryti && cp -r /tmp/r1551 data/1551 && cp -r /tmp/rvidkryti data/vidkryti
+          git add -f data/1551 data/vidkryti
           git commit -m "1551: завантаження для аналізу $(date +%Y-%m-%d)" || echo "змін немає"
           git push origin analiz-1551

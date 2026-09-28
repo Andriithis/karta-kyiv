@@ -47,6 +47,7 @@ jobs:
             [ -f "$f" ] && git add -f "$f" && echo "додано $f"
           done
           [ -d data/posylannya ] && git add -f data/posylannya && echo "додано data/posylannya"
+          [ -d data/katehorii ] && git add -f data/katehorii && echo "додано data/katehorii"
           if git diff --quiet --cached; then
             echo "змін немає"
           else
