@@ -77,6 +77,47 @@
 що з нього випливають для перенавчання, — `PLAN-KROK7.md`, розд. 7. Перед
 запуском Б1 остаточний перелік типів і радіусів записується сюди.
 
+### Перелік чинників для Б1 (зафіксовано 28.09.2026)
+
+Це перелік «до запуску», якого вимагає п. 3 `PLAN-KROK7.md`. Після
+результату не змінюється. Обґрунтування й київська перевірка кожного —
+`PIDKHID.md`, додаток В. Кожен тип — у двох формах («є в межах r» і
+«скільки в межах r») на радіусах 50, 100, 150, 250, 400, 500 м.
+
+| Тип | Запит OSM | Джерело |
+|---|---|---|
+| бари, клуби | `amenity=bar\|pub\|nightclub\|biergarten` | Roncek, Maier 1991; POP #1 |
+| алкоголь на винос | `shop=alcohol\|wine\|beverages` | Livingston 2008; Gruenewald та ін. 2006 |
+| кафе, ресторани | `amenity=restaurant\|cafe` | POP #60 |
+| фастфуд | `amenity=fast_food` | Bernasco, Block 2011 |
+| ломбарди | `shop=pawnbroker\|money_lender` | Fass, Francis 2004 |
+| банкомати | `amenity=atm` | POP #8 |
+| обмінники | `amenity=bureau_de_change\|money_transfer` | Bernasco, Block 2011 |
+| ринки | `amenity=marketplace` | Brantingham 1995 |
+| супермаркети | `shop=supermarket` | Clarke 1999; POP #11 |
+| ТЦ | `shop=mall\|department_store` | Clarke 1999; POP #11 |
+| лікарні | `amenity=hospital\|clinic` | Kennedy та ін. 2016 |
+| аптеки | `amenity=pharmacy` | POP #11 |
+| АЗС | `amenity=fuel` | Dumbaugh, Rae 2009 |
+| школи, садки | `amenity=school\|kindergarten` | POP #6, #50 |
+| ВНЗ | `amenity=university\|college` | Brantingham 1995 |
+| метро, вокзали | `railway=subway_entrance\|station` | Loukaitou-Sideris 1999; Ceccato та ін. 2013 |
+| зупинки | `highway=bus_stop`, `public_transport=platform` | Loukaitou-Sideris 1999 |
+| дитячі майданчики | `leisure=playground\|fitness_station` | POP #6 |
+| відкриті паркінги | `amenity=parking` | POP #10 |
+| покинуті будівлі | `building=ruins\|abandoned`, `abandoned=yes`, `disused=yes` | POP #64 |
+| **підземні переходи** (нове) | `highway=footway\|steps\|pedestrian` + `tunnel=yes` або `layer<0` | київська гіпотеза; перевіряє модель |
+| **гуртожитки, хостели** (нове) | `building=dormitory`, `tourism=hostel` | Bernasco, Block 2011 |
+| **гаражні кооперативи** (нове) | `landuse=garages`, `building=garages` | київська гіпотеза; перевіряє модель |
+
+Лишаються без змін: пішохідні потоки (`network.json`), населення, будова
+вулиці (клас дороги, смуги, тупик, звивистість, перехрестя).
+
+**Не входять:** магазини біля дому, гральні заклади, камери — OSM
+неповний (93, 11, 0 на місто); поліція, суди, прокуратура — не чинник, а
+артефакт неперевірених адрес; тротуари, освітлення, переходи, парки —
+рішення 25.09 і розд. 27.
+
 ### Як RTM обирає радіус (перевірено 24.09.2026)
 
 Радіус впливу в RTM не задається наперед, а обирається даними. Кожен чинник
