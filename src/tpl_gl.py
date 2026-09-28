@@ -49,12 +49,16 @@ const GLPAL_HEX={
            temna: ['#FFA76E','#5ADAB7','#9B99F0','#F78265','#8AC0F1','#85BB8F']},
  hrafit:  {svitla:['#A54D09','#009178','#5056B0','#BD5460','#3C74C2','#417341'],
            temna: ['#B03D03','#007C56','#7B73C7','#CE4148','#1965BC','#166E13']}};
-const PALNAMES=[['yaskrava','Яскрава'],['kreida','Крейдяна'],['hrafit','Графітова']];
-let PALK='yaskrava';
-try{const v=localStorage.getItem('karta-palitra'); if(GLPAL_HEX[v]) PALK=v}catch(e){}
+// Палітра прив'язана до теми (розд. 30, рішення Андрія 28.09): світла —
+// Графітова, темна — Крейдяна. Перемикача палітр більше немає: вибір
+// «якими кольорами» глядачеві нічого не давав, а на проєкторі потрібна саме
+// пара «тема — палітра». Яскрава лишається в коді запасною.
+const PAL_OF_THEME={svitla:'hrafit',temna:'kreida'};
+let PALK=PAL_OF_THEME[THEME]||'hrafit';
 // Масив у порядку M.groups; вид без свого кольору (якщо такий з'явиться) — з
 // PAL, а восьмий, запасний, як і там, — у кінці.
-function glPal(theme){const src=GLPAL_HEX[PALK][theme]||GLPAL_HEX[PALK].svitla;
+function glPal(theme){PALK=PAL_OF_THEME[theme]||'hrafit';
+ const src=GLPAL_HEX[PALK][theme]||GLPAL_HEX[PALK].svitla;
  const by={}; KINDS_ORDER.forEach((n,i)=>by[n]=src[i]);
  return M.groups.map((g,gi)=>by[g[0]]||PAL[theme][gi%PAL[theme].length]).concat(PAL[theme].slice(M.groups.length))}
 if(THEME!=='svitla'&&THEME!=='temna'){THEME='svitla';document.body.dataset.t=THEME}
@@ -1374,16 +1378,6 @@ function emptyState(st){
 // об'єкти — лише через «Що поруч» у вікні адреси. Розмітка панелі спільна з
 // запасною картою, тож кнопку прибираємо тут.
 {const b=document.querySelector('#fctx [data-ctx="facts"]'); if(b) b.remove();}
-// ---- ПЕРЕМИКАЧ ПАЛІТР — у «Розширено», поруч з роком і часом доби ----
-{const top=document.querySelector('#adv .advtop');
- if(top){top.insertAdjacentHTML('beforeend','<div class="advrow"><span>Кольори</span><div class="chips" id="fpal">'+
-   PALNAMES.map(([k,n])=>`<button class="chip" data-p="${k}" aria-pressed="${k===PALK}">${n}</button>`).join('')+'</div></div>');
-  $('#fpal').onclick=e=>{const b=e.target.closest('[data-p]'); if(!b||b.dataset.p===PALK) return;
-   PALK=b.dataset.p; try{localStorage.setItem('karta-palitra',PALK)}catch(err){}
-   $('#fpal').querySelectorAll('[data-p]').forEach(x=>swSet(x,x===b));
-   PALA=glPal(THEME);
-   Object.keys(R.lines||{}).forEach(k=>{if(k.startsWith('risk_'))RCOL[k]=PALA[(R.lines[k].theme||0)%PALA.length]});
-   paintRows(); drawRisks(); draw()};}}
 // Перевірка з консолі: скільки адрес із проблемами й скільки самих проблем
 // за поточним фільтром і районом — те, що карта показує ромбами.
 window.kartaProblemy=()=>({adres:PROBK.length, problem:PROBK.reduce((s,k)=>s+LEAFV[k].np,0)});
