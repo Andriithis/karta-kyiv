@@ -433,12 +433,30 @@ function placeArts(p,evs){
  const rows=Object.entries(c).sort((a,b)=>b[1]-a[1]), show=PLACE.allArts?rows:rows.slice(0,5);
  return `<table class="bd">${show.map(([a,n])=>`<tr><td>${esc(M.cats[a])}</td><td><b>${n}</b></td></tr>`).join('')}</table>`+
   (rows.length>show.length?`<button class="kp-lnk" data-kp="arts">ще ${rows.length-show.length} ${pl(rows.length-show.length,'стаття','статті','статей')}</button>`:'')}
+// В1 (NAPRYAM-PROBLEMY, Р5; PIDKHID, розд. 4 і 5.1): рівень місця, тип
+// проблеми, посібник і голос мешканців — по рядку, без пояснень, яких
+// немає в даних.
+function probMore(pr){
+ let h='';
+ const ad=pr.adresy||[];
+ if(pr.riven==='лінія') h+=`<div class="tt">Лінія${pr.vidrizok?': '+esc(pr.vidrizok):''} — події на ${ad.length} адресах: ${esc(ad.join('; '))}</div>`;
+ else if(ad.length>1) h+=`<div class="tt">Одне місце, ${ad.length} адреси: ${esc(ad.join('; '))}</div>`;
+ const ty=pr.typ;
+ if(ty&&ty.povedinka) h+=`<div class="tt">${esc(ty.povedinka)} × ${esc(ty.seredovyshche||'невизначено')}${ty.keruye?` · місцем керує: ${esc(ty.keruye)}`:''}</div>`;
+ if(ty&&ty.posibnyk) h+=`<div class="tt">Посібник POP Center ${esc(ty.posibnyk)}${(ty.tekhniky||[]).length?` · техніки ${ty.tekhniky.join(', ')}`:''}</div>`;
+ const g=pr.golos;
+ if(g&&g.stan){
+  const t=g.stan==='підтверджують'?`підтверджують — ${g.skarg} ${pl(g.skarg,'скарга','скарги','скарг')} 1551 за рік`+(g.vidnoshennia?`, у ${String(g.vidnoshennia).replace('.',',')} раза більше, ніж звичайно для району`:'')
+   :g.stan==='мовчать'?`мовчать — ${g.skarg||0} ${pl(g.skarg||0,'скарга','скарги','скарг')} 1551 за рік, не більше, ніж звичайно для району`
+   :g.stan==='не вимірюється'?'не вимірюється: про цей вид 1551 мовчить':'даних 1551 немає';
+  h+=`<div class="tt">Голос мешканців: ${t}</div>`}
+ return h}
 function oglHTML(d){
  const {p,pr,evs}=d;
  let h='';
  if(pr){
   h+=`<div class="kp-pc"><div class="kp-pch">Проблема · ${esc(pr.theme)}</div><div class="kp-pct">${esc(pr.mech)}</div>
-   <div class="tt">${pr.n} ${pl(pr.n,'однорідна подія','однорідні події','однорідних подій')} за ${pr.years.length} ${pl(pr.years.length,'рік','роки','років')} (${pr.years.join(', ')})</div></div>`;
+   <div class="tt">${pr.n} ${pl(pr.n,'однорідна подія','однорідні події','однорідних подій')} за ${pr.years.length} ${pl(pr.years.length,'рік','роки','років')} (${pr.years.join(', ')})</div>${probMore(pr)}</div>`;
  }
  h+=placeArts(p,evs)+placeHist(p,evs);
  // Модель — одним рядком, без пояснень, яких немає в даних (CLAUDE.md).

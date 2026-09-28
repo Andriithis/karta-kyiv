@@ -82,6 +82,17 @@ jobs:
       - name: Крок 2d — межі районів
         run: python src/step2d_borders.py || echo "межі районів пропущено (файл уже є або OSM недоступний)"
 
+      # Голос мешканців (RISHENNYA, розд. 31): відбір проблем В1 бере скарги
+      # 1551 з гілки analiz-1551. У main вони не комітяться — лише для збірки.
+      - name: Дані 1551 для збірки
+        run: |
+          if git fetch --depth=1 origin analiz-1551 && git checkout FETCH_HEAD -- data/1551; then
+            git reset -q -- data/1551
+            echo "1551: $(ls data/1551 | wc -l) файлів"
+          else
+            echo "1551 недоступний — голос мешканців буде «даних немає»"
+          fi
+
       - name: Крок 4 — модель ризику
         run: |
           RETRAIN="${{ github.event.inputs.retrain_risk }}"

@@ -21,7 +21,14 @@ DATA = os.path.join(ROOT, 'data')
 
 BORD  = os.path.join(DATA, 'borders.json')
 
-# ---- ВІДБІР ПРОБЛЕМ (п.7.3) ----
+# ---- НОВИЙ ВІДБІР (В1, NAPRYAM-PROBLEMY Р1–Р7) ----
+# True — проблеми з src/problems.py: лише клас B, ворота повторюваності,
+# без квот за темами. False повертає старий відбір нижче (поріг 15 і квоти) —
+# лишаємо для порівняння, як вимагає завдання В1.
+NOVYI_VIDBIR = True
+_PR = None               # результат problems.run — один на всі районні збірки
+
+# ---- ВІДБІР ПРОБЛЕМ (п.7.3), старий ----
 MIN_EPISODES = 15   # мінімум однорідних епізодів (за групою подібності, п.7.2) на адресу
 GUARANTEE    = 2    # обов'язкових проблем з кожного району
 CITYWIDE     = 30   # + найгостріших по місту понад гарантовані
@@ -86,6 +93,34 @@ CAP_D_THEME  = {'ДОР': 4}   # квота теми в межах району
 CAP_D_DEF    = 3
 
 
+def novi_kandydaty(P, addr_district):
+    """Проблеми В1 (src/problems.py) -> кандидати у форматі старого відбору.
+    Місце проблеми прив'язується до точки карти, найближчої до її головної
+    адреси; лінія — до адреси з найбільшою кількістю подій на відрізку."""
+    global _PR
+    import problems as PR
+    if _PR is None:
+        import step3_map as S3
+        _PR = PR.run(S3.LAST_VYBIR) or {}
+    idx = PR.Pts([(p[0], p[1]) for p in P])
+    out = []
+    for rank, r in enumerate(_PR.get('perelik', [])):
+        near = [k for k in idx.near(r['p'][0], r['p'][1], 15) if P[k][3]]
+        if not near: continue
+        pi = min(near, key=lambda k: PR.dist((P[k][0], P[k][1]), r['p']))
+        arts = collections.Counter()
+        for code, n in r.get('statti', []):
+            lb = L.CODE.get(code)
+            if lb: arts[lb[1]] += n
+        out.append(dict(pi=pi, sim=r['sim'], th=r['vyd'], n=r['podii'], core_n=r['podii'],
+                        district=addr_district(P[pi][0], P[pi][1]), years=r.get('roky', []),
+                        arts=arts.most_common(), score=-rank, riven=r['riven'],
+                        adresy=r.get('adresy', [])[:12], typ=r.get('typ'), golos=r.get('golos'),
+                        vidrizok=(r.get('vidrizok') or {}).get('nazva')))
+    print(f'   проблем В1: {len(_PR.get("perelik", []))}, на точках карти: {len(out)}')
+    return out
+
+
 def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
            district, risks, ER, FACT, theme_rgrid, pred_theme):
     """Повертає (P, POP, meta, theme_cnt)."""
@@ -146,6 +181,8 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
                                     district=dist, years=sorted(yrs),
                                     arts=arts.most_common(), score=score))
     candidates.sort(key=lambda c: -c['score'])
+    if NOVYI_VIDBIR:
+        candidates = novi_kandydaty(P, addr_district)
 
     chosen = {}
     used_theme = collections.Counter()   # спільний лічильник квоти по темах (п.7.3, за проханням користувача)
@@ -158,7 +195,7 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
         chosen[key] = c; used_theme[c['th']] += 1
         return True
 
-    for d in ALL_BORDERS:
+    for d in (() if NOVYI_VIDBIR else ALL_BORDERS):
         got = 0
         for c in candidates:
             if got >= GUARANTEE: break
@@ -166,6 +203,9 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
             if try_take(c): got += 1
     got = 0
     for c in candidates:
+        if NOVYI_VIDBIR:
+            # Р7: квот немає — у переліку все, що пройшло ворота
+            chosen[(c['pi'], c['sim'])] = c; continue
         if got >= CITYWIDE: break
         if try_take(c): got += 1
 
@@ -176,6 +216,10 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
     chosen_loc = {}
     for d in ALL_BORDERS:
         pool = [c for c in candidates if c['district'] == d]
+        if NOVYI_VIDBIR:
+            # Р7: районний перелік — те саме визначення, без пом'якшення й квот
+            for c in pool: chosen_loc[(c['pi'], c['sim'])] = c
+            continue
         used_d, got = collections.Counter(), 0
         for pass_ in (0, 1):
             for c in pool:
@@ -192,7 +236,8 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
     if problems:
         parts = [f"{n} {THEME_SKEW.get(t, L.THEMES.get(t, t))}" for t, n in skew.most_common()]
         skew_txt = f"З {len(problems)} відібраних проблем: " + ', '.join(parts) + '.'
-    print(f'   відібрано проблем: {len(problems)} з {len(candidates)} кандидатів (поріг {MIN_EPISODES} епізодів)')
+    print(f'   відібрано проблем: {len(problems)} з {len(candidates)} кандидатів'
+          + (' (В1, ворота Р1–Р7)' if NOVYI_VIDBIR else f' (поріг {MIN_EPISODES} епізодів)'))
     if skipped_street:
         print(f'   не розглядали {skipped_street:,} центрів вулиць — це не місця, а вулиці загалом')
     if skew_txt: print('   ' + skew_txt)
@@ -226,7 +271,9 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
             d=DIDX.get(c['district'], -1),           # район адреси
             city=1 if key in city_keys else 0,       # у міському переліку
             loc=1 if key in loc_keys else 0,         # у переліку свого району
-            analysis=analysis))
+            analysis=analysis,
+            # В1: рівень місця, адреси, що його склали, тип (Р5) і голос 1551
+            **({k: c[k] for k in ('riven', 'adresy', 'typ', 'golos', 'vidrizok') if c.get(k)})))
 
     for pi, p in enumerate(P):
         probs = probs_by_pi.get(pi, [])
