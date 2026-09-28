@@ -157,6 +157,7 @@ def dani():
             except ValueError: pass
     zt.sort()
     D['zatrymka'] = (zt[len(zt) // 2], zt[int(len(zt) * .9)]) if zt else None
+    D['plosha'] = V.get('plosha')
     return D
 
 
@@ -262,6 +263,9 @@ def stan_mista(D):
              f'<li>Адресу підтверджено в описі самої події (клас B) для {pct(kl["B"] / n if n else 0)} подій; '
              f'класи C і D — {pct((kl["C"] + kl["D"]) / n if n else 0)}. Проблеми й «Схожі умови» рахуються лише на '
              'класі B.</li>'
+             + (f'<li>Площа без номера будинку в тексті рішення — не точний будинок: таких подій знято '
+                f'{len(D["plosha"])} ({esc("; ".join(D["plosha"][:20]))}). Справжні «площа, буд. 1» лишаються.</li>'
+                if D.get('plosha') is not None else '')
              + (f'<li>Між подією й рішенням минає в середньому (медіана) {D["zatrymka"][0]} днів, у кожної '
                 f'десятої події — понад {D["zatrymka"][1]}. Тому останні місяці завжди неповні.</li>'
                 if D.get('zatrymka') else '') +

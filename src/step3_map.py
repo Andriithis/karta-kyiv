@@ -89,6 +89,12 @@ def mon_idx(date):
         return -1
 
 
+def nomer_v_teksti(house, txt):
+    """Чи є номер будинку в тексті: «1-А», «1а», «1 А» — одне."""
+    n = lambda s: re.sub(r'[\s\-]', '', (s or '').lower())
+    return bool(re.search(r'(?<!\d)' + re.escape(n(house)) + r'(?!\d)', n(txt)))
+
+
 def ev_date(tk, decision):
     """Дата події з проходу по текстах — лише якщо вона не пізніша за саме
     рішення: подія не може статися після суду. Так відсіюються описки в
@@ -203,6 +209,7 @@ def vybir(c, print=print):
     n_ne_budynok = collections.Counter()
     n_poza = collections.Counter()
     ev_year = {}         # рік події: фільтр «Рік» на карті — за подією, не рішенням
+    plosha = []          # площі без номера в тексті — знято (для «Стану міста»)
     for rep, g, lab, cats in merged:
         if rep[0] not in TKD and (cause.get(rep[0]), PD.theme(rep[2])) in tk_cases:
             n_tk_gone += 1
@@ -221,6 +228,16 @@ def vybir(c, print=print):
         if LYSHE_BUDYNOK and rep[9] in NE_BUDYNOK:
             n_ne_budynok[PD.theme(rep[2])] += 1
             continue
+        # Площа без номера в тексті — не точний будинок (PLAN-ZVITY, п. 4;
+        # RISHENNYA, розд. 25): «рухаючись по Гостомельській площі» дає
+        # вулицю, а не «пл. Гостомельська, 1». Справжні «площа, буд. 1»
+        # лишаються. Номер шукаємо в реченні з адресою і в описі події.
+        if rep[9] == 'house' and (rep[5] or '').startswith('пл.') and rep[6]:
+            tk = TKD.get(rep[0]) or {}
+            txt = ' '.join((tk.get('addr_sentence') or '', tk.get('fab') or '', fab.get(rep[0], '')))
+            if not nomer_v_teksti(rep[6], txt):
+                plosha.append(f'{rep[5]}, {rep[6]}')
+                continue
         # Шість видів (розд. 18): статті поза таблицею видів і невідомі коди на
         # карту й у звіти не йдуть — але й не зникають мовчки: нижче друкується,
         # скільки їх і які.
@@ -249,7 +266,10 @@ def vybir(c, print=print):
     if n_old:
         print(f'   подій з датою до {MIN_EVENT_DATE[:4]} (на карту не йдуть): {sum(n_old.values()):,} — '
               + ', '.join(f'{k} {v:,}' for k, v in n_old.most_common()))
-    return dict(rows=reps, extra=extra, TKD=TKD, fab=fab, case_docs=case_docs, arts=arts, ev_year=ev_year)
+    if plosha:
+        print(f'   площ без номера в тексті (на карту не йдуть): {len(plosha):,} — ' + '; '.join(plosha[:5]))
+    return dict(rows=reps, extra=extra, TKD=TKD, fab=fab, case_docs=case_docs, arts=arts, ev_year=ev_year,
+                plosha=plosha)
 
 
 def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, out=None):
