@@ -60,7 +60,7 @@ html body[data-t="temna"] .maplibregl-ctrl-group button+button{border-top-color:
 .maplibregl-popup .lpf{position:sticky;bottom:0;z-index:1;background:var(--panel);display:flex;gap:6px;
  padding:8px 0 0;margin-top:6px;box-shadow:0 -10px 10px -10px rgba(0,0,0,.28)}
 .maplibregl-popup .lpf .pbtn2{margin-top:0;flex:1;min-height:32px}
-.maplibregl-popup .hxl{font-size:10px;color:var(--faint);text-align:center;margin:-4px 0 7px}
+.maplibregl-popup .hxl,#kplace .hxl{font-size:10px;color:var(--faint);text-align:center;margin:-4px 0 7px}
 /* Чипи (рік, час доби, кольори, «тихі вулиці») — однакові скрізь (розд. 25,
    А7): вибраний — залитий чорнилом, невибраний — контур, видимий на
    підкладці (--dim, а не ледь помітний --rule). Висота ~32 px — ціль кліку. */
@@ -112,6 +112,60 @@ html .tsw button{min-height:32px;display:inline-flex;align-items:center}
 @media (max-width:700px){
  .kstrip .ks-phone{display:inline-flex;color:var(--ink);font-weight:600}
  .kstrip:not(.open) .ks-steps,.kstrip:not(.open) .ks-per,.kstrip:not(.open) .ks-sep,.kstrip:not(.open) .ks-todw{display:none}
+}
+/* Картка місця (розд. 30): плаває ліворуч під смугою часу, до 70% висоти,
+   прокрутка всередині без системного повзунка; на телефоні — знизу з
+   відступами, навігатор тоді ховається (одна картка за раз). */
+#kplace{position:absolute;top:60px;left:12px;z-index:6;width:384px;max-width:calc(100% - 24px);
+ max-height:min(70vh,calc(100% - 72px));display:flex;flex-direction:column;overflow:hidden;
+ background:var(--card);color:var(--ink);border-radius:10px;box-shadow:var(--card-shadow);font:13px/1.45 var(--sans)}
+#kplace[hidden]{display:none}
+#kplace .kp-head{position:relative;padding:12px 16px 6px;flex:none}
+#kplace .kp-badge{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+#kplace .kp-title{display:block;font-size:15.5px;line-height:1.3;padding-right:36px}
+#kplace .kp-sum{color:var(--dim);font-size:12.5px;margin-top:2px}
+#kplace .kp-x{position:absolute;top:6px;right:6px;width:36px;height:36px;border:0;background:none;color:var(--dim);
+ font-size:22px;line-height:1;cursor:pointer;border-radius:8px}
+#kplace .kp-x:hover{background:var(--sunk);color:var(--ink)}
+#kplace .kp-probs{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+#kplace .kp-probs button{min-height:30px;padding:4px 9px;border:1px solid var(--dim);border-radius:5px;background:var(--panel);
+ color:var(--ink);font:inherit;font-size:12px;cursor:pointer}
+#kplace .kp-probs button[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+#kplace .kp-tabs{display:flex;gap:2px;padding:0 10px;border-bottom:1px solid var(--rule);flex:none}
+#kplace .kp-tabs button{all:unset;cursor:pointer;min-height:34px;padding:0 8px;font-size:13px;color:var(--dim);
+ border-bottom:2px solid transparent;box-sizing:border-box}
+#kplace .kp-tabs button[aria-selected="true"]{color:var(--ink);border-color:var(--ink)}
+#kplace .kp-tabs button:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}
+#kplace .kp-body{overflow:auto;padding:10px 16px 14px;scrollbar-width:none;overscroll-behavior:contain}
+#kplace .kp-body::-webkit-scrollbar{display:none}
+#kplace .kp-pc{border-left:3px solid var(--ink);background:var(--sunk);border-radius:6px;padding:8px 10px;margin-bottom:8px}
+#kplace .kp-pch{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
+#kplace .kp-pct{font-size:14px;font-weight:600;margin:1px 0 3px}
+#kplace .kp-mod{margin-top:8px}
+#kplace .kp-lnk{background:none;border:0;padding:0;min-height:30px;font:inherit;font-size:12.5px;color:var(--ink);
+ text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+#kplace .kp-empty{color:var(--dim);font-size:12.5px;padding:6px 0}
+#kplace .kp-dec{border-top:1px solid var(--rule);padding:8px 0;cursor:pointer}
+#kplace .kp-dec:first-child{border-top:0}
+#kplace .kp-dec:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+#kplace .kp-dec .l1{display:flex;gap:8px;align-items:baseline;font-size:12.5px}
+#kplace .kp-dec .l1 .h{color:var(--dim);font-family:var(--mono);font-size:11.5px}
+#kplace .kp-dec .l2{font-size:12px;color:var(--dim)}
+#kplace .kp-dec .l3{font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#kplace .kp-dec.open .l3{white-space:normal;color:var(--ink)}
+#kplace .kp-dec .l4{font-size:12px;margin-top:4px;color:var(--dim)}
+#kplace .kp-dec .l4 a{color:var(--ink)}
+#kplace .kp-near{list-style:none;margin:6px 0 0;padding:0}
+#kplace .kp-near li{display:flex;gap:8px;align-items:center;min-height:32px;border-top:1px solid var(--rule);font-size:12.5px;cursor:pointer}
+#kplace .kp-near li.hl{background:var(--sunk)}
+#kplace .kp-nn{width:20px;height:20px;flex:none;border:2px solid #fbbf24;border-radius:50%;display:flex;align-items:center;
+ justify-content:center;font-size:10.5px;font-weight:600}
+#kplace .kp-near li.hl .kp-nn{border-color:var(--ink)}
+#kplace .kp-ni{width:18px;text-align:center;flex:none}
+#kplace .kp-nd{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--dim)}
+@media (max-width:700px){
+ #kplace{top:auto;bottom:12px;left:12px;right:12px;width:auto;max-height:min(70vh,calc(100% - 80px))}
+ body.kp-open #side{display:none}
 }
 /* Рік, час доби й кольори — у смузі часу, не в «Розширено» (розд. 30). */
 #adv .advtop{display:none}

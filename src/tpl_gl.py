@@ -90,6 +90,9 @@ function cartoStyle(t){
 // виходить «Khreshchatyk Street Хрещатик». Беремо українську назву, а де її
 // немає — основну з OSM (у Києві вона теж українська).
 const UK_NAME=['coalesce',['get','name:uk'],['get','name']];
+// Шрифт підписів підкладки — ним же пишемо номери «Що поруч»: він точно є на
+// сервері гліфів.
+let BASEFONT=null;
 // Темна тема — сутінковий сірий (розд. 25, рішення 27.09): стиль dark
 // OpenFreeMap майже чорний (земля #0c0c0c), вода й дороги ледь відрізнялися
 // від тла, і на проєкторі карта ставала чорною плямою. Ті самі кольори, що
@@ -128,7 +131,7 @@ function patchStyle(s,t){
   // так вони однаково лягають і на світлу, і на темну тему, а шрифт
   // гарантовано є на сервері гліфів.
   if(!font&&l['source-layer']==='transportation_name'&&l.layout['text-font']){
-   font=l.layout['text-font']; const p=l.paint||{};
+   font=l.layout['text-font']; BASEFONT=font; const p=l.paint||{};
    if(typeof p['text-color']==='string') tc=p['text-color'];
    if(typeof p['text-halo-color']==='string') th=p['text-halo-color'];
   }
@@ -238,7 +241,7 @@ window.kartaMap=map;
 // Після кожного завантаження стилю: сюди наступні коміти додаватимуть
 // картинки (addImage не переживає setStyle) і фарбування наших шарів у
 // кольори теми.
-function onStyleReady(){STYLE_OK=true; addrReady(); ctxReady(); distReady(); nearReady();
+function onStyleReady(){STYLE_OK=true; addrReady(); ctxReady(); distReady(); nearReady(); nearPaint();
  drawRisks(); paintScope(); drawFacts()}
 map.on('style.load',onStyleReady);
 function setTheme(t){
@@ -375,6 +378,8 @@ function draw(){
  emptyState(st);
  if(!STYLE_OK||!map.getSource('k-addr')) return;
  addrPaint();
+ // Картка місця йде за фільтром і періодом так само, як карта.
+ if(PLACE) renderPlace();
  const vis=st.vis, mx=vis.length?vis[0][1]:1;
  map.getSource('k-addr').setData({type:'FeatureCollection',features:vis.map(([p,n,th])=>({
   type:'Feature',geometry:{type:'Point',coordinates:[p[1],p[0]]},
@@ -384,74 +389,161 @@ function draw(){
    r0:MODE==='prob'?8:r0Of(n,mx),
    k:(probsOf(p).length?1e6:0)-n}}))});
 }
-// Радіус позначки зараз — щоб хвостик вікна ставав на її край, а не в центр.
-function rNow(i){
- const st=LASTST, v=st&&st.vis.find(x=>x[0]===P[i]);
- if(!v) return 0;
- const mx=st.vis[0][1];
- return r0Of(v[1],mx)*zmulAt(map.getZoom())+1.5;
+// ---- КАРТКА МІСЦЯ (розд. 30; MAKET-KROK10, друга редакція) ----
+// Одна картка ліворуч, завжди на тому самому місці, замість вікна над точкою,
+// панелі рішень праворуч і значків «Що поруч» окремо (AUDYT-3, № 4): вікно
+// над точкою закривало саме місце, про яке розповідало, а три панелі водночас
+// не вміщалися. Вкладки «Огляд · Рішення (N) · Що поруч (N)»; над точкою —
+// лише підказка при наведенні. Вміст рахується з тих самих даних і тим самим
+// фільтром (evOn), що й карта, тож числа в картці й на карті — одні.
+let POPUP=null;   // лише вікно вулиці «Схожих умов»
+let PLACE=null;   // {i, tab, open, pi, allArts, near, hl}
+{const c=document.createElement('div'); c.id='kplace'; c.hidden=true;
+ c.setAttribute('role','dialog'); c.setAttribute('aria-label','Картка місця');
+ map.getContainer().appendChild(c);}
+const placeEl=()=>document.getElementById('kplace');
+const NEAR_R=250;
+// Події місця за поточним фільтром — індекси в p[4] (у тому самому порядку, що
+// й справи у spravy/<район>.json). Для проблеми — лише події її статей:
+// картка проблеми говорить тільки про проблему (рішення 28.09), решта подій
+// адреси туди не потрапляє зовсім.
+function placeData(){
+ const i=PLACE.i, p=P[i], st=LASTST||computeVis();
+ const ev=[]; p[4].forEach((e,k)=>{ if(evOn(e,st.C,st.A,st.Y,st.H)) ev.push(k)});
+ const probs=p[3]?probsOf(p).filter(q=>q.thi===undefined||q.thi<0||st.GVIS.has(q.thi)):[];
+ const pr=probs.length?probs[Math.min(PLACE.pi,probs.length-1)]:null;
+ const labs=pr?new Set(pr.arts.map(a=>a[0])):null;
+ const evs=labs?ev.filter(k=>labs.has(M.cats[p[4][k][1]])):ev;
+ return {p,st,probs,pr,evs};
 }
-// ---- ВІКНО АДРЕСИ ----
-// Вміст — той самий вузол, що й у Leaflet (popupHTML з tpl_core): склад
-// подій, картки проблем, «Усі рішення (N)».
-let POPUP=null;
-// ---- ВИГЛЯД ВІКНА АДРЕСИ (розд. 25, А1) ----
-// Вміст спільний із запасною картою (popupHTML, streetHTML з tpl_core), тож
-// тут лише перекладаємо готовий вузол: адреса закріплена вгорі, «Що поруч» і
-// «Усі рішення» — унизу, їх видно завжди, хоч який довгий перелік між ними;
-// підсумок — одним рядком; статей — п'ять, решта під «ще N».
-const ART_SHOW=5;
-function shapePopup(node,v){
- const lp=node.querySelector('.lp'); if(!lp) return node;
- const head=document.createElement('div'); head.className='lph';
- for(const el of [...lp.children]){ if(el.matches('.cbadge,b,.an')) head.appendChild(el); else break }
- lp.prepend(head);
- if(v){const [p,n,th,byProblem,cnt,thMaj]=v;
-  // «34 події · переважає порядок, 25» замість двох рядків.
-  const tts=[...lp.querySelectorAll(':scope > .tt')];
-  if(tts.length&&thMaj!==null){
-   const k=cnt[thMaj], nm=lc(shortOf(thMaj));
-   let t=`${fmt(n)} ${pl(n,'подія','події','подій')} · `+(k===n?`усі — ${nm}`:`переважає ${nm}, ${fmt(k)}`);
-   // Колір точки — за проблемою, а переважає інше: це кажемо, бо інакше колір
-   // і рядок суперечили б мовчки (так само в tpl_core).
-   if(byProblem&&th!==thMaj) t+=` · колір — за проблемою (${lc(shortOf(th))})`;
-   tts[0].textContent=t; tts.slice(1).forEach(x=>x.remove());
-  }
+function placeSum(p,evs){
+ const n=evs.length; if(!n) return 'за поточним фільтром подій немає';
+ const g=new Array(M.groups.length).fill(0); evs.forEach(k=>g[CATTH[p[4][k][1]]]++);
+ const gi=g.indexOf(Math.max(...g)), k=g[gi], nm=lc(shortOf(gi));
+ return `${fmt(n)} ${pl(n,'подія','події','подій')} · `+(k===n?`усі — ${nm}`:`переважає ${nm}, ${fmt(k)}`)}
+function placeHist(p,evs){
+ const h=new Array(24).fill(0); let nk=0; evs.forEach(k=>{const x=p[4][k][3]; if(x>=0){h[x]++; nk++}});
+ if(nk<8) return '';
+ const mx=Math.max(...h,1), night=h.slice(20).concat(h.slice(0,4)).reduce((a,b)=>a+b,0);
+ return `<div class="hg">${h.map((v,x)=>`<i style="height:${Math.max(2,Math.round(22*v/mx))}px" title="${x}:00 — ${v}"></i>`).join('')}</div>
+  <div class="hx"><span>0</span><span>6</span><span>12</span><span>18</span><span>23</span></div><div class="hxl">година доби</div>
+  <div class="hn">${Math.round(100*night/nk)}% подій — 20:00–04:00</div>`}
+function placeArts(p,evs){
+ const c={}; evs.forEach(k=>{const a=p[4][k][1]; c[a]=(c[a]||0)+1});
+ const rows=Object.entries(c).sort((a,b)=>b[1]-a[1]), show=PLACE.allArts?rows:rows.slice(0,5);
+ return `<table class="bd">${show.map(([a,n])=>`<tr><td>${esc(M.cats[a])}</td><td><b>${n}</b></td></tr>`).join('')}</table>`+
+  (rows.length>show.length?`<button class="kp-lnk" data-kp="arts">ще ${rows.length-show.length} ${pl(rows.length-show.length,'стаття','статті','статей')}</button>`:'')}
+function oglHTML(d){
+ const {p,pr,evs}=d;
+ let h='';
+ if(pr){
+  h+=`<div class="kp-pc"><div class="kp-pch">Проблема · ${esc(pr.theme)}</div><div class="kp-pct">${esc(pr.mech)}</div>
+   <div class="tt">${pr.n} ${pl(pr.n,'однорідна подія','однорідні події','однорідних подій')} за ${pr.years.length} ${pl(pr.years.length,'рік','роки','років')} (${pr.years.join(', ')})</div></div>`;
  }
- // Перші п'ять статей, решта — під «ще N».
- const tb=lp.querySelector(':scope > table.bd');
- if(tb){const rows=[...tb.rows];
-  if(rows.length>ART_SHOW+1){const rest=rows.slice(ART_SHOW); rest.forEach(r=>r.hidden=true);
-   const tr=tb.insertRow(), td=tr.insertCell(); td.colSpan=2; td.className='lpmorec';
-   const b=document.createElement('button'); b.className='lpmore'; b.textContent=`ще ${rest.length}`;
-   b.onclick=()=>{rest.forEach(r=>r.hidden=false); tr.remove()}; td.appendChild(b)}}
- // Під гістограмою — що саме на осі.
- const hx=lp.querySelector(':scope > .hx');
- if(hx) hx.insertAdjacentHTML('afterend','<div class="hxl">година доби</div>');
- // Головні дії — унизу, закріплені.
- const acts=[...lp.querySelectorAll(':scope > button[data-na], :scope > button[data-all]')];
- if(acts.length){const foot=document.createElement('div'); foot.className='lpf';
-  acts.forEach(b=>foot.appendChild(b)); lp.appendChild(foot)}
- return node;
+ h+=placeArts(p,evs)+placeHist(p,evs);
+ // Модель — одним рядком, без пояснень, яких немає в даних (CLAUDE.md).
+ if(pr) h+=`<div class="tt kp-mod">${pr.analysis?`Вулиця — серед вулиць зі схожими умовами (${esc(lc(pr.theme))}).`
+   :'Вулиця не входить до переліку вулиць зі схожими умовами.'}</div>`;
+ return h;
 }
-function openAt(i,ll){
- const p=P[i], st=LASTST||computeVis(), v=st.vis.find(x=>x[0]===p);
- const node=shapePopup(!p[3]?streetHTML(p,st):v?popupHTML(...v,st):hiddenHTML(p),p[3]?v:null);
+function rishHTML(d,cs){
+ if(cs===undefined) return '<div class="kp-empty">завантажую…</div>';
+ if(cs===null) return '<div class="kp-empty">Перелік рішень лежить окремим файлом поруч, а браузер не дає сторінці з диска його читати. Відкрийте карту з сайту або через PODYVYTYSYA.bat.</div>';
+ const it=d.evs.map(k=>[k,cs[k]]).filter(x=>x[1]);
+ if(!it.length) return '<div class="kp-empty">За поточним фільтром рішень немає.</div>';
+ return it.map(([k,c])=>{const open=PLACE.open===k;
+  return `<div class="kp-dec${open?' open':''}" data-dec="${k}" role="button" tabindex="0" aria-expanded="${open}">
+   <div class="l1"><b>${esc(fmtDate(c[1]))}</b>${c[6]?'<span class="h">рішення</span>':c[2]>=0?`<span class="h">${String(c[2]).padStart(2,'0')}:00</span>`:''}</div>
+   <div class="l2">${esc(M.cats[c[0]])}</div>
+   <div class="l3">${esc(c[5]||'опису в рішенні немає')}</div>
+   ${open?`<div class="l4">${c[3]?`справа ${esc(c[3])} · `:''}${(c[4]||[]).map((h,j)=>`<a href="${docUrl(h)}" target="_blank" rel="noopener">${(c[4].length>1?'рішення '+(j+1):'відкрити рішення')} ↗</a>`).join(' · ')}</div>`:''}
+  </div>`}).join('')}
+function nearList(p){
+ if(!(F.cats||[]).length) return [];
+ const my=111320, mx=111320*Math.cos(p[0]*Math.PI/180), out=[];
+ F.cats.forEach(c=>c.pts.forEach(q=>{const dd=Math.hypot((q[0]-p[0])*my,(q[1]-p[1])*mx);
+  if(dd<=NEAR_R) out.push({c,q,d:Math.round(dd)})}));
+ return out.sort((a,b)=>a.d-b.d);
+}
+function nearHTML(){
+ const L=PLACE.near;
+ if(!L.length) return `<div class="kp-empty">У радіусі ${NEAR_R} м об'єктів із переліку немає.</div>`;
+ return `<div class="tt">У радіусі ${NEAR_R} м. Які з них пояснюють скупчення — вирішує той, хто вийде на місце.</div>
+  <ol class="kp-near">${L.map((o,j)=>`<li data-near="${j+1}"${PLACE.hl===j+1?' class="hl"':''}><span class="kp-nn">${j+1}</span><span class="kp-ni">${FICON[o.c.k]||'•'}</span>${esc(o.c.n)}<span class="kp-nd">${o.d} м</span></li>`).join('')}</ol>`}
+let DOCS_NOW={i:-1,cs:undefined};
+function renderPlace(){
+ const el=placeEl(); if(!PLACE){el.hidden=true; document.body.classList.remove('kp-open'); return}
+ const d=placeData(), {p,pr,probs,evs}=d;
+ const body=el.querySelector('.kp-body'), top=body?body.scrollTop:0;
+ const nDec=evs.length;
+ const tabs=[['ogl','Огляд'],['rish',`Рішення (${nDec})`]].concat(p[3]?[['near',`Що поруч (${PLACE.near.length})`]]:[]);
+ if(!tabs.some(t=>t[0]===PLACE.tab)) PLACE.tab='ogl';
+ const title=p[3]?(p[2]||'адреса не визначена'):streetName(p)+' · вся вулиця';
+ el.innerHTML=`<div class="kp-head">
+   ${pr?`<div class="kp-badge">Проблема · ${esc(pr.theme)}</div>`:''}
+   <b class="kp-title">${esc(title)}</b>
+   <div class="kp-sum">${pr?`${evs.length} ${pl(evs.length,'подія','події','подій')} проблеми за поточним фільтром`:esc(placeSum(p,evs))}${p[3]?'':' · без номера будинку'}</div>
+   ${probs.length>1?`<div class="kp-probs">${probs.map((q,j)=>`<button data-kp-pi="${j}" aria-pressed="${j===Math.min(PLACE.pi,probs.length-1)}">${esc(q.mech)}</button>`).join('')}</div>`:''}
+   <button class="kp-x" data-kp="close" aria-label="Закрити (Esc)" title="Закрити (Esc)">×</button>
+  </div>
+  <div class="kp-tabs" role="tablist">${tabs.map(([k,n])=>`<button role="tab" data-kp-tab="${k}" aria-selected="${k===PLACE.tab}">${n}</button>`).join('')}</div>
+  <div class="kp-body">${PLACE.tab==='ogl'?oglHTML(d):PLACE.tab==='rish'?rishHTML(d,DOCS_NOW.i===PLACE.i?DOCS_NOW.cs:undefined):nearHTML()}</div>`;
+ el.hidden=false; document.body.classList.add('kp-open');
+ el.querySelector('.kp-body').scrollTop=top;
+ // «Що поруч» — на карті лише поки відкрита його вкладка, з тими самими
+ // номерами, що в переліку (рішення 28.09).
+ if(PLACE.tab==='near') nearNumbered(p,PLACE.near); else clearNear(true);
+ if(PLACE.tab==='rish'&&DOCS_NOW.i!==PLACE.i){const i=PLACE.i;
+  docsFor(i).then(cs=>{DOCS_NOW={i,cs}; if(PLACE&&PLACE.i===i&&PLACE.tab==='rish') renderPlace()})}
+}
+function openAt(i){
  if(POPUP) POPUP.remove();
- advOpen(false);
- clearNear();
- const off=ll?0:rNow(i), at=ll||[p[1],p[0]];
- // Вікно завжди над адресою. Без сталого боку MapLibre сам перебирав, куди
- // його ставити, і зсув карти під картку виходив непередбачуваним.
- // closeOnClick вимкнено: вікно закриває клік по вільному місці (ctxEvents),
- // а не по значку «Що поруч» — інакше разом із вікном гасла б і підсвітка.
- POPUP=new maplibregl.Popup({maxWidth:'360px',offset:off,anchor:'bottom',focusAfterOpen:false,closeOnClick:false})
-  .setLngLat(at).setDOMContent(node).addTo(map);
- // Закрите вікно — людина пішла з цього місця: гасимо й «Що поруч».
- POPUP.on('close',()=>clearNear());
- keepClear(POPUP,at,off);
+ advOpen(false); closePanel();
+ const same=PLACE&&PLACE.i===i;
+ PLACE={i,tab:same?PLACE.tab:'ogl',open:-1,pi:0,allArts:false,near:P[i][3]?nearList(P[i]):[],hl:0};
+ renderPlace(); placeKeepVisible(i);
 }
-// Адреса не має опинитися під карткою-навігатором. Карту зсуваємо рівно
+function closePlace(){ if(!PLACE) return; PLACE=null; clearNear(); renderPlace()}
+// Місце не має лишитися під карткою: карту зсуваємо так, щоб точка лягла
+// на вільну частину між карткою й навігатором (на телефоні — над карткою),
+// без наближення.
+function placeKeepVisible(i){
+ const p=P[i]; if(!p) return;
+ const cont=map.getContainer(), m=cont.getBoundingClientRect(), el=placeEl(), side=$('#side');
+ const c=el.getBoundingClientRect(), q=map.project([p[1],p[0]]), W=cont.clientWidth, H=cont.clientHeight;
+ const phone=c.left-m.left<24&&c.width>W*.8;
+ let dx=0, dy=0;
+ if(phone){const top=c.top-m.top; if(q.y>top-24) dy=q.y-top/2}
+ else {const L=c.right-m.left+24, s=side&&side.offsetWidth?side.getBoundingClientRect():null, R=s?s.left-m.left-24:W-24;
+  if(q.x<L||q.x>R) dx=q.x-(L+Math.max(0,R-L)/2);
+  // Біля верхнього чи нижнього краю коло «Що поруч» (250 м) виходило б за
+  // екран — тоді й по вертикалі до середини.
+  if(q.y<H*.2||q.y>H*.8) dy=q.y-H/2}
+ if(dx||dy) map.panBy([dx,dy],{duration:450});
+}
+placeEl().addEventListener('click',e=>{
+ if(!PLACE) return;
+ const t=e.target.closest('[data-kp-tab]'); if(t){PLACE.tab=t.dataset.kpTab; PLACE.open=-1; renderPlace(); return}
+ const pi=e.target.closest('[data-kp-pi]'); if(pi){PLACE.pi=+pi.dataset.kpPi; PLACE.open=-1; renderPlace(); return}
+ const k=e.target.closest('[data-kp]'); if(k){ if(k.dataset.kp==='close') closePlace(); else if(k.dataset.kp==='arts'){PLACE.allArts=true; renderPlace()} return}
+ if(e.target.closest('a')) return;
+ const dc=e.target.closest('[data-dec]'); if(dc){const n=+dc.dataset.dec; PLACE.open=PLACE.open===n?-1:n; renderPlace(); return}
+ const nr=e.target.closest('[data-near]'); if(nr){nearHighlight(+nr.dataset.near,true); return}
+});
+placeEl().addEventListener('keydown',e=>{const dc=e.target.closest('[data-dec]');
+ if(dc&&(e.key==='Enter'||e.key===' ')){e.preventDefault(); dc.click()}});
+placeEl().addEventListener('mouseover',e=>{const nr=e.target.closest('[data-near]'); if(nr) nearHighlight(+nr.dataset.near,false)});
+// Підсвітка об'єкта «Що поруч»: у переліку й на карті одночасно; з карти —
+// ще й прокрутка переліку до рядка.
+function nearHighlight(n,scroll){
+ if(!PLACE) return;
+ if(PLACE.hl&&map.getSource('k-near')) map.setFeatureState({source:'k-near',id:PLACE.hl},{hl:false});
+ PLACE.hl=n;
+ if(n&&map.getSource('k-near')) map.setFeatureState({source:'k-near',id:n},{hl:true});
+ placeEl().querySelectorAll('[data-near]').forEach(li=>li.classList.toggle('hl',+li.dataset.near===n));
+ if(scroll){const li=placeEl().querySelector(`[data-near="${n}"]`); if(li) li.scrollIntoView({block:'nearest'})}
+}
+// Вікно вулиці «Схожих умов» не має опинитися під карткою-навігатором. Карту зсуваємо рівно
 // настільки, щоб вікно лягло на вільну частину, — без наближення: людина
 // має бачити, де вона, а різкий зум це губить (розд. 23, п. 6).
 // Межі вікна рахуємо від точки адреси й розміру вікна, а не від його
@@ -498,14 +590,14 @@ function keepClear(pp,at,off){
 // Esc закриває вікно адреси чи вулиці й «Розширено» (панель рішень Esc
 // закриває сама, tpl_core).
 document.addEventListener('keydown',e=>{ if(e.key!=='Escape') return;
- if(POPUP) POPUP.remove(); advOpen(false); $('#fd').hidden=true});
+ if(POPUP) POPUP.remove(); advOpen(false); $('#fd').hidden=true; closePlace()});
 // Меню «Район» закривається кліком повз нього (AUDYT-3, № 6): відкрите, воно
 // лишалося висіти над переліком посилань, доки не оберуть район.
 document.addEventListener('click',e=>{ const fd=$('#fd');
  if(fd&&!fd.hidden&&!e.target.closest('#fd,#dbtn')) fd.hidden=true});
 // Одна відкрита панель за раз (розд. 25, А7): «Розширено» і вікно адреси
 // водночас не відкриті — картка «Статті» лягала поверх вікна.
-$('#advbtn').addEventListener('click',()=>{ if(!$('#adv').hidden&&POPUP) POPUP.remove()});
+$('#advbtn').addEventListener('click',()=>{ if(!$('#adv').hidden){ if(POPUP) POPUP.remove(); closePlace()}});
 // Поки видно кільця, шар адрес лише прозорий, не вимкнений (addrLayerVisible):
 // клік і курсор над ним тоді належать кільцям (addrAt це враховує). Клік —
 // за зоною addrAt, а не за самим колом: дрібну адресу інакше не влучити.
@@ -525,10 +617,12 @@ function afterMove(go){map.once('moveend',go)}
 // z16 тут — той самий масштаб, що z17 у Leaflet-версії.
 function focusAddress(i){
  const p=P[i]; afterMove(()=>openAt(i));
- map.flyTo({center:[p[1],p[0]],zoom:16});
+ // Зсув — щоб адреса опинилася праворуч від картки місця, а не під нею.
+ const w=placeEl().offsetWidth||396;
+ map.flyTo({center:[p[1],p[0]],zoom:16,offset:[window.innerWidth>700?w/2:0,0]});
 }
 function focusBounds(pts){map.fitBounds(bboxOf(pts),{padding:40,maxZoom:16})}
-function focusStreet(i,pts){afterMove(()=>openAt(i,map.getCenter())); focusBounds(pts)}
+function focusStreet(i,pts){afterMove(()=>openAt(i)); focusBounds(pts)}
 // ---- КІЛЬЦЯ (розд. 23, п. 1 і 5) ----
 // Склад кілець — з дерева TREE (map_clusters): рівні з кроком 0,5 зуму, від
 // міського огляду до z14,5, кожен вузол цілком лежить в одному батьківському.
@@ -1109,33 +1203,17 @@ function distHover(i){
  if(i>=0) map.setFeatureState({source:'k-dist',id:i},{hover:true});
 }
 // ---- «ЩО ПОРУЧ» ----
-// Те саме, що в tpl_map. Значок виду об'єкта — квадрат із жовтою рамкою, як
-// коло радіуса. Не кружечок кольору виду подій: заливка кольором ролі
-// збігалася з Порядком і Майном, і об'єкт читався як ще одна подія.
-// Картинки — addImage, як значки потоків, і так само після кожного стилю.
+// Те саме, що в tpl_map. Об'єкт на карті — номер у кружечку з жовтою
+// обвідкою, як коло радіуса; вид об'єкта — значком у переліку картки місця.
+// Не кольором виду подій: заливка кольором ролі збігалася з Порядком і
+// Майном, і об'єкт читався як ще одна подія.
 const NEAR_C='#fbbf24';
-function iconImg(id,ch){
- const d=Math.max(1,Math.min(2,devicePixelRatio||1)), s=Math.round(22*d);
- if(map.hasImage(id)) map.removeImage(id);
- const c=document.createElement('canvas'); c.width=c.height=s; const g=c.getContext('2d');
- g.fillStyle=cssv('--panel')||'#fff'; g.strokeStyle=NEAR_C; g.lineWidth=1.5*d;
- const m=1.5*d; g.beginPath();
- if(g.roundRect) g.roundRect(m,m,s-2*m,s-2*m,4*d); else g.rect(m,m,s-2*m,s-2*m);
- g.fill(); g.stroke();
- g.font=`${Math.round(13*d)}px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji","Segoe UI Symbol",sans-serif`;
- g.fillStyle=cssv('--ink')||'#111'; g.textAlign='center'; g.textBaseline='middle'; g.fillText(ch,s/2,s/2+.5*d);
- map.addImage(id,g.getImageData(0,0,s,s),{pixelRatio:d});
-}
-function nearImages(){
- for(const c of (F.cats||[])) iconImg('k-nic-'+c.k,FICON[c.k]||'•');
-}
-// Шару «Об'єкти довкола» на новій карті немає (розд. 23, п. 9): об'єкти —
-// лише довкола конкретного місця, через «Що поруч» у вікні адреси. Тисячі
-// значків по всьому вікну заступали події й нічого не підказували.
+// Шару «Об'єкти довкола» на новій карті немає (розд. 25, А; AUDYT-3): об'єкти —
+// лише довкола конкретного місця, у вкладці «Що поруч». Ім'я лишається, бо
+// спільна панель (tpl_core) кличе drawFacts.
 function drawFacts(){}
 function nearReady(){
  if(!(F.cats||[]).length) return;
- nearImages();
  if(map.getSource('k-near')) return;
  // «Що поруч»: коло радіуса пунктиром, центр і значки об'єктів у колі.
  map.addSource('k-near',{type:'geojson',data:fc([])});
@@ -1143,23 +1221,44 @@ function nearReady(){
   paint:{'line-color':NEAR_C,'line-width':1,'line-opacity':.45,'line-dasharray':[4,4]}});
  map.addLayer({id:'k-near-c',type:'circle',source:'k-near',filter:['==',['get','t'],'c'],
   paint:{'circle-radius':5,'circle-color':NEAR_C,'circle-stroke-color':NEAR_C,'circle-stroke-width':2}});
- map.addLayer({id:'k-near-ic',type:'symbol',source:'k-near',filter:['==',['get','t'],'o'],
-  // Лише allow-overlap, без ignore-placement: значок, якого немає в індексі
-  // розміщення, не знаходить queryRenderedFeatures — і підказка не спливала б.
-  layout:{'icon-image':['concat','k-nic-',['get','k']],'icon-allow-overlap':true}});
+ // Об'єкти — кружечок із номером, як у переліку картки місця (розд. 30):
+ // так рядок «7. Аптека — 64 м» знаходиться на карті одним поглядом.
+ // Підсвічений (наведення чи клік у переліку або на карті) — більший і з
+ // обвідкою чорнила.
+ const hl=['boolean',['feature-state','hl'],false];
+ map.addLayer({id:'k-near-num',type:'circle',source:'k-near',filter:['==',['get','t'],'o'],
+  paint:{'circle-radius':['case',hl,12,9],'circle-color':cssv('--panel')||'#fff',
+   'circle-stroke-color':['case',hl,cssv('--ink')||'#111',NEAR_C],'circle-stroke-width':['case',hl,3,2]}});
+ if(BASEFONT) map.addLayer({id:'k-near-lbl',type:'symbol',source:'k-near',filter:['==',['get','t'],'o'],
+  layout:{'text-field':['to-string',['get','n']],'text-font':BASEFONT,'text-size':10.5,
+   'text-allow-overlap':true,'text-ignore-placement':true},
+  paint:{'text-color':cssv('--ink')||'#111'}});
 }
+// Кольори кружечків — з теми (шари переходять у новий стиль як є).
+function nearPaint(){ if(!map.getLayer('k-near-num')) return;
+ const hl=['boolean',['feature-state','hl'],false];
+ map.setPaintProperty('k-near-num','circle-color',cssv('--panel'));
+ map.setPaintProperty('k-near-num','circle-stroke-color',['case',hl,cssv('--ink'),NEAR_C]);
+ if(map.getLayer('k-near-lbl')) map.setPaintProperty('k-near-lbl','text-color',cssv('--ink'))}
 // Коло радіуса r метрів довкола точки — лінією, 64 вершини.
 function circleLL(la,lo,r){const dy=r/111320, dx=r/(111320*Math.cos(la*Math.PI/180)), c=[];
  for(let k=0;k<=64;k++){const a=k/64*2*Math.PI; c.push([lo+dx*Math.cos(a),la+dy*Math.sin(a)])}
  return {type:'Feature',geometry:{type:'LineString',coordinates:c},properties:{t:'r'}}}
+// Об'єкти нумеруються від найближчого — так само, як перелік у картці.
 function nearShow(la,lo,objs,rads){
  if(!map.getSource('k-near')) return 0;
+ objs.sort((a,b)=>a.properties.d-b.properties.d).forEach((o,j)=>{o.id=j+1; o.properties.n=j+1});
  map.getSource('k-near').setData(fc([...rads].map(r=>circleLL(la,lo,r)).concat(
   [{type:'Feature',geometry:{type:'Point',coordinates:[lo,la]},properties:{t:'c'}}],objs)));
  return objs.length;
 }
 const nearObj=(c,p,d)=>({type:'Feature',geometry:{type:'Point',coordinates:[p[1],p[0]]},
- properties:{t:'o',k:c.k,s:`${c.n} — ${Math.round(d)} м`}});
+ properties:{t:'o',k:c.k,d:Math.round(d),s:`${c.n} — ${Math.round(d)} м`}});
+// Перелік картки місця — на карту тими самими номерами.
+function nearNumbered(p,list){
+ nearShow(p[0],p[1],list.map(o=>nearObj(o.c,o.q,o.d)),[NEAR_R]);
+ if(PLACE&&PLACE.hl) map.setFeatureState({source:'k-near',id:PLACE.hl},{hl:true});
+}
 // Підсвічує об'єкти, які модель порахувала для конкретної точки, з колами
 // радіусів (як showNear у tpl_map).
 function showNear(la,lo,factors){
@@ -1199,9 +1298,9 @@ function clearNear(keepBtn){
 }
 // Значок «Що поруч» під курсором — він лежить над кільцями, тож клік по
 // ньому не має летіти в кільце чи відкривати адресу.
-function iconAt(p){ if(!map.getLayer('k-near-ic')) return null;
- return map.queryRenderedFeatures([[p.x-3,p.y-3],[p.x+3,p.y+3]],{layers:['k-near-ic']})[0]||null}
-const iconTip=f=>`<b>${esc(f.properties.s)}</b>`;
+function iconAt(p){ if(!map.getLayer('k-near-num')) return null;
+ return map.queryRenderedFeatures([[p.x-3,p.y-3],[p.x+3,p.y+3]],{layers:['k-near-num']})[0]||null}
+const iconTip=f=>`<b>${f.properties.n}. ${esc(f.properties.s)}</b>`;
 // ---- ПІДКАЗКИ Й ВІКНО ВУЛИЦІ ----
 // Скільки разів — з правильним відмінком (той самий raz, що в tpl_map).
 function raz(n){
@@ -1284,7 +1383,10 @@ function ctxEvents(){
  const onEvent=p=>RINGS_ON?!!hitRing(p):!!addrAt(p);
  map.on('mousemove',e=>{
   const ic=iconAt(e.point);
-  if(ic){ if(map.getSource('k-dist')) distHover(-1); return tip(e,iconTip(ic))}
+  if(ic){ if(map.getSource('k-dist')) distHover(-1);
+   // Наведення на номер підсвічує й рядок у картці місця (розд. 30).
+   if(PLACE&&PLACE.tab==='near') nearHighlight(ic.properties.n,false);
+   return tip(e,iconTip(ic))}
   if(onEvent(e.point)){ if(map.getSource('k-dist')) distHover(-1);
    // Кільце — що в ньому: «1 300 подій · 12 адрес · 2 проблеми» (розд. 25,
    // А6). Число в центрі кільця скорочене (1,3k), тут — повне.
@@ -1292,7 +1394,12 @@ function ctxEvents(){
    if(o&&!o.dot){const a=ACT[o.i][o.j], np=NP[o.i][o.j];
     return tip(e,`<b>${fmt(o.n)} ${pl(o.n,'подія','події','подій')} · ${fmt(a)} ${pl(a,'адреса','адреси','адрес')}`+
      (np?` · ${np} ${pl(np,'проблема','проблеми','проблем')}`:'')+'</b>')}
-   TIP.remove();
+   // Над точкою — лише коротка підказка: адреса й скільки подій (розд. 30);
+   // усе інше — у картці місця за кліком.
+   const ai=o&&o.dot?LEAF[o.k]:!RINGS_ON?(addrAt(e.point)||{properties:{}}).properties.i:undefined;
+   const av=ai!==undefined&&LASTST&&LASTST.vis.find(x=>x[0]===P[ai]);
+   if(av) tip(e,`<b>${esc(P[ai][2])}</b><span>${fmt(av[1])} ${pl(av[1],'подія','події','подій')}${probsOf(P[ai]).length?' · проблема':''}</span>`);
+   else TIP.remove();
    // Над кільцем курсор ставить обробник кілець; над адресою — тут.
    if(!RINGS_ON) map.getCanvas().style.cursor='pointer'; return}
   const s=near(e.point,simIds())[0];
@@ -1318,12 +1425,13 @@ function ctxEvents(){
  // їхні власні обробники вже відкривають своє.
  map.on('click',e=>{
   // Значок — підказка й на дотик: на телефоні наведення немає.
-  const ic=iconAt(e.point); if(ic) return tip(e,iconTip(ic));
+  const ic=iconAt(e.point);
+  if(ic){ if(PLACE&&PLACE.tab==='near') nearHighlight(ic.properties.n,true); return tip(e,iconTip(ic))}
   if(CLICK_TAKEN||onEvent(e.point)) return;
   const s=near(e.point,simIds())[0]; if(s){TIP.remove(); return simPopup(s,e.lngLat)}
   // Клік по порожній карті закриває все, що відкрито над нею, — і панель
   // рішень теж (AUDYT-3, № 5).
-  if(POPUP) POPUP.remove(); advOpen(false); closePanel()});
+  if(POPUP) POPUP.remove(); advOpen(false); closePanel(); closePlace()});
 }
 // ---- ВИГЛЯД: «Кільця · Адреси · Проблеми» (розд. 23, п. 7 і 9) ----
 // Замість «Події · Проблеми · Теплова» спільної панелі — лише в GL-збірці.
