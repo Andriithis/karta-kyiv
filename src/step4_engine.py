@@ -97,6 +97,14 @@ PROAKT_VYD = {'АЛК', 'НАР'}
 PROAKT_CHAST = {'ГП', 'ДОР'}
 
 
+def sexp(v):
+    """exp для кратності. Коли біля об'єкта подій немає зовсім, модель дає
+    коефіцієнт із нескінченним інтервалом (розділення) — пишемо 1e6 («∞» у
+    звіті), а не падаємо."""
+    if v != v: return None
+    return round(math.exp(max(min(v, 13.8), -13.8)), 2)
+
+
 def mdeg(lat): return 111320.0, 111320.0 * math.cos(math.radians(lat))
 
 
@@ -270,6 +278,10 @@ def main():
     ev, drop = podii(log)
     sg = SegGrid(segs)
     six = [t for t in L.ORDER if t != 'ДОМ']
+    # B1_VYDY=ГП — прогнати лише названі види (перевірка коду на копії даних;
+    # перенавчання в Actions рахує всі шість)
+    if os.environ.get('B1_VYDY'):
+        six = [t for t in six if t in os.environ['B1_VYDY'].split(',')]
     idx = {s: i for i, s in enumerate(sids)}
     Y = collections.defaultdict(lambda: np.zeros(len(sids)))   # (вид, рік, заявна?) -> лічильник
     n_snap = collections.Counter(); n_all = collections.Counter(); n_pro = collections.Counter()
@@ -322,8 +334,8 @@ def main():
             base = ctyp[j] or cname[j]
             out.append(dict(змінна=cname[j], тип=base, форма=cform[j], r=crad[j],
                             кварталів=round(crad[j] / blocks_m, 1) if crad[j] else None,
-                            коеф=round(b, 4), RR=round(math.exp(b), 2),
-                            RR_від=round(math.exp(ci[k][0]), 2), RR_до=round(math.exp(ci[k][1]), 2),
+                            коеф=round(b, 4), RR=sexp(b),
+                            RR_від=sexp(ci[k][0]), RR_до=sexp(ci[k][1]),
                             джерело=SOURCES.get(base, '')))
         return sorted(out, key=lambda d: -abs(d['коеф']))
 
@@ -340,11 +352,11 @@ def main():
             if ctyp[j]:
                 v = COUNT[(ctyp[j], crad[j])]
                 rows.append((c, [f'{ctyp[j]}_{crad[j]}м', round(float(v[i]), 1),
-                                 round(float(np.median(v)), 1), round(math.exp(b), 2)]))
+                                 round(float(np.median(v)), 1), sexp(b)]))
             else:
                 v = RAWV[cname[j]]
                 rows.append((c, [cname[j], round(float(v[i]), 1), round(float(np.median(v)), 1),
-                                 round(math.exp(b), 2)]))
+                                 sexp(b)]))
         return [r for _c, r in sorted(rows, key=lambda x: -x[0])[:k]]
 
     def row(sel, i, rk, y, facts=True):
@@ -519,6 +531,14 @@ def danger_schools():
     return danger[:60]
 
 
+def sp(n):
+    """12345 -> '12 345'; нечислове — як є"""
+    return f'{n:,}'.replace(',', ' ') if isinstance(n, int) else n
+
+
+def inf(x): return '∞' if x is not None and x >= 1e5 else x
+
+
 def pct(x): return '—' if x is None else f'{100*x:.0f}%'
 
 
@@ -530,8 +550,10 @@ def write_report(report, kinds, OLD, OLDR, layers, blocks_m, shcho, nseg, ncand,
     w(f'Складено двигуном (`src/step4_engine.py`, `src/rtm.py`) {time.strftime("%d.%m.%Y")}. '
       'План — `PLAN-KROK7.md` з поправками 28.09; перелік типів і радіусів — '
       '`NAUKA.md`, «Перелік чинників для Б1» (зафіксовано до запуску).\n\n')
-    w(f'Одиниця — відрізок вулиці ({nseg:,} шт.; середня довжина, «квартал», '
-      f'{blocks_m} м). Змінних-кандидатів {ncand}: кожен тип об\'єкта «є в межах r» і '
+    ns = f'{nseg:,}'.replace(',', ' ')
+    w(f'Одиниця — відрізок вулиці ({ns} шт.; середня довжина, «квартал», '
+      + f'{blocks_m} м — це лінія вулиці OSM, яка буває довшою за один квартал між '
+      f'перехрестями). Змінних-кандидатів {ncand}: кожен тип об\'єкта «є в межах r» і '
       '«скільки в межах r» на 50, 100, 150, 250, 400, 500 м, плюс пішохідні потоки, '
       'населення й будова вулиці. Відбір — elastic net Пуассон з 5-кратною перехресною '
       'перевіркою на роках навчання, далі покроково (Пуассон і негативна біноміальна) '
@@ -545,10 +567,10 @@ def write_report(report, kinds, OLD, OLDR, layers, blocks_m, shcho, nseg, ncand,
     w('|---|---|---|---|---|---|---|\n')
     for th, k in kinds.items():
         e = report.get(th, {})
-        w(f"| {k['назва']} | {k['позначка'] or '—'} | {k['подій']:,} | {k['на_вулицях']:,} "
-          f"| {e.get('вікно', '—')} | {e.get('навчання', 0):,} | {e.get('перевірка', '—')} |\n")
+        w(f"| {k['назва']} | {k['позначка'] or '—'} | {sp(k['подій'])} | {sp(k['на_вулицях'])} "
+          f"| {e.get('вікно', '—')} | {sp(e.get('навчання', 0))} | {sp(e.get('перевірка', '—'))} |\n")
     w('\nВідсіяно до цього (з подій карти): '
-      + '; '.join(f"{k['назва']} — " + ', '.join(f'{a} {b:,}' for a, b in k['відсіяно'].items())
+      + '; '.join(f"{k['назва']} — " + ', '.join(f'{a} {sp(b)}' for a, b in k['відсіяно'].items())
                   for k in kinds.values() if k['відсіяно']) + '.\n\n')
 
     w('## 2. Перевірка: PAI і влучність\n\n')
@@ -586,12 +608,17 @@ def write_report(report, kinds, OLD, OLDR, layers, blocks_m, shcho, nseg, ncand,
         w('| Чинник | Форма | Радіус | Кварталів | RR | 95% | Джерело |\n|---|---|---|---|---|---|---|\n')
         for d in e['чинники']:
             w(f"| {d['тип'].replace('_', ' ')} | {d['форма']} | {str(d['r']) + ' м' if d['r'] else '—'} "
-              f"| {d['кварталів'] or '—'} | **{d['RR']}** | {d['RR_від']}–{d['RR_до']} | {d['джерело']} |\n")
+              f"| {d['кварталів'] or '—'} | **{d['RR']}** | {inf(d['RR_від'])}–{inf(d['RR_до'])} | {d['джерело']} |\n")
+        nesk = [d['тип'] for d in e['чинники'] if (d.get('RR_до') or 0) >= 1e5]
+        if nesk:
+            w(f"\n«0–∞» ({', '.join(nesk)}): у цьому колі подій виду немає зовсім (розділення), "
+              "кратність не визначена. Адреси установ карта прибирає (map_excl) — нуль міг скластися "
+              "й через це.\n")
         z = e.get('заявні')
         if z:
             ts = {d['тип'] for d in e['чинники']}
             zs = set(z['типи'])
-            w(f"\nЛише заявні події ({z['навчання']:,} / {z['перевірка']:,}; PAI {z['PAI']}): "
+            w(f"\nЛише заявні події ({sp(z['навчання'])} / {sp(z['перевірка'])}; PAI {z['PAI']}): "
               + ('ті самі типи.' if zs == ts else
                  f"спільні — {', '.join(sorted(ts & zs)) or 'немає'}; лише в заявних — "
                  f"{', '.join(sorted(zs - ts)) or 'немає'}; лише в усіх — "

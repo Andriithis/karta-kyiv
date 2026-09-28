@@ -450,6 +450,13 @@ def nazva_chynnyka(base):
     return (s[0][0].upper() + s[0][1:]) if s else base.replace('_', ' ')
 
 
+def rr_int(d):
+    a, b_ = d.get('RR_від'), d.get('RR_до')
+    if a is None or b_ is None: return '—'
+    f = lambda x: '∞' if x >= 1e5 else '0' if x < 0.005 else dec(x, 2)
+    return f'{f(a)}–{f(b_)}'
+
+
 def skhozhi_umovy(D):
     ER = D.get('ER') or {}
     RK = (D.get('risks') or {}).get('lines', {})
@@ -501,9 +508,17 @@ def skhozhi_umovy(D):
                 form = (f'є в {d["r"]} м' if d['форма'] == 'є' else f'кожен ще один у {d["r"]} м'
                         if d['форма'] == 'скільки' else 'на одне стандартне відхилення')
                 b.append(f'<tr><td>{esc(nazva_chynnyka(d["тип"]))}</td><td>{form}</td><td class="n"><b>{dec(d["RR"], 2)}</b></td>'
-                         f'<td class="n">{dec(d["RR_від"], 2)}–{dec(d["RR_до"], 2)}</td><td class="muted">{esc(d["джерело"])}</td></tr>')
+                         f'<td class="n">{rr_int(d)}</td><td class="muted">{esc(d["джерело"])}</td></tr>')
             b.append('</table></div><p class="muted">Менше за 1 — подій там менше. Число — з моделі, у якій усі '
                      'чинники разом; це близькість, а не пояснення.</p>')
+            nesk = [nazva_chynnyka(d['тип']) for d in ch if (d.get('RR_до') or 0) >= 1e5]
+            if nesk:
+                # «0–∞»: у колі цього типу подій виду немає зовсім (розділення).
+                # Адреси установ карта прибирає (map_excl), тож біля них подій
+                # може не бути саме через це — пишемо лише факт.
+                b.append(f'<p class="muted">{esc(", ".join(nesk))}: у цьому колі подій цього виду немає '
+                         'зовсім, тому кратність і її межі не визначені («0–∞»). Адреси установ карта не '
+                         'показує, і це могло спричинити нуль.</p>')
             z = e.get('заявні')
             if z:
                 ts = {d['тип'] for d in ch}; zs = set(z['типи'])

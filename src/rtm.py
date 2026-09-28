@@ -15,8 +15,13 @@ Caplan, Kennedy & Neudecker (2020); утиліта RTMDx — Caplan, Kennedy & P
 Своя реалізація elastic net, бо в scikit-learn Пуассон буває лише з L2, а
 тягти в Actions ще одну бібліотеку заради одного методу не варто.
 """
-import math
+import math, warnings
 import numpy as np
+
+# Покроковий відбір перебирає тисячі моделей; частина з них (майже порожні
+# змінні) дає попередження про збіжність — такі моделі й так програють за BIC,
+# а тисячі рядків попереджень ховають у журналі те, що важливо.
+warnings.filterwarnings('ignore', module='statsmodels')
 
 L1_RATIO = 0.5          # «справжній» elastic net: половина L1, половина L2
 N_LAMBDA = 24
