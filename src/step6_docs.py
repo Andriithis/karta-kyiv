@@ -1,50 +1,51 @@
 # -*- coding: utf-8 -*-
-"""Крок 6. Документи, які збираються самі з даних кроків 1-4.
+"""Крок 6. Звіти, які збираються самі з тих самих даних, що й карта.
 
-Три файли на кожну версію сайту:
-  doslidzhennya.html — повне дослідження ризиків: джерела, методика, результати,
-                       перевірка й поіменний розбір кожної ризикованої вулиці;
-  rezyume.html       — те саме на одну сторінку, без таблиць;
-  analiz.html        — загальний аналіз поточного стану: що показують дані,
-                       де концентрація, коли і де саме, з можливими причинами
-                       (тільки викладацька версія).
+З 28.09.2026 — три звіти й методика (PLAN-ZVITY.md, розд. 25; код —
+step6_zvity.py):
+  problemy.html, skhozhi-umovy.html, stan-mista.html, metodyka.html.
 
-Жодного тексту не написано «наперед» під конкретні цифри: усі числа беруться
-з engine_report.json, risk.json, network.json, factors.json і бази подій, а
-формулювання добираються від самих чисел. Тому після кожного щотижневого
-запуску документи оновлюються разом із картою.
-
-Сам код поділено на три файли лише через розмір: step6_base — дані й обчислення,
-step6_research — текст дослідження, step6_state — резюме й аналіз стану.
+Старі адреси лишаються переадресаціями з тими самими якорями й параметрами:
+  doslidzhennya.html (з ?st= і #t-…) -> skhozhi-umovy.html;
+  analiz.html, rezyume.html          -> stan-mista.html.
+Старі модулі step6_research/step6_state/step6_intro більше не збираються.
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from step6_base import load, analyse, SITE
-from step6_research import doc_research
-from step6_state import doc_summary, doc_analysis
+import step6_zvity as Z
 
-# ============================================================ ЗБІРКА
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SITE = os.path.join(ROOT, 'site')
+
+PEREADRES = {'doslidzhennya.html': 'skhozhi-umovy.html',
+             'analiz.html': 'stan-mista.html', 'rezyume.html': 'stan-mista.html'}
+
+
+def pereadresatsiia(kudy):
+    # location.replace, а не meta refresh: так зберігаються ?st= і #t-… зі
+    # старих посилань у вікнах вулиць, і «назад» не повертає на порожню сторінку
+    return ('<!DOCTYPE html><html lang="uk"><head><meta charset="utf-8">'
+            f'<title>Переадресація</title><meta http-equiv="refresh" content="0;url={kudy}">'
+            f'<script>location.replace("{kudy}"+location.search+location.hash)</script></head>'
+            f'<body><a href="{kudy}">Звіт переїхав сюди</a></body></html>')
+
+
 def build(outdir, A=None, D=None):
-    """Кладе всі три документи в задану папку. Версія одна для всіх."""
-    if D is None: D = load()
-    if A is None: A = analyse(D)
+    """Кладе звіти й переадресації в задану папку. Міська карта має бути
+    вже зібрана в цьому процесі (step5_site так і робить)."""
     os.makedirs(outdir, exist_ok=True)
-    open(os.path.join(outdir, 'doslidzhennya.html'), 'w', encoding='utf-8').write(
-        doc_research(A, D))
-    open(os.path.join(outdir, 'rezyume.html'), 'w', encoding='utf-8').write(
-        doc_summary(A, D))
-    open(os.path.join(outdir, 'analiz.html'), 'w', encoding='utf-8').write(
-        doc_analysis(A, D))
-    return ['doslidzhennya.html', 'rezyume.html', 'analiz.html']
+    made = Z.build(outdir)
+    for stare, nove in PEREADRES.items():
+        open(os.path.join(outdir, stare), 'w', encoding='utf-8').write(pereadresatsiia(nove))
+    return made + list(PEREADRES)
+
 
 def main():
-    D = load()
-    if not D['ER']:
-        print('немає data/engine_report.json — документи будуть без розділу результатів')
-    A = analyse(D)
-    made = build(SITE, A, D)
-    print('   ' + ', '.join(made))
-    print('=== ГОТОВО === документи зібрано')
+    import step3_map as S3
+    S3.main(out=os.path.join(SITE, os.path.basename(S3.OUT)))
+    print('   ' + ', '.join(build(SITE)))
+    print('=== ГОТОВО === звіти зібрано')
+
 
 if __name__ == '__main__':
     main()

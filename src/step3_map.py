@@ -31,6 +31,8 @@ from map_problems import COURTS, SLUG
 LAST_META = {}          # meta останньої збірки — читає крок 5
 LAST_DOCS = []          # справи адрес для панелі, паралельно до точок карти
 LAST_VYBIR = None       # відібрані події останньої збірки — їх беруть звіти (step6)
+LAST_KARTA = None       # точки міської карти з проблемами, підписи статей, meta —
+                        # звіти рахують ті самі числа, що видно на карті (PLAN-ZVITY, п. 2)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data'); DB = os.path.join(DATA, 'events.db')
@@ -420,9 +422,11 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
     html = fill(TPL)
     # Крок 5 бере звідси числа районів для плиток — щоб не збирати десять карт
     # заради десяти чисел.
-    global LAST_META, LAST_DOCS
+    global LAST_META, LAST_DOCS, LAST_KARTA
     LAST_META = meta
     LAST_DOCS = DOCS
+    if not district:
+        LAST_KARTA = dict(P=P, labels=labels, meta=meta, risks=risks, FACT=FACT, ER=ER, DOCS=DOCS)
 
     dst = out or OUT
     os.makedirs(os.path.dirname(dst) or '.', exist_ok=True)

@@ -105,9 +105,10 @@ const PERIODS=[['ранок','6–12',[6,7,8,9,10,11]],['день','12–18',[12
  ['вечір','18–24',[18,19,20,21,22,23]],['ніч','0–6',[0,1,2,3,4,5]]];
 // Звіти кроку 6 — три посилання на виду. Версія одна для всіх.
 $ify('#docs',
- '<a href="doslidzhennya.html" target="_blank" rel="noopener">Дослідження ризиків <span>↗</span></a>'+
- '<a href="rezyume.html" target="_blank" rel="noopener">Резюме на одну сторінку <span>↗</span></a>'+
- '<a href="analiz.html" target="_blank" rel="noopener">Аналіз поточного стану <span>↗</span></a>');
+ // три звіти замість «Дослідження», «Резюме», «Аналізу» (розд. 25; AUDYT-3 № 13)
+ '<a href="problemy.html" target="_blank" rel="noopener">Проблеми <span>↗</span></a>'+
+ '<a href="skhozhi-umovy.html" target="_blank" rel="noopener">Схожі умови <span>↗</span></a>'+
+ '<a href="stan-mista.html" target="_blank" rel="noopener">Стан міста <span>↗</span></a>');
 // Три режими — три відповіді на одне питання «що показувати». Теплова карта
 // доти була окремою кнопкою збоку й читалася як ще один фільтр поверх решти.
 const MODES=[['all','Події'],['prob','Проблеми'],['heat','Теплова']];

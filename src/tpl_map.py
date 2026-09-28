@@ -276,7 +276,7 @@ function riskPopup(k,it,quiet){
  // (?st= підсвічує його й прокручує туди), слухачеві — на методику теми:
  // поіменного переліку в його версії документа немає.
  const an=v.slug?('#t-'+v.slug):'';
- h+=`<a class="rdoc" href="doslidzhennya.html${(it[1]&&it[1]!=='без назви')?('?st='+encodeURIComponent(it[1])):''}${an}" target="_blank" rel="noopener">Розбір вулиці в дослідженні ↗</a>`;
+ h+=`<a class="rdoc" href="skhozhi-umovy.html${(it[1]&&it[1]!=='без назви')?('?st='+encodeURIComponent(it[1])):''}${an}" target="_blank" rel="noopener">Розбір у звіті «Схожі умови» ↗</a>`;
  h+='</div>';
  return h;
 }
