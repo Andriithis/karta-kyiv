@@ -316,7 +316,9 @@ def zaklady(D, rng):
         for n, nm, la, lo in srt[:5]:
             if not n: break
             near = min(range(len(pts)), key=lambda j: (pts[j][0] - la) ** 2 + (pts[j][1] - lo) ** 2)
-            names.append(f'{esc(nm or "без назви в OSM")} ({esc(doma[near][2])}) — {n}')
+            # назви закладів у публічному звіті не показуємо (розд. 30, п. 6;
+            # розд. 28) — лише адреса найближчої точки карти
+            names.append(f'{esc(doma[near][2])} — {n}')
         b.append(f'<tr><td>{esc(c["n"])}</td><td class="n">{sum(1 for x in cnt if x[0])} з {len(cnt)}</td>'
                  f'<td class="n">{pct(top)}</td><td class="n">{pct(sum(rnd) / len(rnd))}</td>'
                  f'<td class="muted">{"; ".join(names)}</td></tr>')

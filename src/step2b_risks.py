@@ -113,7 +113,12 @@ HEAVY = {
 BBOX = (50.21, 30.24, 50.59, 30.83)
 TILES = 3
 
-def fetch(name, body, label='', allow_empty=False):
+def fetch(name, body, label='', allow_empty=False, retry_empty=False):
+    """retry_empty — для плиток: порожня відповідь спершу вважається збоєм
+    сервера й повторюється на всіх; лише коли всі сервери всі рази кажуть 0,
+    плитка справді порожня (кут рамки за межами Києва). 28.09 kumi.systems
+    віддав 0 на центральну плитку — без повтору модель вчилася б без центру."""
+    zeros = 0
     q = '[out:json][timeout:600];' + AREA + body
     data = urllib.parse.urlencode({'data': q}).encode()
     for attempt, ep in enumerate(ENDPOINTS * 2):
@@ -130,7 +135,11 @@ def fetch(name, body, label='', allow_empty=False):
                 time.sleep(8); continue
             els = js.get('elements', [])
             n = len(els)
-            if n == 0 and not allow_empty:
+            if n == 0 and (not allow_empty or retry_empty):
+                zeros += 1
+                if retry_empty and zeros >= len(ENDPOINTS):
+                    print('0 — усі сервери кажуть 0, плитка порожня')
+                    return els
                 print('0 — підозріло, пробую інший сервер')
                 time.sleep(20); continue
             print(f'{n:,}')
@@ -144,6 +153,27 @@ def fetch(name, body, label='', allow_empty=False):
             time.sleep(15)
     print(f'   !!! {name}{label} НЕ ЗАВАНТАЖЕНО')
     return None
+
+def raiony_bez(roads, min_n=50):
+    """Райони (data/borders.json), у яких менше min_n вулиць: ознака того,
+    що плитку повернуто порожньою. Меж немає — перевірки немає."""
+    bp = os.path.join(DATA, 'borders.json')
+    if not os.path.exists(bp) or not roads: return []
+    B = json.load(open(bp, encoding='utf-8'))
+    def inside(la, lo, ring):
+        c = False
+        for (a1, o1), (a2, o2) in zip(ring, ring[1:] + ring[:1]):
+            if (o1 > lo) != (o2 > lo) and la < (a2 - a1) * (lo - o1) / (o2 - o1) + a1: c = not c
+        return c
+    n = collections.Counter()
+    for w in roads:
+        g = w.get('geometry') or []
+        if not g: continue
+        p = g[len(g) // 2]
+        for d, ring in B.items():
+            if inside(p['lat'], p['lon'], ring): n[d] += 1; break
+    return [d for d in B if n[d] < min_n]
+
 
 def center(el):
     if 'lat' in el: return el['lat'], el['lon']
@@ -220,13 +250,21 @@ def main():
                 for j in range(TILES):
                     bb = f'{s_+i*dla:.4f},{w_+j*dlo:.4f},{s_+(i+1)*dla:.4f},{w_+(j+1)*dlo:.4f}'
                     els = fetch(k, f'({sel}(area.k)({bb}););{outmode}',
-                                f'{i*TILES+j+1}/{TILES*TILES}', allow_empty=True)
-                    for el in (els or []):
+                                f'{i*TILES+j+1}/{TILES*TILES}', allow_empty=True, retry_empty=True)
+                    if els is None:
+                        # плитку не завантажено — не зберігаємо діряві дані в кеш
+                        print(f'   !!! {k} {i*TILES+j+1}/{TILES*TILES} не завантажено — зупиняюсь')
+                        sys.exit(1)
+                    for el in els:
                         if el.get('id') not in seen:
                             seen.add(el.get('id')); acc.append(el)
                     time.sleep(5)
             raw[k] = acc
             print(f'   {k}: разом {len(acc):,}')
+        pusti = raiony_bez(raw.get('roads', []))
+        if pusti:
+            print('   !!! немає жодної вулиці в районах: ' + ', '.join(pusti) + ' — кеш не зберігаю')
+            sys.exit(1)
         json.dump(raw, open(RAW, 'w', encoding='utf-8'), ensure_ascii=False)
 
     print('\n2) обробка')

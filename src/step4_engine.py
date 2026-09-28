@@ -90,6 +90,9 @@ SOURCES = {
     'перехрестя_всередині': 'будова вулиці (NAUKA, розд. 2)',
 }
 
+# Типи з переліку Б1, що не йдуть у модель (у «Що поруч» лишаються)
+NE_CHYNNYK = {'лікарні'}
+
 # Проактивні види (RISHENNYA, розд. 29): такі події поліція здебільшого
 # виявляє сама, тож шар показує й те, де вона частіше працює. Рахуються,
 # але позначаються. Частку для «частково» рахуємо з даних.
@@ -174,6 +177,13 @@ def main():
         if not os.path.exists(f): log(f'немає {f}'); sys.exit(1)
     raw = json.load(open(RAW, encoding='utf-8'))
     import step2b_risks as S2B
+    pusti = S2B.raiony_bez(raw.get('roads', []))
+    if pusti:
+        # Кеш OSM без частини міста (порожня плитка Overpass) — модель
+        # тихо навчилася б без центру. Краще не вчитися зовсім.
+        log('у osm_risks_raw.json немає вулиць у районах: ' + ', '.join(pusti)
+            + ' — перезавантажте шар (галочка «Перезавантажити шар ризиків з OSM»)')
+        sys.exit(1)
     miss = [k for k in S2B.B1 if not raw.get(k)]
     if miss:
         # Порожній тип тихо випав би з моделі, і звіт виглядав би так, ніби
@@ -209,6 +219,10 @@ def main():
     cols, cname, ctyp, cform, crad = [], [], [], [], []
     COUNT = {}                   # (тип, r) -> кількість у колі, для чинників вулиці
     for key, (ua, _q) in S2B.B1.items():
+        # Лікарні — не чинник (RISHENNYA, розд. 30, п. 5): адреси установ
+        # карта прибирає, тож подій біля лікарень немає за визначенням, і
+        # модель знаходила «нуль» від вади даних, а не від місця.
+        if ua in NE_CHYNNYK: continue
         P = el_pts(raw.get(key))
         if not P: continue
         tp = BallTree(np.radians(np.array(P)), metric='haversine')
@@ -465,7 +479,7 @@ def main():
     log('\n=== «Що поруч»: усі шість видів разом ===')
     ya = sum(cnt(th, TRAIN_Y) for th in six)
     sa = rtm.select(X, ya, expo, ctyp, log=log)
-    shcho = {ua: 0 for ua, _q in S2B.B1.values()}
+    shcho = {ua: 0 for ua, _q in S2B.B1.values()}      # лікарні — 0: у 50 м
     for j in sa['cols']:
         if ctyp[j]: shcho[ctyp[j]] = crad[j]
     json.dump({'blocks_m': blocks_m, 'po_vydah': radiusy, 'shcho_poruch': shcho},
