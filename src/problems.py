@@ -417,6 +417,122 @@ def nulovyi_riven(ev, S, kind_q, zapysy, log, seed=28):
     return out
 
 
+# ------------------------------------------------- 1551 для «Схожих умов»
+N_VYPADK = 200        # випадкових наборів вулиць для порівняння
+R_VULYTSIA = 30       # м: скарга «на вулиці», якщо ближче до її лінії
+
+
+def _shchilno(pts, krok=20.0):
+    """точки вздовж лінії через ~20 м — щоб «30 м від лінії» рахувалося
+    й посередині довгого відрізка, а не лише біля вершин"""
+    out = []
+    for a, b in zip(pts, pts[1:]):
+        n = max(1, int(dist(a, b) // krok))
+        out += [(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n) for k in range(n)]
+    return out + [tuple(pts[-1])]
+
+
+def skhozhi_1551(G, dmap, log, seed=31):
+    """PIDKHID, розд. 3.3 і 5.1: 1551 — не чинник моделі, а незалежна
+    перевірка. Скарги того ж виду за 12 місяців на вулицях шару «Схожі умови»
+    проти випадкових вулиць — та сама кількість, ті самі райони, N_VYPADK
+    разів. Окремо — «тихі вулиці» шару, на які мешканці скаржаться."""
+    import numpy as np
+    rk = os.path.join(DATA, 'risk.json'); rawp = os.path.join(DATA, 'osm_risks_raw.json')
+    if G is None or not os.path.exists(rk) or not os.path.exists(rawp): return None
+    import step4_engine as E4
+    layers = json.load(open(rk, encoding='utf-8')).get('layers', {})
+    segs = []
+    for w in json.load(open(rawp, encoding='utf-8')).get('roads', []):
+        g = [(q['lat'], q['lon']) for q in w.get('geometry') or []]
+        if len(g) > 1 and E4.seg_len(g) >= 40: segs.append(g)
+    if not segs: return None
+    lo = (dt.date.fromisoformat(G['last']) - dt.timedelta(days=365)).isoformat()
+    rng = np.random.default_rng(seed)
+
+    def skargy(pts, th):
+        ks = set()
+        for p in _shchilno(pts):
+            ks.update(G['spt'].near(p[0], p[1], R_VULYTSIA))
+        return [G['sk'][k] for k in ks if G['sk'][k][1] == th and G['sk'][k][0] >= lo]
+
+    # район кожної вулиці — за серединою; пул випадкових — усі вулиці району
+    rai = [dmap(tuple(s[len(s) // 2])) for s in segs]
+    pool = collections.defaultdict(list)
+    for i, d in enumerate(rai): pool[d].append(i)
+    cache = {}
+    out = {}
+    for th, lay in layers.items():
+        if th not in VYD1551.values(): continue       # про інші види 1551 мовчить
+        items = lay.get('items', [])
+        if not items: continue
+        n_obs = sum(len(skargy(it[0], th)) for it in items)
+        d_of = [dmap(tuple(it[0][len(it[0]) // 2])) for it in items]
+        need = collections.Counter(d_of)
+        sim, simkm = [], []
+        # Довша вулиця збирає більше скарг просто тому, що довша; модель
+        # ранжує з урахуванням довжини, тож порівнюємо ще й на кілометр.
+        km_obs = sum(E4.seg_len(it[0]) for it in items) / 1000
+        for _ in range(N_VYPADK):
+            tot, km = 0, 0.0
+            for d, k in need.items():
+                cand = pool.get(d) or list(range(len(segs)))
+                for j in rng.choice(len(cand), size=min(k, len(cand)), replace=False):
+                    sid = cand[j]
+                    if (sid, th) not in cache: cache[(sid, th)] = len(skargy(segs[sid], th))
+                    tot += cache[(sid, th)]
+                    km += E4.seg_len(segs[sid]) / 1000
+            sim.append(tot); simkm.append(tot / km if km else 0)
+        mean = float(np.mean(sim))
+        pv = (1 + sum(1 for x in sim if x >= n_obs)) / (N_VYPADK + 1)
+        tykhi = []
+        for it in lay.get('quiet', []):
+            sk = skargy(it[0], th)
+            if sk:
+                tykhi.append(dict(vulytsia=it[1], skarg=len(sk), p=list(it[0][len(it[0]) // 2]),
+                                  kategorii=[c for c, _ in collections.Counter(x[2] for x in sk).most_common(3)]))
+        tykhi.sort(key=lambda x: -x['skarg'])
+        out[th] = dict(vyd=L.THEMES.get(th, th), vulyts=len(items), skarg=n_obs,
+                       vypadkovo=round(mean, 1), vypadkovo_95=int(np.percentile(sim, 95)),
+                       raziv=round(n_obs / mean, 2) if mean else None, p=round(pv, 3),
+                       km=round(km_obs, 1), na_km=round(n_obs / km_obs, 2) if km_obs else None,
+                       vypadkovo_na_km=round(float(np.mean(simkm)), 2),
+                       p_na_km=round((1 + sum(1 for x in simkm if x >= n_obs / km_obs)) / (N_VYPADK + 1), 3) if km_obs else None,
+                       tykhi_zi_skargamy=tykhi, tykhykh=len(lay.get('quiet', [])))
+        log(f"   1551 на «Схожих умовах», {L.THEMES.get(th, th)}: {n_obs} скарг на {len(items)} вулицях "
+            f"проти {mean:.1f} на випадкових (p {pv:.3f}); на км {out[th]['na_km']} проти {out[th]['vypadkovo_na_km']} "
+            f"(p {out[th]['p_na_km']}); тихих зі скаргами {len(tykhi)} з {len(lay.get('quiet', []))}")
+    res = dict(do=G['last'], vid=lo, n_vypadk=N_VYPADK, radius_m=R_VULYTSIA, vydy=out)
+    json.dump(res, open(os.path.join(DATA, 'skhozhi_1551.json'), 'w', encoding='utf-8'),
+              ensure_ascii=False, indent=1)
+    return res
+
+
+def zvit_1551_md(res, path):
+    """Окремий файл для чату «Проблеми» — ті самі числа, що в методиці."""
+    w = [f'# 1551 на вулицях «Схожих умов»\n',
+         f'Складено {dt.date.today().strftime("%d.%m.%Y")} (`src/problems.py`, `skhozhi_1551`). Скарги 1551 того ж виду '
+         f'за 12 місяців ({res["vid"]} — {res["do"]}) у {res["radius_m"]} м від лінії вулиці. Порівняння — '
+         f'{res["n_vypadk"]} наборів випадкових вулиць: та сама кількість, ті самі райони. p — частка випадкових '
+         'наборів, де скарг стільки ж або більше. Про наркотики, насильство й майно 1551 мовчить — їх тут немає.\n',
+         '| Вид | Вулиць шару | Скарг на них | Випадково (середнє) | 95% випадкових ≤ | Разів | p | Скарг на км: шар / випадково | p на км |',
+         '|---|---|---|---|---|---|---|---|---|']
+    for v in res['vydy'].values():
+        w.append(f"| {v['vyd']} | {v['vulyts']} | {v['skarg']} | {v['vypadkovo']} | {v['vypadkovo_95']} | "
+                 f"{v['raziv'] if v['raziv'] is not None else '—'} | {v['p']} | {v['na_km']} / {v['vypadkovo_na_km']} | {v['p_na_km']} |")
+    w.append('\nНа кілометр — бо вулиця шару буває довшою за випадкову, а довша вулиця збирає більше скарг '
+             'просто довжиною. Висновок про вид тримається, лише якщо p мале в обох стовпцях.')
+    for v in res['vydy'].values():
+        w.append(f"\n## Тихі вулиці зі скаргами — {v['vyd']}\n")
+        w.append(f"Подій за роки навчання не було, умови схожі; мешканці скаржаться: "
+                 f"{len(v['tykhi_zi_skargamy'])} з {v['tykhykh']} тихих вулиць.\n")
+        if v['tykhi_zi_skargamy']:
+            w.append('| Вулиця | Скарг за рік | Найчастіше |\n|---|---|---|')
+            for t in v['tykhi_zi_skargamy']:
+                w.append(f"| {t['vulytsia'] or 'без назви'} | {t['skarg']} | {'; '.join(t['kategorii'])} |")
+    open(path, 'w', encoding='utf-8', newline='\n').write('\n'.join(w) + '\n')
+
+
 def run(V=None, log=print, FACT=None):
     """Увесь відбір. Повертає звіт і пише data/problems_report.json."""
     if V is None:
@@ -612,6 +728,10 @@ def run(V=None, log=print, FACT=None):
         perelik=problemy, dorozhni_dilianky=dilianky, formuietsia_perelik=formue,
         inshi=[{k: v for k, v in r.items() if k not in ('statti',)} for r in zapysy
                if r['status'] != 'хронічна' and r['status'] != 'не перевірена адреса'][:3000])
+    try:
+        rep['skhozhi_1551'] = skhozhi_1551(G, dmap, log)
+    except Exception as e:                       # перевірка — не привід зупиняти карту
+        log(f'   1551 на «Схожих умовах» не пораховано: {e}')
     json.dump(rep, open(REPORT, 'w', encoding='utf-8'), ensure_ascii=False, indent=1, default=list)
     for k, v in funnel.items():
         log(f'   {k}: ' + ', '.join(f'{a} {b:,}' for a, b in v.items()))
@@ -621,4 +741,7 @@ def run(V=None, log=print, FACT=None):
 
 
 if __name__ == '__main__':
-    run()
+    r = run()
+    # --1551-md: окремий файл для чату «Проблеми» (1551-SKHOZHI-UMOVY.md)
+    if '--1551-md' in sys.argv and r and r.get('skhozhi_1551'):
+        zvit_1551_md(r['skhozhi_1551'], os.path.join(ROOT, '1551-SKHOZHI-UMOVY.md'))

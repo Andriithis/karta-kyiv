@@ -408,7 +408,6 @@ const NEAR_R=250;
 // найменшому, 50 м (PLAN-KROK7, розд. 3). До перенавчання — усі 250 м.
 const nearR=c=>c.r||NEAR_R;
 const NEAR_MAX=(F.cats||[]).length?Math.max(...F.cats.map(nearR)):NEAR_R;
-const NEAR_ONE=(F.cats||[]).every(c=>nearR(c)===nearR((F.cats||[])[0]||{}));
 // Події місця за поточним фільтром — індекси в p[4] (у тому самому порядку, що
 // й справи у spravy/<район>.json). Для проблеми — лише події її статей:
 // картка проблеми говорить тільки про проблему (рішення 28.09), решта подій
@@ -500,10 +499,12 @@ function nearProakt(){
  if(!m) return '';
  return `<div class="tt kp-pro">${esc(shortOf(gi))} — ${esc(m)}: `+(m==='проактивний вид'
   ?'такі події поліція здебільшого виявляє сама.':'частину таких подій поліція виявляє сама.')+'</div>'}
+// Без пояснювальних речень (правило Андрія 29.09): що кожен тип — у своєму
+// радіусі, сказано в методиці; радіус видно з кола на карті й відстаней.
 function nearHTML(){
- const L=PLACE.near, rtxt=NEAR_ONE?`У радіусі ${NEAR_MAX} м`:`Кожен тип — у своєму радіусі, до ${NEAR_MAX} м`;
- if(!L.length) return `<div class="kp-empty">${rtxt} об'єктів із переліку немає.</div>`+nearProakt();
- return `<div class="tt">${rtxt}. Які з них пояснюють скупчення — вирішує той, хто вийде на місце.</div>`+nearProakt()+`
+ const L=PLACE.near;
+ if(!L.length) return `<div class="kp-empty">Поруч об'єктів із переліку немає.</div>`+nearProakt();
+ return `<div class="tt">Які з них пояснюють скупчення — вирішує той, хто вийде на місце.</div>`+nearProakt()+`
 <ol class="kp-near">${L.map((o,j)=>`<li data-near="${j+1}"${PLACE.hl===j+1?' class="hl"':''}><span class="kp-nn">${j+1}</span><span class="kp-ni">${FICON[o.c.k]||'•'}</span>${esc(o.c.n)}<span class="kp-nd">${o.d} м</span></li>`).join('')}</ol>`}
 let DOCS_NOW={i:-1,cs:undefined};
 function renderPlace(){
@@ -1396,8 +1397,9 @@ function simPopup(f,ll){
  // у вікні вулиці ніхто не читав, а головне в ньому — чинники — уже вище.
  // Посилання — на розбір вулиці у звіті «Схожі умови» (?st= підсвічує її рядок).
  const an=v.slug?('#t-'+v.slug):'';
- h+=`<div class="rmeth">${v.env?'Оцінка за умовами довкола вулиці — без того, де події вже були.':'Оцінка моделі за умовами довкола вулиці й подіями, що вже були.'} `+
-  `<a class="rdoc" style="display:inline;margin:0" href="skhozhi-umovy.html${(it[1]&&it[1]!=='без назви')?('?st='+encodeURIComponent(it[1])):''}${an}" target="_blank" rel="noopener">Як пораховано ↗</a></div></div>`;
+ // Речення «оцінка за умовами довкола…» перенесено в методику (29.09):
+ // карта без пояснювальних текстів, лише посилання.
+ h+=`<div class="rmeth"><a class="rdoc" style="display:inline;margin:0" href="skhozhi-umovy.html${(it[1]&&it[1]!=='без назви')?('?st='+encodeURIComponent(it[1])):''}${an}" target="_blank" rel="noopener">Як пораховано ↗</a></div></div>`;
  advOpen(false);
  const w=document.createElement('div'); w.innerHTML=h;
  // Чинники моделі поруч — якщо модель їх назвала; інакше просто все, що є
