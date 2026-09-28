@@ -187,8 +187,11 @@ $('#advx').onclick=()=>advOpen(false);
 // чужого речення. Центрів вулиць на карті немає й без перемикача
 // (computeVis). Сам перемикач тимчасовий — до кінця кроку 6 (RISHENNYA, 19).
 let PRECISE=false;
+// Період за місяцем події (e[5]) — смуга часу нової карти (розд. 30). PERF —
+// [перший, останній] місяць або null («Усі»); запасна карта його не ставить.
+let PERF=null;
 const evOn=(e,C,A,Y,H)=>C.has(e[0])&&A.has(e[1])&&Y.has(e[2])&&(!H.size||H.has(e[3]))
-  &&(!PRECISE||e[4]===0);
+  &&(!PRECISE||e[4]===0)&&(!PERF||(e[5]>=PERF[0]&&e[5]<=PERF[1]));
 // Той самий відбір із поточних перемикачів — для панелі й числа в кнопці
 // «Усі рішення (N)»: вікно, кнопка й панель мусять казати одне число.
 function evOnNow(e){
@@ -255,7 +258,7 @@ const fmtDate=s=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(s||'');
 // виду в ній лишалися справи, яких на карті вже немає. Перемальовуємо лише
 // тоді, коли змінився сам фільтр, а не на кожен зум (draw приходить і з ним).
 let PANI=-1, PANKEY='';
-const filterKey=()=>[sel('c'),sel('a'),sel('y'),hoursSel()].map(s=>[...s].join(',')).join('|')+'|'+PRECISE;
+const filterKey=()=>[sel('c'),sel('a'),sel('y'),hoursSel()].map(s=>[...s].join(',')).join('|')+'|'+PRECISE+'|'+PERF;
 function refreshPanel(){
  if(PANI<0||!$('#pan').classList.contains('on')||filterKey()===PANKEY) return;
  const top=$('#panb').scrollTop; openPanel(PANI,top);

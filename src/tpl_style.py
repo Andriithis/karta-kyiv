@@ -86,6 +86,35 @@ html .tsw button{min-height:32px;display:inline-flex;align-items:center}
 #adv .advh button:hover{background:var(--sunk)}
 #adv{scrollbar-width:none}
 #adv::-webkit-scrollbar{display:none}
+/* Смуга часу зліва вгорі (розд. 30): ледь помітний рядок — напівпрозорий, без
+   рамки й білої смуги; кнопки — текстом, ціль 30–32 px. */
+.kstrip{display:flex;align-items:center;gap:2px;flex-wrap:wrap;padding:3px 6px;border-radius:8px;
+ background:var(--glass);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);font:12.5px var(--sans);color:var(--ink)}
+.kstrip button{all:unset;cursor:pointer;min-width:30px;min-height:30px;padding:0 6px;box-sizing:border-box;
+ display:inline-flex;align-items:center;justify-content:center;border-radius:6px;color:var(--dim)}
+.kstrip button:hover{background:var(--sunk);color:var(--ink)}
+.kstrip button:focus-visible{outline:2px solid var(--ink);outline-offset:1px}
+.kstrip button[aria-pressed="true"]{color:var(--ink);text-decoration:underline;text-underline-offset:4px}
+.kstrip button:disabled{opacity:.3;cursor:default;background:none}
+.kstrip .ks-steps,.kstrip .ks-per,.kstrip .ks-todw{display:inline-flex;align-items:center;position:relative}
+.kstrip .ks-per[hidden]{display:none}
+.kstrip .ks-per button{color:var(--ink);font-size:15px}
+.kstrip .ks-val{min-width:112px;text-align:center;font-weight:600;line-height:1.1}
+.kstrip .ks-val small{display:block;font-weight:400;font-size:10px;color:var(--faint)}
+.kstrip .ks-val.inc{color:var(--dim)}
+.kstrip .ks-sep{width:1px;height:18px;background:var(--rule);margin:0 3px}
+.kstrip .ks-theme{font-size:15px;color:var(--ink)}
+.kstrip .ks-menu{position:absolute;top:34px;left:0;z-index:5;min-width:150px;padding:4px;background:var(--card);
+ border-radius:8px;box-shadow:var(--card-shadow);display:flex;flex-direction:column}
+.kstrip .ks-menu[hidden]{display:none}
+.kstrip .ks-menu button{justify-content:flex-start;color:var(--ink);padding:0 10px}
+.kstrip .ks-phone{display:none}
+@media (max-width:700px){
+ .kstrip .ks-phone{display:inline-flex;color:var(--ink);font-weight:600}
+ .kstrip:not(.open) .ks-steps,.kstrip:not(.open) .ks-per,.kstrip:not(.open) .ks-sep,.kstrip:not(.open) .ks-todw{display:none}
+}
+/* Рік, час доби й кольори — у смузі часу, не в «Розширено» (розд. 30). */
+#adv .advtop{display:none}
 /* Порожні стани (AUDYT-3, № 7–8): пошук без збігів і фільтр без подій. */
 .sgnone{padding:8px 9px;font-size:12.5px;color:var(--dim)}
 #kempty{position:absolute;top:16px;left:50%;transform:translateX(-50%);z-index:4;max-width:min(420px,calc(100% - 32px));

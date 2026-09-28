@@ -227,23 +227,14 @@ let BASE_READY=false;
  // load чекає на всі плитки першого кадру; якщо якась так і не прийде,
  // кільця не мають зникнути назавжди — не довше 6 с.
  setTimeout(ready,6000);}
-map.addControl(new maplibregl.NavigationControl({showCompass:false}),'top-left');
+// Масштаб — унизу праворуч (розд. 30): лівий верхній кут займає смуга часу,
+// лівий бік — картка місця.
+map.addControl(new maplibregl.NavigationControl({showCompass:false}),'bottom-right');
 // У модулі змінні не глобальні, а паритет перевіряють з консолі браузера
 // (розміри позначок, шари, частота кадрів). Один явний вихід — сама карта.
 window.kartaMap=map;
-// Перемикач тем — той самий, що в Leaflet-збірці, лише вбудований як
-// елемент керування MapLibre.
-class ThemeCtl{
- onAdd(){const d=document.createElement('div');d.className='tsw maplibregl-ctrl';
-  d.innerHTML=GLTH.map(([k,n])=>
-    `<button data-t="${k}"${k===THEME?' aria-pressed="true"':''}>${n}</button>`).join('');
-  d.onclick=e=>{const b=e.target.closest('[data-t]'); if(b) setTheme(b.dataset.t)};
-  return d}
- onRemove(){}
-}
-// Тимчасово ліворуч угорі під кнопками масштабу: правий верхній кут займає
-// картка-навігатор. На кроці 8 перемикач переїде у смугу періоду.
-map.addControl(new ThemeCtl(),'top-left');
+// Тема — кнопка ☀/☾ у смузі часу (розд. 30), її будує JS_GL_DRAW
+// (stripReady).
 // Після кожного завантаження стилю: сюди наступні коміти додаватимуть
 // картинки (addImage не переживає setStyle) і фарбування наших шарів у
 // кольори теми.
@@ -254,8 +245,7 @@ function setTheme(t){
  if(!OFM[t]||t===THEME) return;
  THEME=t; try{localStorage.setItem('karta-tema',t)}catch(e){}
  document.body.dataset.t=t; PALA=glPal(t);
- document.querySelectorAll('.tsw button').forEach(b=>
-   b.setAttribute('aria-pressed',b.dataset.t===t?'true':'false'));
+ paintStrip();
  Object.keys(R.lines||{}).forEach(k=>{
    if(k.startsWith('risk_'))RCOL[k]=PALA[(R.lines[k].theme||0)%PALA.length]});
  paintRows();
@@ -1378,6 +1368,77 @@ function emptyState(st){
 // об'єкти — лише через «Що поруч» у вікні адреси. Розмітка панелі спільна з
 // запасною картою, тож кнопку прибираємо тут.
 {const b=document.querySelector('#fctx [data-ctx="facts"]'); if(b) b.remove();}
+// ---- СМУГА ЧАСУ ЗЛІВА ВГОРІ (розд. 30; розд. 4 і 17) ----
+// Час — те, чим гортають карту, а не ще один фільтр у картці: крок «Усі · Рік
+// · Квартал · Місяць» і «‹ значення ›». Без випадних меню (рішення 28.09):
+// крок видно весь одразу. Стрілки гортають обраним кроком, через межу року —
+// самі; на краю даних стрілка неактивна; «Усі» ховає стрілки. При зміні
+// кроку лишаємося в тому самому місці часу: якір CM — місяць, і кожен крок
+// показує період, що його містить (вересень 2025 → III кв. 2025 → 2025).
+// Фільтр — за місяцем події (PERF у tpl_core.evOn), тож діє однаково на
+// кільця, адреси, проблеми й картку місця.
+const MON_A0=(+M.mon0.slice(0,4))*12+(+M.mon0.slice(5,7))-1, MON_LAST=Math.max(0,(M.mon_n||1)-1);
+const MISN=['січень','лютий','березень','квітень','травень','червень','липень','серпень','вересень','жовтень','листопад','грудень'];
+const QN=['I','II','III','IV'];
+let STEP='all', CM=MON_LAST, TOD=-1;
+function perRange(){
+ if(STEP==='all') return null;
+ const A=MON_A0+CM, y=Math.floor(A/12), mo=A%12;
+ let a=STEP==='year'?y*12-MON_A0:STEP==='quarter'?A-mo%3-MON_A0:CM;
+ let b=STEP==='year'?a+11:STEP==='quarter'?a+2:CM;
+ return [Math.max(0,a),Math.min(MON_LAST,b)]}
+function perLabel(){
+ const A=MON_A0+CM, y=Math.floor(A/12), mo=A%12;
+ return STEP==='year'?String(y):STEP==='quarter'?`${QN[Math.floor(mo/3)]} кв. ${y}`:`${MISN[mo]} ${y}`}
+function perSet(){PERF=perRange(); paintStrip(); draw()}
+function perNav(d){const r=perRange(); if(!r) return;
+ if(d<0&&r[0]>0) CM=r[0]-1; else if(d>0&&r[1]<MON_LAST) CM=r[1]+1; else return;
+ perSet()}
+const STEPS=[['all','Усі'],['year','Рік'],['quarter','Квартал'],['month','Місяць']];
+// Час доби — маленька кнопка з меню; вибір пише в ті самі чипи #hr, з яких
+// рахує hoursSel (tpl_core): одне джерело правди для карти й картки.
+function todSet(i){TOD=i; document.querySelectorAll('#hr [data-p]').forEach(b=>swSet(b,i<0||+b.dataset.p===i)); paintStrip(); draw()}
+const todName=()=>TOD<0?'уся доба':`${PERIODS[TOD][0]} ${PERIODS[TOD][1]}`;
+function paintStrip(){const s=$('#kstrip'); if(!s) return;
+ const r=perRange(), incomplete=r&&r[1]>=MON_LAST-1;
+ s.querySelectorAll('[data-st]').forEach(b=>swSet(b,b.dataset.st===STEP));
+ s.querySelector('.ks-per').hidden=STEP==='all';
+ s.querySelector('[data-nav="-1"]').disabled=!r||r[0]<=0;
+ s.querySelector('[data-nav="1"]').disabled=!r||r[1]>=MON_LAST;
+ s.querySelector('.ks-val').innerHTML=r?`${perLabel()}${incomplete?'<small>неповний</small>':''}`:'';
+ s.querySelector('.ks-val').classList.toggle('inc',!!incomplete);
+ s.querySelector('.ks-tod').textContent='🕘 '+todName();
+ const th=s.querySelector('.ks-theme'); th.textContent=THEME==='temna'?'☀':'☾';
+ th.title=THEME==='temna'?'Світла тема':'Темна тема'; th.setAttribute('aria-label',th.title);
+ s.querySelector('.ks-phone').textContent=(r?perLabel():'Усі роки')+' ▾'}
+class StripCtl{
+ onAdd(){const d=document.createElement('div'); d.id='kstrip'; d.className='kstrip maplibregl-ctrl';
+  d.innerHTML=`<button class="ks-phone" aria-expanded="false"></button>
+   <div class="ks-steps" role="group" aria-label="Крок періоду">${STEPS.map(([k,n])=>`<button data-st="${k}">${n}</button>`).join('')}</div>
+   <span class="ks-per"><button data-nav="-1" aria-label="Попередній період">‹</button><span class="ks-val" aria-live="polite"></span><button data-nav="1" aria-label="Наступний період">›</button></span>
+   <span class="ks-sep"></span><span class="ks-todw"><button class="ks-tod" aria-haspopup="menu" aria-expanded="false"></button>
+   <div class="ks-menu" role="menu" hidden>${[[-1,'уся доба']].concat(PERIODS.map((p,i)=>[i,p[0]+' '+p[1]])).map(([i,n])=>`<button role="menuitem" data-tod="${i}">${n}</button>`).join('')}</div></span>
+   <span class="ks-sep"></span><button class="ks-theme"></button>`;
+  d.addEventListener('click',e=>{
+   const st=e.target.closest('[data-st]'); if(st){STEP=st.dataset.st; perSet(); return}
+   const nv=e.target.closest('[data-nav]'); if(nv){perNav(+nv.dataset.nav); return}
+   const menu=d.querySelector('.ks-menu');
+   if(e.target.closest('.ks-tod')){menu.hidden=!menu.hidden; d.querySelector('.ks-tod').setAttribute('aria-expanded',String(!menu.hidden)); return}
+   const td=e.target.closest('[data-tod]'); if(td){menu.hidden=true; todSet(+td.dataset.tod); return}
+   if(e.target.closest('.ks-theme')){setTheme(THEME==='temna'?'svitla':'temna'); return}
+   if(e.target.closest('.ks-phone')){d.classList.toggle('open'); e.target.setAttribute('aria-expanded',String(d.classList.contains('open')))}});
+  return d}
+ onRemove(){}}
+map.addControl(new StripCtl(),'top-left');
+paintStrip();
+// Меню часу доби закривається кліком повз нього й Esc.
+document.addEventListener('click',e=>{ if(!e.target.closest('.ks-todw')){const m=document.querySelector('#kstrip .ks-menu'); if(m) m.hidden=true}});
+// ← → гортають період, коли фокус на карті (розд. 30). Перехоплюємо раніше
+// за MapLibre, який ними зсуває карту; на «Усі» стрілки лишаються за картою.
+document.addEventListener('keydown',e=>{
+ if(STEP==='all'||(e.key!=='ArrowLeft'&&e.key!=='ArrowRight')||e.altKey||e.ctrlKey||e.metaKey) return;
+ if(!map.getContainer().contains(document.activeElement)||document.activeElement.closest('input,textarea,select')) return;
+ e.preventDefault(); e.stopPropagation(); perNav(e.key==='ArrowLeft'?-1:1)},true);
 // Перевірка з консолі: скільки адрес із проблемами й скільки самих проблем
 // за поточним фільтром і районом — те, що карта показує ромбами.
 window.kartaProblemy=()=>({adres:PROBK.length, problem:PROBK.reduce((s,k)=>s+LEAFV[k].np,0)});

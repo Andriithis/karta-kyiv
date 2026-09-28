@@ -78,6 +78,15 @@ MIN_EVENT_DATE = '2023-01-01'
 docref = PD.docref
 
 
+def mon_idx(date):
+    """'2025-09-14' -> місяців від MIN_EVENT_DATE (2023-01 -> 0)."""
+    y0, m0 = int(MIN_EVENT_DATE[:4]), int(MIN_EVENT_DATE[5:7])
+    try:
+        return (int(date[:4]) - y0) * 12 + int(date[5:7]) - m0
+    except (TypeError, ValueError):
+        return -1
+
+
 def ev_date(tk, decision):
     """Дата події з проходу по текстах — лише якщо вона не пізніша за саме
     рішення: подія не може статися після суду. Так відсіюються описки в
@@ -348,7 +357,11 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
                   # у тому самому порядку, що й DOCS: панель відбирає справи
                   # тим самим фільтром за індексом, і число в кнопці «Усі
                   # рішення» збігається з числом справ у панелі
-                  [[e_[0], e_[1], e_[2], e_[3], e_[13]] + ([e_[12]] if e_[12] else [])
+                  # Шосте поле — місяць події від січня 2023 (0, 1, …): смуга
+                  # періоду гортає кварталами й місяцями (розд. 17 і 30), а
+                  # рік (третє поле) цього не дає. Дата — та сама, що в
+                  # панелі: події, а де її немає — рішення.
+                  [[e_[0], e_[1], e_[2], e_[3], e_[13], mon_idx(e_[14])] + ([e_[12]] if e_[12] else [])
                    for e_ in ev_sorted],
                   len(ev_sorted)])
         # DOCS — те, що показує панель: справа, дата події (або рішення),
@@ -378,6 +391,11 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
     if _no: print(f'   без офіційної назви статті: {len(_no)} — {"; ".join(_no[:3])}')
     meta = dict(courts=[COURTS.get(x, x) for x in ck], cats=[k[1] for k in labels],
                 counts=[cnt[k] for k in labels], groups=groups, years=ykeys, law=law)
+    # Межі періоду для смуги часу: з якого місяця рахуються події (mon0) і
+    # скільки місяців у даних (mon_n). Останні два місяці карта позначає
+    # «неповними» — затримка публікації рішень (розд. 17).
+    meta['mon0'] = MIN_EVENT_DATE[:7]
+    meta['mon_n'] = 1 + max((e[5] for p in P for e in p[4]), default=0)
 
 
     # ---- шари контексту: потоки, ризик, чинники (map_layers) ----
