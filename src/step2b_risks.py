@@ -69,6 +69,42 @@ LIGHT = {
  'calming': '(node["traffic_calming"~"."](area.k);'
             'node["highway"="traffic_signals"](area.k););out skel;',
 }
+# ---- ПЕРЕЛІК ЧИННИКІВ Б1 (NAUKA.md, «Перелік чинників для Б1», 28.09.2026) ----
+# Рівно ті запити, що зафіксовані до запуску; після результату не міняються.
+# Окремі ключі b1_*, а не правка старих: старі категорії («finance» —
+# ломбарди разом із банкоматами, «market» — ринки з ТЦ) змішували різні
+# механізми (PLAN-KROK7, розд. 7.1), а ними ще користуються інші кроки.
+# Лише «що є»: шари «чого немає» — під забороною (RISHENNYA, розд. 27).
+# name — для звітів (ризиковані заклади) і «Що поруч».
+B1 = {
+ 'b1_bars':     ('бари',          '(nwr["amenity"~"^(bar|pub|nightclub|biergarten)$"](area.k););'),
+ 'b1_alk':      ('алкоголь_винос','(nwr["shop"~"^(alcohol|wine|beverages)$"](area.k););'),
+ 'b1_cafe':     ('кафе',          '(nwr["amenity"~"^(restaurant|cafe)$"](area.k););'),
+ 'b1_fastfood': ('фастфуд',       '(nwr["amenity"="fast_food"](area.k););'),
+ 'b1_pawn':     ('ломбарди',      '(nwr["shop"~"^(pawnbroker|money_lender)$"](area.k););'),
+ 'b1_atm':      ('банкомати',     '(nwr["amenity"="atm"](area.k););'),
+ 'b1_exchange': ('обмінники',     '(nwr["amenity"~"^(bureau_de_change|money_transfer)$"](area.k););'),
+ 'b1_market':   ('ринки',         '(nwr["amenity"="marketplace"](area.k););'),
+ 'b1_super':    ('супермаркети',  '(nwr["shop"="supermarket"](area.k););'),
+ 'b1_mall':     ('ТЦ',            '(nwr["shop"~"^(mall|department_store)$"](area.k););'),
+ 'b1_hospital': ('лікарні',       '(nwr["amenity"~"^(hospital|clinic)$"](area.k););'),
+ 'b1_pharmacy': ('аптеки',        '(nwr["amenity"="pharmacy"](area.k););'),
+ 'b1_fuel':     ('АЗС',           '(nwr["amenity"="fuel"](area.k););'),
+ 'b1_school':   ('школи',         '(nwr["amenity"~"^(school|kindergarten)$"](area.k););'),
+ 'b1_univer':   ('ВНЗ',           '(nwr["amenity"~"^(university|college)$"](area.k););'),
+ 'b1_metro':    ('метро',         '(node["railway"="subway_entrance"](area.k);nwr["railway"="station"](area.k););'),
+ 'b1_stops':    ('зупинки',       '(node["highway"="bus_stop"](area.k);node["public_transport"="platform"](area.k););'),
+ 'b1_play':     ('майданчики',    '(nwr["leisure"~"^(playground|fitness_station)$"](area.k););'),
+ 'b1_parking':  ('паркінги',      '(nwr["amenity"="parking"](area.k););'),
+ 'b1_abandon':  ('покинуті',      '(nwr["building"~"^(ruins|abandoned)$"](area.k);nwr["abandoned"="yes"](area.k);'
+                                  'nwr["disused"="yes"](area.k););'),
+ 'b1_underpass':('переходи_підземні', '(way["highway"~"^(footway|steps|pedestrian)$"]["tunnel"="yes"](area.k);'
+                                  'way["highway"~"^(footway|steps|pedestrian)$"]["layer"~"^-"](area.k););'),
+ 'b1_dorm':     ('гуртожитки',    '(nwr["building"="dormitory"](area.k);nwr["tourism"="hostel"](area.k););'),
+ 'b1_garages':  ('гаражі',        '(nwr["landuse"="garages"](area.k);nwr["building"="garages"](area.k););'),
+}
+for _k, (_ua, _q) in B1.items():
+    LIGHT[_k] = _q + 'out tags center;'
 HEAVY = {
  'roads':  'way["highway"~"^(residential|tertiary|secondary|unclassified|living_street)$"]',
  'foot':   'way["highway"~"^(footway|path|pedestrian)$"]',
