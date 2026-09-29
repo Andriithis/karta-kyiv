@@ -16,6 +16,13 @@ on:
         description: 'Перенавчити модель ризику (крок 4) — довго, вручну раз на кілька місяців'
         type: boolean
         default: false
+      doslid_1551:
+        description: 'Дослідження 1551 → події (звіт ZVIT-1551, ~1–1,5 год) — окремим запуском від перенавчання'
+        type: boolean
+        default: false
+      n_stab:
+        description: 'Прогонів відбору стійкості (100 за методикою; менше — лише якщо не вкладається в час)'
+        default: '100'
 
 permissions:
   contents: write
@@ -94,6 +101,8 @@ jobs:
           fi
 
       - name: Крок 4 — модель ризику
+        env:
+          N_STAB: ${{ github.event.inputs.n_stab || '100' }}
         run: |
           RETRAIN="${{ github.event.inputs.retrain_risk }}"
           # автоматично раз на місяць — у перший понеділок; решту тижнів
@@ -103,15 +112,24 @@ jobs:
             echo "перший тиждень місяця — перенавчаю модель автоматично"
           fi
           if [ "$RETRAIN" = "true" ]; then
-            # statsmodels — покрокова регресія за BIC і негативна біноміальна (RTM, Б1)
+            # statsmodels — негативна біноміальна; відбір стійкості — src/rtm.py
+            # (ZAVDANNYA-30, 3.3). Оцінка 30.09: ~1,7–2,7 год на раннері при 100 прогонах
             pip install --quiet numpy scikit-learn statsmodels
             python src/step4_engine.py
-            # Дослідження 1551 -> події (ZAVDANNYA-30, 3.7): лише звіт, у модель
-            # нічого не вмикає; потребує data/1551 з кроку вище
-            python src/doslid_1551.py || echo "дослідження 1551 пропущено"
           else
             echo "модель ризику цього запуску не перенавчається"
           fi
+
+      # Дослідження 1551 -> події (ZAVDANNYA-30, 3.7): лише звіт, у модель нічого
+      # не вмикає. Окремою галочкою: разом із перенавчанням запуск міг би не
+      # вкластися в 330 хв (оцінка 30.09 — ZVIT-30).
+      - name: Дослідження 1551
+        if: ${{ github.event.inputs.doslid_1551 == 'true' }}
+        env:
+          N_STAB: ${{ github.event.inputs.n_stab || '100' }}
+        run: |
+          pip install --quiet numpy scikit-learn statsmodels
+          python src/doslid_1551.py || echo "дослідження 1551 не вдалося — дивіться журнал"
 
       - name: Крок 3 — збірка карти
         run: |
