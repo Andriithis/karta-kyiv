@@ -80,8 +80,8 @@ $('#frisk').onclick=()=>{RISK_ON=!RISK_ON; swSet($('#frisk'),RISK_ON);
 $('#fquietc').onclick=()=>{const q=$('#fquiet'); q.checked=!q.checked;
  swSet($('#fquietc'),q.checked); drawRisks()};
 // ---- КОНТЕКСТ ----
-// Потоки — один перемикач на всі три: розділяються вони на самій карті.
-const CTX={pop:['pop'],flows:['flow_school','flow_transit','flow_shop']};
+// Потоки — один перемикач на всі чотири: розділяються вони на самій карті.
+const CTX={pop:['pop'],flows:['flow_school','flow_transit','flow_shop','flow_all']};
 // Поріг зуму для шарів, які з міського огляду нечитабельні. Замість напису
 // «наблизьте карту» стан показує сам перемикач: поки масштаб замалий, він
 // приглушений і не натискається. Новий шар із порогом — один рядок тут.

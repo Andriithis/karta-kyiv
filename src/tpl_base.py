@@ -99,7 +99,7 @@ const FICON={bar_on:'🍺',bar_off:'🍾',shop24:'🛒',food:'🍽',finance:'�
  b1_parking:'🅿',b1_garages:'🚗'};
 const FZOOM=14;                               // ближче за цей масштаб — показуємо позначки
 const RCOL={metro:'#38bdf8',busstop:'#7dd3fc',
- flow_school:'#fbbf24',flow_transit:'#38bdf8',flow_shop:'#f472b6'};
+ flow_school:'#fbbf24',flow_transit:'#38bdf8',flow_shop:'#f472b6',flow_all:'#94a3b8'};
 // ризик успадковує колір своєї теми — той самий, що в подіях
 Object.keys(R.lines||{}).forEach(k=>{if(k.startsWith('risk_'))RCOL[k]=PALA[(R.lines[k].theme||0)%PALA.length]});;
 function $ify(sel,html){const el=document.querySelector(sel);if(el)el.innerHTML=html}
@@ -112,6 +112,6 @@ function $ify(sel,html){const el=document.querySelector(sel);if(el)el.innerHTML=
  // більше за самі об'єкти.
  (F.cats||[]).forEach((c,ci)=>c._i=ci);
  $ify('#ffact',(F.cats||[]).map(c=>`<input type="checkbox" data-f="${c._i}">`).join('')
-   +['pop','flow_school','flow_transit','flow_shop'].map(k=>
+   +['pop','flow_school','flow_transit','flow_shop','flow_all'].map(k=>
      `<input type="checkbox" data-r="${k}">`).join(''));
 }"""

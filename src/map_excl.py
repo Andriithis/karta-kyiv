@@ -2,8 +2,10 @@
 """Адреси установ: суди, відділи поліції, місця оформлення протоколів.
 
 Такі адреси дають сотні подій, яких там насправді не сталося, і без вилучення
-вони очолюють будь-який список. Виявляються автоматично за часткою подій свого
-району; результат пишеться в data/vykluchennya.txt — це РЕЗУЛЬТАТ, не вхід,
+вони очолюють будь-який список. Виявляються автоматично: адресу установи
+не названо в описі самої події (завдання 29, п. 1), вона стоїть на будівлі
+установи чи має склад статей місця оформлення протоколів. Результат
+пишеться в data/vykluchennya.txt — це РЕЗУЛЬТАТ, не вхід,
 інакше адреса, раз потрапивши туди, лишалася б виключеною назавжди.
 
 Власний список користувача — data/vykluchennya_moyi.txt — автоматика ніколи
@@ -20,8 +22,17 @@ EXCL = os.path.join(DATA, 'vykluchennya.txt')           # формується �
 MANUAL = os.path.join(DATA, 'vykluchennya_moyi.txt')    # ваш список, ніколи не перезаписується
 REVIEW = os.path.join(DATA, 'top100_dlya_pereviryky.txt')
 
-SHARE_LIMIT = 0.015      # частка подій свого району, за якою адреса вважається установою
-ABS_LIMIT   = 90         # або стільки подій незалежно від частки
+# ---- ОЗНАКА «НЕ ПІДТВЕРДЖЕНА» (завдання 29, п. 1; 29.09.2026) ----
+# Раніше установою вважалася адреса з понад 1,5% подій району чи понад 90
+# подій. Так вилетіли вокзал, ТЦ, парковки — найсильніші справжні місця: на
+# вироках і постановах вулиця адреси є в описі події у 84–100% випадків.
+# Велика кількість подій була ознакою установи, поки подіями рахувалися
+# ухвали. Адреса суду, поліції, лікарні видає себе інакше: її НЕМАЄ в описі
+# події (класи C/D проходу по текстах). Тож виключаємо адресу, лише коли її
+# підтверджено в описі менш ніж у половині подій — за обсягом чи біля
+# будівлі установи.
+POTV_MIN    = 0.5        # частка подій, в описі яких названо вулицю адреси
+POTV_N      = 10         # від стількох подій непідтверджена адреса — установа
 
 # ---- ДРУГА ОЗНАКА: ПРОФІЛЬ СТАТЕЙ ----
 # Знайдено 3 вересня: вул. Святослава Хороброго, 9 — відділ поліції — давала
@@ -120,15 +131,24 @@ def drop_excluded(rows, excl, street, house, lat, lon, exact):
     return keep
 
 
-def detect_institutional(rows, manual):
+def detect_institutional(rows, manual, potv=None):
+    """potv: doc_id -> (подія по суті?, вулицю адреси названо в описі?).
+    Без нього (стара база без проходу) підтвердження вважається відсутнім
+    для всіх — і діє лише будівля й склад, як запасний режим."""
     per_court = collections.Counter(r[1] for r in rows)
     per_addr = collections.Counter()
     addr_court = {}
+    n_ev, n_potv = collections.Counter(), collections.Counter()
     for r in rows:
         if not r[5]: continue
         a = (r[5] + ', ' + r[6]) if r[6] else r[5]
         per_addr[a] += 1
         addr_court[a] = r[1]
+        ev, ok = (potv or {}).get(r[0], (False, False))
+        # Частка — на вироках і постановах: ухвала адресу події не
+        # підтверджує й не спростовує, вона про процедуру
+        if ev:
+            n_ev[a] += 1; n_potv[a] += ok
     # склад статей кожної адреси — для ознаки «місце оформлення»
     prof_mark = collections.Counter()
     for r in rows:
@@ -169,14 +189,14 @@ def detect_institutional(rows, manual):
     keep = load_keep()
     auto = {}
     for a, n in per_addr.items():
-        tot = per_court[addr_court[a]] or 1
-        share = n / tot
+        pv = n_potv[a] / n_ev[a] if n_ev[a] else 0.0
         mark = prof_mark[a] / n if n else 0
-        why = ('будівля' if a in on_ust
-               else 'обсяг' if (n >= ABS_LIMIT or share >= SHARE_LIMIT)
+        nepotv = pv < POTV_MIN
+        why = ('будівля' if a in on_ust and nepotv
+               else 'не підтверджена' if (n_ev[a] >= POTV_N and nepotv)
                else ('склад' if (n >= PROC_MIN and mark >= PROC_SHARE) else None))
         if why and a.lower() not in keep:
-            auto[a] = (n, round(100 * share, 1), why, round(100 * mark))
+            auto[a] = (n, round(100 * pv), why, round(100 * mark))
     # звіт: топ-100 адрес із профілем статей, щоб можна було оцінити очима
     prof = collections.defaultdict(collections.Counter)
     for r in rows:
@@ -202,9 +222,11 @@ def detect_institutional(rows, manual):
             f.write('# Адреси, виключені з карти як установи (суди, відділи поліції).\n')
             f.write('# Визначено автоматично за трьома ознаками:\n')
             f.write('#   будівля — адреса стоїть на відділі поліції, суді чи прокуратурі\n')
-            f.write(f'#             за даними OpenStreetMap (радіус {NEAR_M} м);\n')
+            f.write(f'#             за даними OpenStreetMap (радіус {NEAR_M} м), і в описі\n')
+            f.write(f'#             подій її названо менш ніж у {POTV_MIN*100:g}%;\n')
             # пороги підставляються з констант, щоб текст не розходився з кодом
-            f.write(f'#   обсяг — понад {SHARE_LIMIT*100:g}% подій свого району або понад {ABS_LIMIT} подій;\n')
+            f.write(f'#   не підтверджена — від {POTV_N} вироків і постанов, і в описі\n')
+            f.write(f'#             подій вулицю адреси названо менш ніж у {POTV_MIN*100:g}%;\n')
             f.write(f'#   склад — від {PROC_MIN} подій, з яких понад {PROC_SHARE*100:g}% це\n')
             f.write('#           ст.130 і ст.122-4, тобто те, що оформлюють у відділі.\n')
             f.write('#\n')
@@ -212,8 +234,8 @@ def detect_institutional(rows, manual):
             f.write('# вийде: якщо адреса справжня, впишіть її у vykluchennya_ne.txt.\n')
             f.write('# Один рядок = одна адреса.\n\n')
             for a, (n, pc, why, mk) in sorted(auto.items(), key=lambda x: -x[1][0]):
-                tail = ({'будівля': f'{n} подій, будівля установи за OpenStreetMap',
-                         'обсяг': f'{n} подій, {pc}% району'}
+                tail = ({'будівля': f'{n} подій, будівля установи за OpenStreetMap, в описі {pc}%',
+                         'не підтверджена': f'{n} подій, вулицю названо в описі {pc}%'}
                         .get(why, f'{n} подій, {mk}% ст.130 і ст.122-4'))
                 f.write(f'{a}   # {tail}\n')
         by_why = collections.Counter(v[2] for v in auto.values())

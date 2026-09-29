@@ -34,11 +34,27 @@ DATA = os.path.join(ROOT, 'data')
 REPORT = os.path.join(DATA, 'problems_report.json')
 D1551 = os.path.join(DATA, '1551')
 
-PRAVYLA = 'В1, 28.09.2026 (NAPRYAM-PROBLEMY, Р1–Р7; PIDKHID, розд. 3–5)'
+PRAVYLA = 'В1 з поправками 29–30.09.2026 (METODYKA, розд. 2–3; RISHENNYA, розд. 32–33)'
 R_MISCE = 30          # м: адреси з тим самим механізмом ближче — одне місце
-MIN_POD = 5           # Р3: окремих подій
-MIN_KV = 3            # Р3: різних кварталів з останніх 8
+# Р3 (RISHENNYA 32, затверджено 29.09): 5–6 подій за 3 роки — збіг, а не
+# проблема. ≥12 подій за останні 2 роки — у середньому раз на два місяці — і
+# ≥5 різних кварталів з 8.
+MIN_POD = 12          # Р3: окремих подій за останні KV_VIKNO кварталів
+MIN_KV = 5            # Р3: різних кварталів з останніх 8
 KV_VIKNO = 8
+# Ділянка (завдання 29, п. 4): точки-проблеми одного механізму на тій самій
+# вулиці ближче R_DILIANKA — одна проблема; ланцюжком, але не довша за
+# DILIANKA_MAX. 30 м склеювання для Хрещатика, 19 / 21 / 23 / 36 замало.
+R_DILIANKA = 250
+DILIANKA_MAX = 500
+# «Проблема, яку фіксує поліція» (RISHENNYA 32): проактивне скупчення з тим
+# самим порогом Р3 і Р8. Наркотики й сп'яніння за кермом — ні: там
+# скупчення — місця роботи патрулів, а не безлад.
+NE_FIKSUIE = {'НАР'}
+NE_FIKSUIE_SIM = {"ДОР_сп'яніння"}
+# Місце без мешканців (завдання 30, ч. 2): голосу мешканців там немає кому
+# подати, і «мовчать» було б неправдою.
+R_MESHK = 50
 SVIZHIST_DNIV = 365   # Р3: остання подія не старша за рік
 ZATRYMKA_DNIV = 50    # Р3: медіанна затримка рішення від події (тест 22.09)
 ZAYAVNI_MIN = 0.5     # Р2
@@ -62,14 +78,12 @@ SERED = {'b1_bars': 'рекреація', 'b1_cafe': 'рекреація', 'b1_f
          'finance': 'фінанси', 'metro': 'транспорт', 'busstop': 'транспорт',
          'school': 'освіта', 'univer': 'освіта', 'parking': 'паркінг', 'health': 'медицина'}
 R_SERED = 50
-# Якщо OSM поруч нічого не дав — ключові слова фабули (Р5). Слово має
-# траплятися щонайменше в третині подій місця, а не в одній.
-FAB_SERED = (('торгівля', ('магазин', 'супермаркет', 'торгов', ' тц ', 'трц', 'гіпермаркет', 'ринк')),
-             ('рекреація', ('кафе', 'бар ', 'бару', 'ресторан', 'клуб', 'паб')),
-             ('транспорт', ('станці', 'метро', 'зупинк', 'вокзал')),
-             ('паркінг', ('паркінг', 'стоянк', 'парковк')),
-             ('освіта', ('школ', 'ліцей', 'гімназ', 'університет', 'коледж')),
-             ('житло', ("під'їзд", 'підїзд', 'квартир', 'сходов', 'гуртожит')))
+# «Бари» — окремо від «рекреації»: посібник POP #1 «Assaults in and Around
+# Bars» написано про бари й клуби, а рекреація — це й кожне кафе. Інакше
+# Майдан Незалежності, 1 отримував посібник про бари за кав'ярнями поруч.
+SERED_BARY = {'b1_bars', 'bar_on'}
+# Ключових слів фабули як запасного джерела середовища більше немає
+# (завдання 30, ч. 2): слово «кафе» в описі — не об'єкт у 50 м.
 
 
 def _m(la0):
@@ -193,13 +207,16 @@ def load_1551(log):
                 spt=Pts([x[3] for x in sk]), vpt=Pts([x[1] for x in vse]))
 
 
-def golos_misce(G, th, pts, dmap, rad=R_MISCE):
+def golos_misce(G, th, pts, dmap, rad=R_MISCE, bez_meshk=None):
     """Голос мешканців для місця (одна чи кілька точок): скарги того ж виду
     за 12 місяців у rad м проти очікуваного — частка виду серед усіх звернень
-    району × усі звернення місця. p < 0,05 — «підтверджують»."""
-    if th in NE_VYMIR: return dict(stan='не вимірюється')
+    району × усі звернення місця. p < 0,05 — «підтверджують».
+    bez_meshk — чому тут немає мешканців (вокзал, ТЦ, площа, парк, жодного
+    житлового будинку в 50 м); тоді «не вимірюється», а не «мовчать»."""
+    if th in NE_VYMIR: return dict(stan='не вимірюється', chomu='вид')
+    if bez_meshk: return dict(stan='не вимірюється', chomu=bez_meshk)
     if G is None: return dict(stan='немає даних')
-    if th not in VYD1551.values(): return dict(stan='не вимірюється')
+    if th not in VYD1551.values(): return dict(stan='не вимірюється', chomu='вид')
     lo = (dt.date.fromisoformat(G['last']) - dt.timedelta(days=365)).isoformat()
     ks, kv_ = set(), set()
     for p in pts:
@@ -284,7 +301,13 @@ def mistsia(ev):
     return place
 
 
-def vorota(evs, S, kind_q):
+def mozhe_fiksuvaty(sim):
+    """чи може проактивне скупчення цього механізму мати статус «проблема,
+    яку фіксує поліція» (RISHENNYA 32)"""
+    return M.simtheme(sim) not in NE_FIKSUIE and sim not in NE_FIKSUIE_SIM
+
+
+def vorota(evs, S, kind_q, sim=''):
     """Ворота Р1–Р3 для набору подій однієї пари. Повертає (прапорці,
     статус, підсумки). Порядок воріт — як у воронці."""
     b = [e for e in evs if e['klas'] == 'B']
@@ -296,25 +319,32 @@ def vorota(evs, S, kind_q):
     u = list(uniq.values())
     zay = sum(e['zayavna'] for e in u) / len(u)
     g['R2'] = zay >= ZAYAVNI_MIN
-    qs = {kv(e['date']) for e in u}
+    # Р3 рахується на останніх 8 кварталах (2 роки): давні події не мають
+    # робити проблемою місце, де зараз тихо
+    u8 = [e for e in u if kv(e['date']) > kind_q - KV_VIKNO]
+    qs = {kv(e['date']) for e in u8}
     last = max(e['date'] for e in u)
-    g['R3_podii'] = len(u) >= MIN_POD
-    g['R3_kvartaly'] = len({q for q in qs if q > kind_q - KV_VIKNO}) >= MIN_KV
+    g['R3_podii'] = len(u8) >= MIN_POD
+    g['R3_kvartaly'] = len(qs) >= MIN_KV
     g['R3_svizhist'] = (dt.date.fromisoformat(S) - dt.date.fromisoformat(last)).days <= SVIZHIST_DNIV
-    if not g['R2']: st = 'проактивна'
+    r3 = g['R3_podii'] and g['R3_svizhist'] and g['R3_kvartaly']
+    if not g['R2']: st = 'фіксує поліція' if (r3 and mozhe_fiksuvaty(sim)) else 'проактивна'
     elif not g['R3_podii']: st = 'мало'
     elif not g['R3_svizhist']: st = 'згасла'
     elif not g['R3_kvartaly']: st = 'гостра'
     else: st = 'хронічна'
     lo4 = kind_q - 4
     kk = sum(1 for e in u if 'КК' in (L.CODE.get(e['cat']) or ('', ''))[1])
-    return g, st, dict(podii=len(u), zayavnykh=round(zay, 2), ostannia=last,
-                       kvartaly=sorted(kv_name(q) for q in qs if q > kind_q - KV_VIKNO),
+    return g, st, dict(podii=len(u), za_2roky=len(u8), zayavnykh=round(zay, 2), ostannia=last,
+                       kvartaly=sorted(kv_name(q) for q in qs),
                        za_4kv=sum(1 for e in u if kv(e['date']) > lo4),
                        otsinnykh=sum(e['otsinna'] for e in u),
                        # Шкода — поле, не сортує (Р6): частка кримінальних
                        # проступків, поки ваги шкоди не перевірені юристом
                        shkoda_kk=round(kk / len(u), 2), evs=u)
+
+
+PROBLEMA = ('хронічна', 'фіксує поліція')       # статуси, що йдуть у перелік
 
 
 def formuietsia(u, kind_q, n_last=2, n_prev=6, min_n=3):
@@ -329,21 +359,61 @@ def formuietsia(u, kind_q, n_last=2, n_prev=6, min_n=3):
 
 
 _FGRID = {}
-def seredovyshche(pts, evs, FACT):
+def seredovyshche(evs, FACT):
+    """Тип місця (Р5; завдання 29, п. 5, і завдання 30, ч. 2 — на всіх
+    рівнях): середовище береться, лише якщо об'єкт цього типу за OSM стоїть
+    у 50 м від БІЛЬШОСТІ подій місця. Раніше досить було об'єкта біля однієї
+    з трьох адрес чи слова у фабулі — і лінія Лятошинського з 6 хуліганствами
+    на 6 адресах отримувала посібник про бари. Немає такого об'єкта —
+    «невизначено» і без посібника."""
     env = []
+    pts = [e['p'] for e in evs]
     for c in (FACT or {}).get('cats', []):
         s = SERED.get(c.get('k'))
-        if not s or s in env or not c['pts']: continue
+        if not s or not c['pts']: continue
+        tt = [s] + (['бари'] if c.get('k') in SERED_BARY else [])
+        if all(t in env for t in tt): continue
         g = _FGRID.get(id(c)) or _FGRID.setdefault(id(c), Pts([tuple(q) for q in c['pts']]))
-        if any(g.near(p[0], p[1], R_SERED) for p in pts[:3]): env.append(s)
-    dzherelo = 'OSM' if env else ''
-    if not env:
-        fabs = [e['fab'] for e in evs if e['fab']]
-        for s, words in FAB_SERED:
-            k = sum(1 for f in fabs if any(w in f' {f} ' for w in words))
-            if fabs and k >= len(fabs) / 3: env.append(s)
-        dzherelo = 'фабула' if env else ''
-    return env, dzherelo
+        if pts and sum(1 for p in pts if g.near(p[0], p[1], R_SERED)) * 2 > len(pts):
+            env += [t for t in tt if t not in env]
+    return env, ('OSM' if env else '')
+
+
+class BezMeshk:
+    """Чому в місці немає мешканців, яких могла б почути 1551 (завдання 30,
+    ч. 2): вокзал, ТЦ, площа, парк — або жодного житлового будинку OSM
+    (apartments, residential, house, dormitory) у 50 м. Будинків у кеші OSM
+    немає — ця ознака не рахується, лишаються вокзал, ТЦ, площа й парк."""
+    def __init__(s, log=print):
+        rawp = os.path.join(DATA, 'osm_risks_raw.json')
+        raw = json.load(open(rawp, encoding='utf-8')) if os.path.exists(rawp) else {}
+        def pts(items, ok=lambda t: True):
+            out = []
+            for el in items or []:
+                t = el.get('tags') or {}
+                la = el.get('lat') or (el.get('center') or {}).get('lat')
+                lo = el.get('lon') or (el.get('center') or {}).get('lon')
+                if la and lo and ok(t): out.append((la, lo))
+            return Pts(out) if out else None
+        s.houses = pts(raw.get('houses'))
+        # вокзал — залізнична станція, не станція метро: над метро на
+        # Хрещатику живуть люди
+        s.vokzal = pts(raw.get('b1_metro'), lambda t: t.get('railway') == 'station'
+                       and t.get('station') != 'subway' and 'subway' not in (t.get('subway') or ''))
+        s.tc = pts(raw.get('b1_mall'))
+        s.park = pts(raw.get('park'))
+        log('   місця без мешканців: будинки OSM ' + ('є' if s.houses else 'НЕМАЄ в кеші — ознака «жодного будинку в 50 м» не рахується')
+            + ', парки ' + ('є' if s.park else 'немає'))
+
+    def __call__(s, pts, adresy):
+        near = lambda g: g is not None and any(g.near(p[0], p[1], R_MESHK) for p in pts)
+        a = ' '.join(adresy[:3]).lower()
+        if near(s.vokzal) or 'вокзал' in a: return 'вокзал'
+        if near(s.tc): return 'ТЦ'
+        if a.startswith('пл.') or a.startswith('майдан'): return 'площа'
+        if near(s.park): return 'парк'
+        if s.houses is not None and not near(s.houses): return 'житла в 50 м немає'
+        return None
 
 
 # ---------------------------------------------------------------- Р8
@@ -386,7 +456,7 @@ def nulovyi_riven(ev, S, kind_q, zapysy, log, seed=28):
     rng = np.random.default_rng(seed)
     real = collections.defaultdict(list)
     for r in zapysy:
-        if r['status'] == 'хронічна' and r['riven'] == 'точка':
+        if r['status'] in PROBLEMA and r['riven'] == 'точка':
             real[r['sim']].append(r)
     out = {}
     for sim, es in by.items():
@@ -398,13 +468,14 @@ def nulovyi_riven(ev, S, kind_q, zapysy, log, seed=28):
         q = np.array([kv(e['date']) for e in es]); q = np.where(q > kind_q - KV_VIKNO, q, -1)
         d = np.array([dt.date.fromisoformat(e['date']).toordinal() for e in es])
         recent = (Sd - d) <= SVIZHIST_DNIV
-        # місця реальних проблем і скільки там подій
+        inwin = q >= 0
+        # місця реальних проблем і скільки там подій за 2 роки (Р3 рахує їх)
         tgt = [(r, pmap.get(min(pts, key=lambda p: dist(p, r['p'])) if tuple(r['p']) not in pmap
-                        else tuple(r['p'])), r['podii']) for r in real.get(sim, [])]
+                        else tuple(r['p'])), r['za_2roky']) for r in real.get(sim, [])]
         ge = np.zeros(len(tgt)); npass = []
         for _ in range(N_PEREST):
             a = rng.choice(nP, size=len(es), p=w)
-            cnt = np.bincount(a, minlength=nP)
+            cnt = np.bincount(a[inwin], minlength=nP)
             cand = np.nonzero(cnt >= MIN_POD)[0]
             ok = 0
             if len(cand):
@@ -576,6 +647,8 @@ def run(V=None, log=print, FACT=None):
     G = load_1551(log)
     if G: dolia_raionu(G, dmap)
 
+    BM = BezMeshk(log)
+
     # ---- рівень «точка» ----
     place = mistsia(ev)
     pary = collections.defaultdict(list)
@@ -583,48 +656,70 @@ def run(V=None, log=print, FACT=None):
     funnel = {'точка': collections.Counter(), 'лінія': collections.Counter(),
               'дорожні ділянки': collections.Counter()}
     zapysy, formue, is_problem_ev = [], [], set()
+    GATES = (('R1', 'Р1 клас B'), ('R2', 'Р2 заявні ≥50%'), ('R3_podii', f'Р3 ≥{MIN_POD} подій за 2 роки'),
+             ('R3_svizhist', 'Р3 остання ≤12 міс.'), ('R3_kvartaly', f'Р3 ≥{MIN_KV} кварталів з 8'))
+    POLICE = 'пройшли Р3 як проактивні: «фіксує поліція»'
+
+    def zbir(sim, evs, riven, pts, rep):
+        """запис місця × механізму з підсумками воріт — без воронки"""
+        th = M.simtheme(sim)
+        g, st, s = vorota(evs, S, kind_q, sim)
+        u = s.pop('evs', [])
+        addrs = collections.Counter(e['adr'] for e in u)
+        rec = dict(riven=riven, sim=sim, vyd=th, mekhanizm=M.simname(sim), status=st, vorota=g,
+                   p=list(rep), adresy=[a for a, _ in addrs.most_common()],
+                   adresy_n=addrs.most_common(), klas='B', **s)
+        if u:
+            # doc_id подій, що їх порахували ворота, — картка на карті показує
+            # саме їх, з усіх адрес місця (завдання 29, п. 2)
+            rec['docs'] = [e['doc'] for e in u]
+            rec['statti'] = collections.Counter(e['cat'] for e in u).most_common()
+            rec['roky'] = sorted({e['date'][:4] for e in u})
+        if u and g.get('R3_podii'):
+            env, dz = seredovyshche(u, FACT)
+            rec['typ'] = M.problem_type(sim, env)
+            rec['typ']['dzherelo_seredovyshcha'] = dz or 'невизначено'
+            rec['proaktyvnykh'] = round(1 - s['zayavnykh'], 2)
+            rec['golos'] = golos_misce(G, th, pts, dmap, bez_meshk=BM(pts, rec['adresy']))
+            rec['raion'] = dmap(tuple(rep))
+        return rec, u
 
     def zapys(key, evs, riven, pts):
         sim, _t, rep = key
         th = M.simtheme(sim)
-        g, st, s = vorota(evs, S, kind_q)
         dor = sim == 'ДОР_ДТП'                    # Р4: окремий клас
         track = 'дорожні ділянки' if dor else riven
+        rec, u = zbir(sim, evs, track, pts, rep)
+        g, st = rec['vorota'], rec['status']
         f = funnel[track]; f['пар на вході'] += 1
-        for gk, lab in (('R1', 'Р1 клас B'), ('R2', 'Р2 заявні ≥50%'), ('R3_podii', 'Р3 ≥5 подій'),
-                        ('R3_svizhist', 'Р3 остання ≤12 міс.'), ('R3_kvartaly', 'Р3 ≥3 квартали з 8')):
+        for gk, lab in GATES:
             if gk not in g: break
             if not g[gk]:
                 f['відпало: ' + lab] += 1; break
         else:
             f['пройшли'] += 1
-        u = s.pop('evs', [])
-        addrs = collections.Counter(e['adr'] for e in u) if u else collections.Counter()
-        rec = dict(riven=track, sim=sim, vyd=th, mekhanizm=M.simname(sim), status=st, vorota=g,
-                   p=list(rep), adresy=[a for a, _ in addrs.most_common()], klas='B', **s)
+        if st == 'фіксує поліція': f[POLICE] += 1
         if u:
-            prob = st == 'хронічна'
-        if u and g.get('R3_podii'):
-            env, dz = seredovyshche(pts, u, FACT)
-            rec['typ'] = M.problem_type(sim, env)
-            rec['typ']['dzherelo_seredovyshcha'] = dz or 'невизначено'
-            if not env: rec['typ']['seredovyshche'] = rec['typ']['seredovyshche'] or 'невизначено'
-            rec['proaktyvnykh'] = round(1 - s['zayavnykh'], 2)
-            rec['golos'] = golos_misce(G, th, pts, dmap)
-            rec['raion'] = dmap(tuple(rep))
-        if u:
-            rec['statti'] = collections.Counter(e['cat'] for e in u).most_common()
-            rec['roky'] = sorted({e['date'][:4] for e in u})
-            if prob:
+            if st in PROBLEMA:
                 is_problem_ev.update(id(e) for e in evs)
             elif not dor:
                 ok, fz = formuietsia(u, kind_q)
                 if ok:
                     formue.append(dict(riven=track, sim=sim, vyd=th, p=list(rep), adresy=rec['adresy'],
                                        dzherelo='ЄДРСР', prymitka='судові дані запізнюються', **fz,
-                                       golos=rec.get('golos') or golos_misce(G, th, pts, dmap)))
+                                       golos=rec.get('golos') or golos_misce(
+                                           G, th, pts, dmap, bez_meshk=BM(pts, rec['adresy']))))
         zapysy.append(rec)
         return rec
+
+    def vidpalo_r8(r, rivn, evs=()):
+        f = funnel[rivn]
+        if r['status'] == 'хронічна': f['пройшли'] -= 1
+        else: f[POLICE] -= 1
+        f['відпало: Р8 не густіше за випадок'] += 1
+        r['status'] = 'випадкова'
+        # події «випадкового» місця знову можуть скласти лінію
+        is_problem_ev.difference_update(id(e) for e in evs)
 
     pary_ev = {}
     for key, evs in pary.items():
@@ -634,11 +729,45 @@ def run(V=None, log=print, FACT=None):
     # ---- Р8: ворота 6 — перевищення над випадковим рівнем ----
     r8 = nulovyi_riven(ev, S, kind_q, zapysy, log)
     for r in zapysy:
-        if r['status'] == 'хронічна' and r['riven'] == 'точка' and r['vorota'].get('R8') is False:
-            r['status'] = 'випадкова'
-            # події «випадкової» точки знову можуть скласти лінію
-            is_problem_ev.difference_update(id(e) for e in pary_ev.get(id(r), ()))
-            f = funnel['точка']; f['пройшли'] -= 1; f['відпало: Р8 не густіше за випадок'] += 1
+        if r['status'] in PROBLEMA and r['riven'] == 'точка' and r['vorota'].get('R8') is False:
+            vidpalo_r8(r, 'точка', pary_ev.get(id(r), ()))
+
+    # ---- рівень «ділянка» (завдання 29, п. 4) ----
+    # Точки-проблеми одного механізму й статусу на тій самій вулиці ближче
+    # 250 м — ланцюжком, доки вся ділянка вкладається в 500 м, — одна
+    # проблема з переліком адрес і числом по кожній.
+    dilianok = 0
+    grp = collections.defaultdict(list)
+    for r in zapysy:
+        if r['riven'] == 'точка' and r['status'] in PROBLEMA:
+            grp[(r['sim'], r['status'])].append(r)
+    for (sim, st), rs in grp.items():
+        left = sorted(rs, key=lambda r: -r['za_2roky'])
+        while left:
+            c = [left.pop(0)]
+            ws = VR.slova((VR.vulytsia(c[0]['adresy'][0]) or [''])[0])
+            grew = True
+            while grew:
+                grew = False
+                for r in list(left):
+                    wr = VR.slova((VR.vulytsia(r['adresy'][0]) or [''])[0])
+                    if not VR.ta_sama(ws, wr): continue
+                    ds = [dist(r['p'], x['p']) for x in c]
+                    if min(ds) >= R_DILIANKA or max(ds) > DILIANKA_MAX: continue
+                    c.append(r); left.remove(r); grew = True
+            if len(c) < 2: continue
+            evs = [e for x in c for e in pary_ev.get(id(x), ())]
+            pts = [tuple(x['p']) for x in c]
+            rec, _u = zbir(sim, evs, 'ділянка', pts, c[0]['p'])
+            rec['status'] = st
+            rec['vorota']['R8'] = True
+            rec['chastyny'] = [dict(p=x['p'], adresy=x['adresy'], podii=x['podii'],
+                                    za_2roky=x['za_2roky']) for x in c]
+            zapysy.append(rec)
+            pary_ev[id(rec)] = evs
+            for x in c: x['status'] = 'у ділянці'
+            funnel['точка'][f'злито в ділянки (до {DILIANKA_MAX} м уздовж вулиці)'] += len(c)
+            dilianok += 1
 
     # ---- рівень «лінія»: точки не пройшли — відрізок вулиці × механізм ----
     lines = 0
@@ -646,34 +775,111 @@ def run(V=None, log=print, FACT=None):
     if SEG:
         segs = {s: v['pts'] for s, v in SEG.items()}
         names = {s: v['name'] for s, v in SEG.items()}
-        if segs:
-            # Лінія — відрізок СВОЄЇ вулиці між перехрестями (ZAVDANNYA-30,
-            # ч. 1): подія прив'язується лише до відрізка з тією самою назвою.
-            # Без цього події з Хрещатика «прилипали» до сусіднього відрізка
-            # Б. Хмельницького. Відрізка своєї вулиці немає — події в лінію
-            # не йдуть (на відміну від моделі, де є запасний найближчий).
-            by = collections.defaultdict(list)
-            cache = {}
-            for i, e in enumerate(ev):
-                if id(e) in is_problem_ev or e['klas'] != 'B': continue
-                key = (e['p'], e['adr'].split(',')[0])
-                if key not in cache:
-                    s, svoya = PV.znaity(*e['p'], SNAP_M, VR.vulytsia(e['adr']))
-                    cache[key] = s if svoya else None
-                s = cache[key]
-                if s is not None: by[(e['sim'], s)].append((place[i][2], e))
-            for (sim, sid), lst in by.items():
-                mc = collections.Counter(pl for pl, _e in lst)
-                # лінія — лише коли події розкидані: ≥3 місця і жодне не тримає більшості
-                if len(mc) < 3 or mc.most_common(1)[0][1] * 2 > len(lst): continue
-                evs = [e for _pl, e in lst]
-                pts = [pl for pl, _n in mc.most_common()]
-                rec = zapys((sim, 'л', pts[0]), evs, 'лінія', pts)
-                rec['vidrizok'] = dict(id=sid, nazva=names.get(sid, ''),
-                                       geom=segs[sid][::max(1, len(segs[sid]) // 12)])
-                lines += 1
+        # Лінія — відрізок СВОЄЇ вулиці між перехрестями (ZAVDANNYA-30,
+        # ч. 1): подія прив'язується лише до відрізка з тією самою назвою.
+        # Без цього події з Хрещатика «прилипали» до сусіднього відрізка
+        # Б. Хмельницького. Відрізка своєї вулиці немає — події в лінію
+        # не йдуть (на відміну від моделі, де є запасний найближчий).
+        by = collections.defaultdict(list)
+        na_vidr = collections.Counter()          # усі події класу B на відрізку — вага Р8
+        na_vidr_sim = collections.Counter()      # (механізм, відрізок) — за 2 роки
+        cache = {}
+        for i, e in enumerate(ev):
+            if e['klas'] != 'B': continue
+            key = (e['p'], e['adr'].split(',')[0])
+            if key not in cache:
+                s, svoya = PV.znaity(*e['p'], SNAP_M, VR.vulytsia(e['adr']))
+                cache[key] = s if svoya else None
+            s = cache[key]
+            if s is None: continue
+            na_vidr[s] += 1
+            if kv(e['date']) > kind_q - KV_VIKNO: na_vidr_sim[(e['sim'], s)] += 1
+            if id(e) not in is_problem_ev: by[(e['sim'], s)].append((place[i][2], e))
+        # Р8 для ліній (завдання 29, п. 5): 200 перестановок подій механізму
+        # між відрізками тієї ж довжини (±25%) у тому ж районі, з вагою за
+        # подіями ІНШИХ механізмів — як для точок: «вулиці з тією ж
+        # щільністю». Лінія — лише якщо на ній густіше, ніж у 95% випадків.
+        import numpy as np
+        rng = np.random.default_rng(29)
+        seg_d = {s: dmap(tuple(v['pts'][len(v['pts']) // 2])) for s, v in SEG.items()}
+        by_d = collections.defaultdict(list)
+        for s, d in seg_d.items(): by_d[d].append(s)
+        sims_on = collections.defaultdict(collections.Counter)
+        for (sm, s), n in na_vidr_sim.items(): sims_on[s][sm] += n
+
+        def r8_linii(sim, sid):
+            L0 = SEG[sid]['len']
+            for tol in (0.25, 0.5, 1.0):
+                pool = [s for s in by_d[seg_d[sid]] if abs(SEG[s]['len'] - L0) <= tol * L0]
+                if len(pool) >= 30: break
+            if sid not in pool: pool.append(sid)
+            own = np.array([na_vidr_sim[(sim, s)] for s in pool], dtype=float)
+            w = np.array([na_vidr[s] for s in pool], dtype=float) - own + 1.0
+            w /= w.sum()
+            t, k, m = pool.index(sid), int(own[pool.index(sid)]), int(own.sum())
+            ge = 0
+            for _ in range(N_PEREST):
+                if np.count_nonzero(rng.choice(len(pool), size=m, p=w) == t) >= k: ge += 1
+            return (1 + ge) / (N_PEREST + 1)
+
+        for (sim, sid), lst in by.items():
+            mc = collections.Counter(pl for pl, _e in lst)
+            # лінія — лише коли події розкидані: ≥3 місця і жодне не тримає більшості
+            if len(mc) < 3 or mc.most_common(1)[0][1] * 2 > len(lst): continue
+            evs = [e for _pl, e in lst]
+            pts = [pl for pl, _n in mc.most_common()]
+            rec = zapys((sim, 'л', pts[0]), evs, 'лінія', pts)
+            rec['vidrizok'] = dict(id=sid, nazva=names.get(sid, ''), dovzhyna=round(SEG[sid]['len']),
+                                   geom=[[round(q[0], 5), round(q[1], 5)] for q in
+                                         segs[sid][::max(1, len(segs[sid]) // 12)] + [segs[sid][-1]]])
+            pary_ev[id(rec)] = evs
+            # дорожні ділянки (Р4) — окремий клас без Р8, як і раніше
+            if rec['status'] in PROBLEMA and rec['riven'] == 'лінія':
+                pv = r8_linii(sim, sid)
+                rec['r8_p'] = round(pv, 4)
+                rec['vorota']['R8'] = pv < P_R8
+                if pv >= P_R8: vidpalo_r8(rec, 'лінія')
+            lines += 1
     else:
         log('   немає osm_risks_raw.json — рівень «лінія» пропущено')
+
+    # ---- одна картка на вид у точці (RISHENNYA 32; завдання 29, п. 7.3) ----
+    # Спортивна, 1А: хуліганство, розпивання, куріння — одна картка
+    # «громадський порядок» з розбивкою за механізмами, а не три ромби.
+    kartky = 0
+    pt = [r for r in zapysy if r['riven'] == 'точка' and r['status'] in PROBLEMA]
+    used = set()
+    for i, r in enumerate(pt):
+        if id(r) in used: continue
+        c = [r] + [x for x in pt[i + 1:] if id(x) not in used and x['vyd'] == r['vyd']
+                   and dist(x['p'], r['p']) <= R_MISCE]
+        if len({x['sim'] for x in c}) < 2: continue
+        for x in c: used.add(id(x))
+        c.sort(key=lambda x: (x['status'] != 'хронічна', -x['za_2roky']))
+        g0 = c[0]
+        evs = [e for x in c for e in pary_ev.get(id(x), ())]
+        adr = collections.Counter()
+        for x in c:
+            for a, n in x['adresy_n']: adr[a] += n
+        rec = dict(g0)
+        rec.update(sim=g0['vyd'], mekhanizm=L.THEMES.get(g0['vyd'], g0['vyd']),
+                   status='хронічна' if any(x['status'] == 'хронічна' for x in c) else 'фіксує поліція',
+                   podii=sum(x['podii'] for x in c), za_2roky=sum(x['za_2roky'] for x in c),
+                   za_4kv=sum(x['za_4kv'] for x in c), adresy=[a for a, _ in adr.most_common()],
+                   adresy_n=adr.most_common(), docs=[d for x in c for d in x.get('docs', [])],
+                   roky=sorted({y for x in c for y in x.get('roky', [])}),
+                   ostannia=max(x['ostannia'] for x in c),
+                   rozbyvka=[dict(sim=x['sim'], mekhanizm=x['mekhanizm'], status=x['status'],
+                                  podii=x['podii'], za_2roky=x['za_2roky'], typ=x.get('typ')) for x in c])
+        # Статті з повторами: Counter з генератора склеїв би однакові ключі
+        st_ = collections.Counter()
+        for x in c:
+            for k, n in x.get('statti', []): st_[k] += n
+        rec['statti'] = st_.most_common()
+        zapysy.append(rec)
+        pary_ev[id(rec)] = evs
+        for x in c: x['status'] = 'у картці виду'
+        kartky += 1
 
     # ---- «формується (лише мешканці)» — 1551, три види (розд. 3.2) ----
     if G:
@@ -682,7 +888,7 @@ def run(V=None, log=print, FACT=None):
         by = collections.defaultdict(list)
         for d_, th, c, p in G['sk']:
             if d_ >= lo12: by[(th, p)].append(d_)
-        probs = [(r['vyd'], tuple(r['p'])) for r in zapysy if r['status'] == 'хронічна']
+        probs = [(r['vyd'], tuple(r['p'])) for r in zapysy if r['status'] in PROBLEMA]
         ppt = Pts([p for _t, p in probs])
         evpt = Pts([e['p'] for e in ev])
         for (th, p), ds in by.items():
@@ -696,16 +902,22 @@ def run(V=None, log=print, FACT=None):
                                status='формується' if sud else 'формується (лише мешканці)',
                                ostanni=n3, poperedni=n9, p_=round(pv, 5)))
 
-    problemy = sorted([r for r in zapysy if r['status'] == 'хронічна' and r['riven'] != 'дорожні ділянки'],
-                      key=lambda r: (-r['za_4kv'], -r['podii']))
+    problemy = sorted([r for r in zapysy if r['status'] in PROBLEMA and r['riven'] != 'дорожні ділянки'],
+                      key=lambda r: (r['status'] != 'хронічна', -r['za_4kv'], -r['podii']))
     dilianky = [r for r in zapysy if r['status'] == 'хронічна' and r['riven'] == 'дорожні ділянки']
-    gz = collections.Counter((r['vyd'], r['golos']['stan']) for r in zapysy
-                             if r.get('golos') and r['status'] == 'хронічна')
+    gz = collections.Counter((r['vyd'], r['golos']['stan']) for r in problemy if r.get('golos'))
     rep = dict(
         versiia=dict(pravyla=PRAVYLA, podii_do=S, **({'1551_do': G['last']} if G else {}),
                      skladeno=dt.date.today().isoformat()),
         voronka={k: dict(v) for k, v in funnel.items()},
         problem=len(problemy), linii=sum(1 for r in problemy if r['riven'] == 'лінія'),
+        dilianok=sum(1 for r in problemy if r['riven'] == 'ділянка'),
+        fiksuie_politsiia=sum(1 for r in problemy if r['status'] == 'фіксує поліція'),
+        kartok_vydu=kartky,
+        bez_meshkantsiv=dict(collections.Counter(r['golos'].get('chomu') for r in problemy
+                                                 if r.get('golos') and r['golos'].get('chomu')
+                                                 and r['golos']['chomu'] != 'вид')),
+        vidrizkiv=len(SEG or ()),
         dorozhnikh_dilianok=len(dilianky),
         formuietsia=dict(vsogo=len(formue),
                          za_dzherelom=dict(collections.Counter(f['dzherelo'] for f in formue)),
@@ -713,8 +925,8 @@ def run(V=None, log=print, FACT=None):
         golos={f'{L.THEMES.get(t, t)} — {s}': n for (t, s), n in sorted(gz.items())},
         r8={M.simname(k): v for k, v in r8.items()},
         perelik=problemy, dorozhni_dilianky=dilianky, formuietsia_perelik=formue,
-        inshi=[{k: v for k, v in r.items() if k not in ('statti',)} for r in zapysy
-               if r['status'] != 'хронічна' and r['status'] != 'не перевірена адреса'][:3000])
+        inshi=[{k: v for k, v in r.items() if k not in ('statti', 'docs')} for r in zapysy
+               if r['status'] not in PROBLEMA and r['status'] != 'не перевірена адреса'][:3000])
     try:
         rep['skhozhi_1551'] = skhozhi_1551(G, dmap, log)
     except Exception as e:                       # перевірка — не привід зупиняти карту
@@ -722,8 +934,10 @@ def run(V=None, log=print, FACT=None):
     json.dump(rep, open(REPORT, 'w', encoding='utf-8'), ensure_ascii=False, indent=1, default=list)
     for k, v in funnel.items():
         log(f'   {k}: ' + ', '.join(f'{a} {b:,}' for a, b in v.items()))
-    log(f'   проблем {len(problemy)} (з них ліній {rep["linii"]}); дорожніх ділянок {len(dilianky)}; '
-        f'формується {len(formue)} -> data/problems_report.json')
+    log(f'   проблем {len(problemy)} (з них ліній {rep["linii"]}, ділянок {rep["dilianok"]}, '
+        f'«фіксує поліція» {rep["fiksuie_politsiia"]}, карток виду {kartky}); '
+        f'дорожніх ділянок {len(dilianky)}; формується {len(formue)}; '
+        f'без мешканців {rep["bez_meshkantsiv"]} -> data/problems_report.json')
     return rep
 
 

@@ -167,7 +167,18 @@ def vybir(c, print=print):
             for r in rows]
 
     print('перевірка на адреси установ:')
-    excl = detect_institutional(rows, load_excl())
+    # Підтвердження адреси (завдання 29, п. 1): чи вулицю адреси названо в
+    # описі події — клас B проходу по текстах; для документів без проходу —
+    # той самий podii.addr_class за витягом обставин. Рахується лише на
+    # рішеннях по суті.
+    formy = PD.load_formy()
+    potv = {}
+    for r in rows:
+        tk = TKD.get(r[0])
+        f = fab.get(r[0], '')
+        kl = tk['klass'] if tk else PD.addr_class(f, r[5])
+        potv[r[0]] = (PD.is_event(r[0], f, formy), kl == 'B')
+    excl = detect_institutional(rows, load_excl(), potv)
     # «20Б» біля будинку 20 стоїть на BESIDE північніше — для перевірки за
     # точкою беремо сам будинок: «пл. Вокзальна, 1В» біля вокзалу, що в
     # переліку установ, мусить піти разом із ним.
@@ -188,7 +199,6 @@ def vybir(c, print=print):
     # Подією справи може бути лише рішення по суті, а подія одна на (справа,
     # вид подій) — правило спільне з моделлю й звітами, src/podii.py.
     # Ухвали лишаються серед паперів справи, представником не стають.
-    formy = PD.load_formy()
     isev = {r[0]: PD.is_event(r[0], fab.get(r[0], ''), formy) for r in rows}
     nproc = sum(1 for v in isev.values() if not v)
     print(f'   процесуальних документів (ухвали): {nproc:,} з {len(rows):,}; '
@@ -299,8 +309,31 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
         LBL2SIM[(_th, _lbl)] = M.simgroup(_code) or f'{_th}_{_code}'
     sim_of = [LBL2SIM.get(k, f'{k[0]}_i{i}') for i, k in enumerate(labels)]
 
+    # ---- ОДНА БУДІВЛЯ — ОДНА ТОЧКА (завдання 29, п. 3) ----
+    # Різні написання однієї адреси («6-Д» і «6Д», «вул.» і «просп.», «І.Дзюби»
+    # й «Івана Дзюби», стара й нова назва) геокодер ставив у різні точки — з
+    # OSM і з КМДА, — і події будівлі розходилися. Точка карти тепер — за
+    # ключем адреси (adr_kliuch): усі події ключа стають у його найчастішу
+    # точку. Центри вулиць ключа не мають і лишаються як є.
+    import adr_kliuch
+    KL = adr_kliuch.Kliuch()
+    def akey(street, house, prec):
+        if prec not in ('house', 'cross') or not street: return None
+        if ' / ' in street:
+            return ('перехрестя',) + tuple(sorted(KL.vulytsia(x) for x in street.split(' / ', 1)))
+        return KL(street, house)
+    kpt = collections.defaultdict(collections.Counter)
+    for r in rows:
+        k = akey(r[5], r[6], r[9])
+        if k: kpt[k][(round(r[7], 5), round(r[8], 5))] += 1
+    kpt = {k: c.most_common(1)[0][0] for k, c in kpt.items()}
+    n_zlyto = sum(1 for r in rows if (k := akey(r[5], r[6], r[9])) and kpt[k] != (round(r[7], 5), round(r[8], 5)))
+    print(f'   подій, перенесених у точку своєї адреси (інше написання): {n_zlyto:,}')
+
     agg = collections.defaultdict(list)
     for doc, court, cat, date, tm, street, house, la, lo, prec in rows:
+        k = akey(street, house, prec)
+        if k: la, lo = kpt[k]
         lb = L.CODE[cat]
         tk = TKD.get(doc)
         if tk is not None:
@@ -332,7 +365,7 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
              *extra.get(doc, ('', '')),
              [extra.get(x, ('', ''))[1] for x in case_docs.get(doc, [doc])
               if extra.get(x, ('', ''))[1]],
-             f, arts.get(doc, []), ACLS.index(kl), ed or date, 0 if ed else 1))
+             f, arts.get(doc, []), ACLS.index(kl), ed or date, 0 if ed else 1, doc))
     ncls = collections.Counter(ACLS[e[13]] for evs in agg.values() for e in evs)
     print('   клас адреси подій: ' + ', '.join(f'{k} {ncls[k]:,}' for k in ACLS))
 
@@ -346,6 +379,7 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
     # і називати його треба саме так.
     P = []
     DOCS = []          # паралельно до P: справи адреси для правої панелі
+    DOCIDX = {}        # doc_id -> (індекс точки, індекс події в p[4])
     n_street = 0
     for (la, lo), evs in agg.items():
         hs = [e for e in evs if e[4] and e[6]]
@@ -373,6 +407,9 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
         # район разом із витягами обставин — панель підтягує його, коли її
         # відкривають. Порядок справ у тому файлі той самий, що тут.
         ev_sorted = sorted(evs, key=lambda x: x[14], reverse=True)   # за датою події
+        # де лежить кожна подія на карті: (точка, номер у p[4]) — картка
+        # проблеми збирає за ним свої події з усіх адрес (завдання 29, п. 2)
+        for k_, e_ in enumerate(ev_sorted): DOCIDX[e_[16]] = (len(P), k_)
         P.append([la, lo, a, prec,
                   # подія: суд, стаття, рік, година, клас адреси (індекс у
                   # ACLS, 0 — B), далі інші статті справи — лише коли вони є
@@ -426,7 +463,7 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
     # ---- відбір проблем і обрізання до району (map_problems) ----
     P, POP, meta, theme_cnt = map_problems.select(
         P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
-        district, risks, ER, FACT, theme_rgrid, pred_theme)
+        district, risks, ER, FACT, theme_rgrid, pred_theme, DOCIDX)
 
     # Дані серіалізуються один раз і лягають однаково в обидві збірки — і в
     # Leaflet, і в MapLibre. Інакше порівнювати їх на паритет не було б сенсу.

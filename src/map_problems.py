@@ -93,36 +93,57 @@ CAP_D_THEME  = {'ДОР': 4}   # квота теми в межах району
 CAP_D_DEF    = 3
 
 
-def novi_kandydaty(P, addr_district):
+def novi_kandydaty(P, addr_district, DOCIDX=None):
     """Проблеми В1 (src/problems.py) -> кандидати у форматі старого відбору.
-    Місце проблеми прив'язується до точки карти, найближчої до її головної
-    адреси; лінія — до адреси з найбільшою кількістю подій на відрізку."""
+
+    Картка проблеми показує САМЕ її події з усіх адрес (завдання 29, п. 2):
+    за doc_id проблеми (docs) знаходимо, де кожна подія лежить на карті, —
+    ev = [[точка, номер у p[4]], …]. Проблема стоїть на точці, де її подій
+    найбільше. Раніше вона бралася до найближчої точки в 15 м, а вкладка
+    «Рішення» — лише з цієї точки: лінія Лятошинського — «6 подій», а
+    рішень — одне. Тип місця, посібник і «хто керує» на карту не йдуть —
+    вони лише у звіті «Проблеми» (завдання 30, ч. 2)."""
     global _PR
     import problems as PR
     if _PR is None:
         import step3_map as S3
         _PR = PR.run(S3.LAST_VYBIR) or {}
     idx = PR.Pts([(p[0], p[1]) for p in P])
-    out = []
+    out, bez, nepovni = [], [], 0
     for rank, r in enumerate(_PR.get('perelik', [])):
-        near = [k for k in idx.near(r['p'][0], r['p'][1], 15) if P[k][3]]
-        if not near: continue
-        pi = min(near, key=lambda k: PR.dist((P[k][0], P[k][1]), r['p']))
+        refs = sorted({DOCIDX[d] for d in r.get('docs', []) if DOCIDX and d in DOCIDX})
+        if refs:
+            pi = collections.Counter(a for a, _k in refs).most_common(1)[0][0]
+            if len(refs) != len(r.get('docs', [])): nepovni += 1
+        else:
+            near = [k for k in idx.near(r['p'][0], r['p'][1], 15) if P[k][3]]
+            if not near:
+                # Раніше така проблема мовчки зникала; тепер — у журнал
+                bez.append(f"{r['mekhanizm']} · {(r.get('adresy') or ['?'])[0]}")
+                continue
+            pi = min(near, key=lambda k: PR.dist((P[k][0], P[k][1]), r['p']))
         arts = collections.Counter()
         for code, n in r.get('statti', []):
             lb = L.CODE.get(code)
             if lb: arts[lb[1]] += n
+        vd = r.get('vidrizok') or {}
         out.append(dict(pi=pi, sim=r['sim'], th=r['vyd'], n=r['podii'], core_n=r['podii'],
                         district=addr_district(P[pi][0], P[pi][1]), years=r.get('roky', []),
                         arts=arts.most_common(), score=-rank, riven=r['riven'],
-                        adresy=r.get('adresy', [])[:12], typ=r.get('typ'), golos=r.get('golos'),
-                        vidrizok=(r.get('vidrizok') or {}).get('nazva')))
-    print(f'   проблем В1: {len(_PR.get("perelik", []))}, на точках карти: {len(out)}')
+                        adresy=r.get('adresy', [])[:12], golos=r.get('golos'),
+                        status=r.get('status'), ev=[list(x) for x in refs],
+                        mekhanizm=r.get('mekhanizm'),
+                        rozbyvka=[[x['mekhanizm'], x['podii'], x['status']] for x in r.get('rozbyvka', [])],
+                        vidrizok=vd.get('nazva'), geom=vd.get('geom')))
+    print(f'   проблем В1: {len(_PR.get("perelik", []))}, на точках карти: {len(out)}'
+          + (f'; подій карти знайдено не всі — у {nepovni}' if nepovni else ''))
+    if bez:
+        print(f'   БЕЗ ТОЧКИ КАРТИ (на карту не пішли): {len(bez)} — ' + '; '.join(bez[:10]))
     return out
 
 
 def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
-           district, risks, ER, FACT, theme_rgrid, pred_theme):
+           district, risks, ER, FACT, theme_rgrid, pred_theme, DOCIDX=None):
     """Повертає (P, POP, meta, theme_cnt)."""
     POP = []
 
@@ -182,7 +203,7 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
                                     arts=arts.most_common(), score=score))
     candidates.sort(key=lambda c: -c['score'])
     if NOVYI_VIDBIR:
-        candidates = novi_kandydaty(P, addr_district)
+        candidates = novi_kandydaty(P, addr_district, DOCIDX)
 
     chosen = {}
     used_theme = collections.Counter()   # спільний лічильник квоти по темах (п.7.3, за проханням користувача)
@@ -266,14 +287,17 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
         key = (c['pi'], c['sim'])
         probs_by_pi[c['pi']].append(dict(
             thi=gi_of_theme.get(th, -1),   # індекс теми — щоб картка ховалась разом із фільтром
-            sim=c['sim'], theme=L.THEMES.get(th, th), mech=M.simname(c['sim']),
+            sim=c['sim'], theme=L.THEMES.get(th, th), mech=c.get('mekhanizm') or M.simname(c['sim']),
             n=c['n'], core_n=c['core_n'], years=c['years'], arts=c['arts'],
             d=DIDX.get(c['district'], -1),           # район адреси
             city=1 if key in city_keys else 0,       # у міському переліку
             loc=1 if key in loc_keys else 0,         # у переліку свого району
             analysis=analysis,
-            # В1: рівень місця, адреси, що його склали, тип (Р5) і голос 1551
-            **({k: c[k] for k in ('riven', 'adresy', 'typ', 'golos', 'vidrizok') if c.get(k)})))
+            # В1: рівень місця, адреси, що його склали, голос 1551, статус
+            # («фіксує поліція»), розбивка за механізмами виду, події
+            # проблеми на карті (ev) і відрізок лінії (geom)
+            **({k: c[k] for k in ('riven', 'adresy', 'golos', 'vidrizok', 'status', 'ev',
+                                  'rozbyvka', 'geom') if c.get(k)})))
 
     for pi, p in enumerate(P):
         probs = probs_by_pi.get(pi, [])
@@ -334,8 +358,15 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
         if ring:
             # ГЕОГРАФІЧНЕ обрізання: лишаємо тільки те, що фізично в межах району
             before = len(P)
+            old_i = {id(p): i for i, p in enumerate(P)}
             P = [p for p in P if in_ring(p[0], p[1], ring)]
             print(f'   район {district}: {len(P):,} адрес (за межами відсіяно {before-len(P):,})')
+            # події проблеми (ev) посилаються на номери точок — після
+            # обрізання вони інші; подій поза районом у картці району немає
+            new_i = {old_i[id(p)]: j for j, p in enumerate(P)}
+            for p in P:
+                for q in (p[7] if len(p) > 7 else []):
+                    if q.get('ev'): q['ev'] = [[new_i[a], k] for a, k in q['ev'] if a in new_i]
             # Потоки тепер стислі: геометрія лежить один раз у risks['geo'],
             # а шар несе номер відрізка й число. Обрізаємо обидва види, і
             # заразом викидаємо з geo те, що за межами району.

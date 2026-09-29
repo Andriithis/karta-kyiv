@@ -120,7 +120,8 @@ def is_proactive_event(code, fab=''):
 # (середовище або None, поведінка, середовище для показу, хто керує місцем, посібник, техніки)
 DODATOK_B = {
  'ГП_хуліг': [
-  ('рекреація', 'неповага', 'рекреація', 'власник закладу', '#1 Assaults in and Around Bars', (7, 9, 10, 18, 25)),
+  # «бари» — саме бар чи клуб у 50 м, не будь-яке кафе (problems.SERED_BARY)
+  ('бари', 'неповага', 'бари', 'власник закладу', '#1 Assaults in and Around Bars', (7, 9, 10, 18, 25)),
   (None, 'неповага', 'публічний простір', 'КМДА чи район — для площ і скверів', '#6 Disorderly Youth in Public Places', (7, 9, 10, 18, 25))],
  'ГП_шум': [(None, 'неповага', 'житло', 'ОСББ чи керуюча компанія; власник закладу', '', (9, 21, 22))],
  'ГП_стрільба': [(None, 'небезпека', 'публічний простір', 'КМДА чи район', '#23 Gun Violence Among Serious Young Offenders', (5, 8, 10))],
@@ -136,7 +137,7 @@ DODATOK_B = {
  'НАР_збут': [('житло', 'за згодою', 'житло', 'ОСББ', '#4 Drug Dealing in Privately Owned Apartment Complexes', (2, 7, 9, 14)),
               (None, 'за згодою', 'публічний простір', 'район', '#31 Drug Dealing in Open-Air Markets', (2, 7, 9, 14))],
  'НАР_притон': [(None, 'за згодою', 'житло', 'ОСББ; власник житла', '#4 Drug Dealing in Privately Owned Apartment Complexes', (2, 9, 21))],
- 'НАС_тілесні': [('рекреація', 'конфлікт', 'рекреація', 'власник закладу', '#1 Assaults in and Around Bars', (9, 16, 17, 18, 25)),
+ 'НАС_тілесні': [('бари', 'конфлікт', 'бари', 'власник закладу', '#1 Assaults in and Around Bars', (9, 16, 17, 18, 25)),
                  (None, 'конфлікт', 'публічний простір', 'район', '', ())],
  'НАС_погроза': [(None, 'хижацька', 'житло або публічний простір', 'ОСББ', '', (8, 17, 19))],
  'ГП_тварини': [(None, 'неповага', 'публічний простір', 'район', '#65 Animal Cruelty', (8, 10, 23))],
@@ -169,16 +170,23 @@ DODATOK_B = {
 }
 
 def problem_type(sim, env):
-    """механізм і знайдені біля місця середовища -> dict типу проблеми.
-    Механізм, якого в додатку Б немає, отримує лише тему: вигадувати тип не
-    можна (CLAUDE.md)."""
+    """механізм і середовища, підтверджені біля місця, -> dict типу проблеми.
+
+    env — лише ті типи, об'єкт яких за OSM стоїть у 50 м від більшості
+    подій (problems.seredovyshche). Тип місця, хто ним керує, посібник і
+    техніки — лише для варіанта, чиє середовище там справді є (завдання 30,
+    ч. 2, на всіх рівнях). Запасний варіант (None) дає лише поведінку:
+    посібник «про бари» чи «про публічний простір» без такого об'єкта поруч
+    — вигадане пояснення (CLAUDE.md). Механізм, якого в додатку Б немає,
+    отримує лише тему."""
     var = DODATOK_B.get(sim)
+    ser = next(iter(env), 'невизначено')
     if not var:
         pro = sim in PROACTIVE or simtheme(sim) in PROACTIVE_THEMES
         return dict(povedinka='зловживання поліцією' if pro and simtheme(sim) == 'ГП' else '',
-                    seredovyshche=next(iter(env), 'невизначено'), keruye='', posibnyk='', tekhniky=[])
-    for e, pov, ser, ker, pos, tech in var:
-        if e is None or e in env:
-            return dict(povedinka=pov, seredovyshche=e or (next(iter(env), '') or ser),
-                        keruye=ker, posibnyk=pos, tekhniky=list(tech))
+                    seredovyshche=ser, keruye='', posibnyk='', tekhniky=[])
+    for e, pov, _ser, ker, pos, tech in var:
+        if e is not None and e in env:
+            return dict(povedinka=pov, seredovyshche=e, keruye=ker, posibnyk=pos, tekhniky=list(tech))
+    return dict(povedinka=var[-1][1], seredovyshche=ser, keruye='', posibnyk='', tekhniky=[])
 

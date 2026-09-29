@@ -348,6 +348,11 @@ const PIDX=new Map(P.map((p,i)=>[p,i]));
 let LASTST=null;
 function addrReady(){
  if(!map.getSource('k-addr')){
+  // Лінія-проблема — відрізком вулиці, а не значком на одній з її адрес
+  // (завдання 29, п. 2): події лінії розкидані вздовж усього відрізка.
+  map.addSource('k-probl',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+  map.addLayer({id:'k-probl',type:'line',source:'k-probl',layout:{'line-cap':'round'},
+   paint:{'line-color':['get','c'],'line-width':['interpolate',['linear'],['zoom'],11,3,16,7],'line-opacity':.75}});
   map.addSource('k-addr',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
   // Тінь — другий шар кола, розмитий і трохи зсунутий донизу, під основним.
   // У Leaflet це filter:drop-shadow на полотні; у GL фільтрів полотна немає,
@@ -388,6 +393,13 @@ function draw(){
    // ромбом, тож вона завбільшки з ромб, а не з кількість подій.
    r0:MODE==='prob'?8:r0Of(n,mx),
    k:(probsOf(p).length?1e6:0)-n}}))});
+ // Відрізки ліній-проблем — там, де видно ромби проблем
+ const ln=[];
+ if(SHOWP||MODE==='prob') vis.forEach(([p])=>probsOf(p).forEach(q=>{
+  if(q.riven==='лінія'&&q.geom&&(q.thi===undefined||q.thi<0||st.GVIS.has(q.thi)))
+   ln.push({type:'Feature',geometry:{type:'LineString',coordinates:q.geom.map(x=>[x[1],x[0]])},
+    properties:{c:PALA[(q.thi>=0?q.thi:0)%PALA.length]}})}));
+ if(map.getSource('k-probl')) map.getSource('k-probl').setData({type:'FeatureCollection',features:ln});
 }
 // ---- КАРТКА МІСЦЯ (розд. 30; MAKET-KROK10, друга редакція) ----
 // Одна картка ліворуч, завжди на тому самому місці, замість вікна над точкою,
@@ -412,48 +424,57 @@ const NEAR_MAX=(F.cats||[]).length?Math.max(...F.cats.map(nearR)):NEAR_R;
 // й справи у spravy/<район>.json). Для проблеми — лише події її статей:
 // картка проблеми говорить тільки про проблему (рішення 28.09), решта подій
 // адреси туди не потрапляє зовсім.
+// Подія картки — посилання [точка, номер у p[4]]: у проблеми з кількох
+// адрес (лінія, ділянка, «6-Д» і «6Д») події лежать на різних точках, а
+// картка показує їх усі (завдання 29, п. 2).
+const EVR=r=>P[r[0]][4][r[1]];
 function placeData(){
  const i=PLACE.i, p=P[i], st=LASTST||computeVis();
- const ev=[]; p[4].forEach((e,k)=>{ if(evOn(e,st.C,st.A,st.Y,st.H)) ev.push(k)});
+ const on=r=>evOn(EVR(r),st.C,st.A,st.Y,st.H);
  const probs=p[3]?probsOf(p).filter(q=>q.thi===undefined||q.thi<0||st.GVIS.has(q.thi)):[];
  const pr=probs.length?probs[Math.min(PLACE.pi,probs.length-1)]:null;
- const labs=pr?new Set(pr.arts.map(a=>a[0])):null;
- const evs=labs?ev.filter(k=>labs.has(M.cats[p[4][k][1]])):ev;
- return {p,st,probs,pr,evs};
+ let evs, all;
+ if(pr&&pr.ev&&pr.ev.length){all=pr.ev.length; evs=pr.ev.filter(on)}
+ else {
+  const own=p[4].map((e,k)=>[i,k]), labs=pr?new Set(pr.arts.map(a=>a[0])):null;
+  const mine=labs?own.filter(r=>labs.has(M.cats[EVR(r)[1]])):own;
+  all=mine.length; evs=mine.filter(on)}
+ return {p,st,probs,pr,evs,all};
 }
 function placeSum(p,evs){
  const n=evs.length; if(!n) return 'за поточним фільтром подій немає';
- const g=new Array(M.groups.length).fill(0); evs.forEach(k=>g[CATTH[p[4][k][1]]]++);
+ const g=new Array(M.groups.length).fill(0); evs.forEach(r=>g[CATTH[EVR(r)[1]]]++);
  const gi=g.indexOf(Math.max(...g)), k=g[gi], nm=lc(shortOf(gi));
  return `${fmt(n)} ${pl(n,'подія','події','подій')} · `+(k===n?`усі — ${nm}`:`переважає ${nm}, ${fmt(k)}`)}
 function placeHist(p,evs){
- const h=new Array(24).fill(0); let nk=0; evs.forEach(k=>{const x=p[4][k][3]; if(x>=0){h[x]++; nk++}});
+ const h=new Array(24).fill(0); let nk=0; evs.forEach(r=>{const x=EVR(r)[3]; if(x>=0){h[x]++; nk++}});
  if(nk<8) return '';
  const mx=Math.max(...h,1), night=h.slice(20).concat(h.slice(0,4)).reduce((a,b)=>a+b,0);
  return `<div class="hg">${h.map((v,x)=>`<i style="height:${Math.max(2,Math.round(22*v/mx))}px" title="${x}:00 — ${v}"></i>`).join('')}</div>
   <div class="hx"><span>0</span><span>6</span><span>12</span><span>18</span><span>23</span></div><div class="hxl">година доби</div>
   <div class="hn">${Math.round(100*night/nk)}% подій — 20:00–04:00</div>`}
 function placeArts(p,evs){
- const c={}; evs.forEach(k=>{const a=p[4][k][1]; c[a]=(c[a]||0)+1});
+ const c={}; evs.forEach(r=>{const a=EVR(r)[1]; c[a]=(c[a]||0)+1});
  const rows=Object.entries(c).sort((a,b)=>b[1]-a[1]), show=PLACE.allArts?rows:rows.slice(0,5);
  return `<table class="bd">${show.map(([a,n])=>`<tr><td>${esc(M.cats[a])}</td><td><b>${n}</b></td></tr>`).join('')}</table>`+
   (rows.length>show.length?`<button class="kp-lnk" data-kp="arts">ще ${rows.length-show.length} ${pl(rows.length-show.length,'стаття','статті','статей')}</button>`:'')}
-// В1 (NAPRYAM-PROBLEMY, Р5; PIDKHID, розд. 4 і 5.1): рівень місця, тип
-// проблеми, посібник і голос мешканців — по рядку, без пояснень, яких
-// немає в даних.
+// В1 (METODYKA, розд. 2–3): рівень місця, розбивка за механізмами й голос
+// мешканців — по рядку, без пояснень, яких немає в даних. Тип місця,
+// посібник POP Center, «хто керує» й техніки — лише у звіті «Проблеми»
+// (завдання 30, ч. 2): на карті їх читали як висновок про місце.
 function probMore(pr){
  let h='';
  const ad=pr.adresy||[];
+ if(pr.status==='фіксує поліція') h+=`<div class="tt">Проблема, яку фіксує поліція: більшість подій виявила сама поліція</div>`;
+ if((pr.rozbyvka||[]).length) h+=`<div class="tt">${pr.rozbyvka.map(x=>`${esc(x[0])} — ${x[1]}${x[2]==='фіксує поліція'?' (фіксує поліція)':''}`).join(' · ')}</div>`;
  if(pr.riven==='лінія') h+=`<div class="tt">Лінія${pr.vidrizok?': '+esc(pr.vidrizok):''} — події на ${ad.length} адресах: ${esc(ad.join('; '))}</div>`;
- else if(ad.length>1) h+=`<div class="tt">Одне місце, ${ad.length} адреси: ${esc(ad.join('; '))}</div>`;
- const ty=pr.typ;
- if(ty&&ty.povedinka) h+=`<div class="tt">${esc(ty.povedinka)} × ${esc(ty.seredovyshche||'невизначено')}${ty.keruye?` · місцем керує: ${esc(ty.keruye)}`:''}</div>`;
- if(ty&&ty.posibnyk) h+=`<div class="tt">Посібник POP Center ${esc(ty.posibnyk)}${(ty.tekhniky||[]).length?` · техніки ${ty.tekhniky.join(', ')}`:''}</div>`;
+ else if(pr.riven==='ділянка') h+=`<div class="tt">Ділянка вулиці — ${ad.length} ${pl(ad.length,'адреса','адреси','адрес')}: ${esc(ad.join('; '))}</div>`;
+ else if(ad.length>1) h+=`<div class="tt">Одне місце, ${ad.length} ${pl(ad.length,'адреса','адреси','адрес')}: ${esc(ad.join('; '))}</div>`;
  const g=pr.golos;
  if(g&&g.stan){
   const t=g.stan==='підтверджують'?`підтверджують — ${g.skarg} ${pl(g.skarg,'скарга','скарги','скарг')} 1551 за рік`+(g.vidnoshennia?`, у ${String(g.vidnoshennia).replace('.',',')} раза більше, ніж звичайно для району`:'')
    :g.stan==='мовчать'?`мовчать — ${g.skarg||0} ${pl(g.skarg||0,'скарга','скарги','скарг')} 1551 за рік, не більше, ніж звичайно для району`
-   :g.stan==='не вимірюється'?'не вимірюється: про цей вид 1551 мовчить':'даних 1551 немає';
+   :g.stan==='не вимірюється'?(g.chomu&&g.chomu!=='вид'?`не вимірюється: ${esc(g.chomu==='житла в 50 м немає'?'поруч немає житла':g.chomu)}, мешканців, які скаржилися б, тут немає`:'не вимірюється: про цей вид 1551 мовчить'):'даних 1551 немає';
   h+=`<div class="tt">Голос мешканців: ${t}</div>`}
  return h}
 function oglHTML(d){
@@ -472,7 +493,7 @@ function oglHTML(d){
 function rishHTML(d,cs){
  if(cs===undefined) return '<div class="kp-empty">завантажую…</div>';
  if(cs===null) return '<div class="kp-empty">Перелік рішень лежить окремим файлом поруч, а браузер не дає сторінці з диска його читати. Відкрийте карту з сайту або через PODYVYTYSYA.bat.</div>';
- const it=d.evs.map(k=>[k,cs[k]]).filter(x=>x[1]);
+ const it=d.evs.map(r=>[r.join('-'),(cs[r[0]]||[])[r[1]]]).filter(x=>x[1]);
  if(!it.length) return '<div class="kp-empty">За поточним фільтром рішень немає.</div>';
  return it.map(([k,c])=>{const open=PLACE.open===k;
   return `<div class="kp-dec${open?' open':''}" data-dec="${k}" role="button" tabindex="0" aria-expanded="${open}">
@@ -494,7 +515,7 @@ function nearList(p){
 function nearProakt(){
  const d=placeData(); let gi=d.pr?d.pr.thi:undefined;
  if(gi===undefined||gi<0){const g=new Array(M.groups.length).fill(0);
-  d.evs.forEach(k=>g[CATTH[d.p[4][k][1]]]++); gi=g.indexOf(Math.max(...g))}
+  d.evs.forEach(r=>g[CATTH[EVR(r)[1]]]++); gi=g.indexOf(Math.max(...g))}
  const v=R.lines[RISKOF[gi]], m=v&&v.proakt;
  if(!m) return '';
  return `<div class="tt kp-pro">${esc(shortOf(gi))} — ${esc(m)}: `+(m==='проактивний вид'
@@ -506,10 +527,18 @@ function nearHTML(){
  if(!L.length) return `<div class="kp-empty">Поруч об'єктів із переліку немає.</div>`+nearProakt();
  return `<div class="tt">Які з них пояснюють скупчення — вирішує той, хто вийде на місце.</div>`+nearProakt()+`
 <ol class="kp-near">${L.map((o,j)=>`<li data-near="${j+1}"${PLACE.hl===j+1?' class="hl"':''}><span class="kp-nn">${j+1}</span><span class="kp-ni">${FICON[o.c.k]||'•'}</span>${esc(o.c.n)}<span class="kp-nd">${o.d} м</span></li>`).join('')}</ol>`}
-let DOCS_NOW={i:-1,cs:undefined};
+// Справи для картки — з файлів районів тих точок, де лежать події картки:
+// у проблеми з кількох адрес їх буває кілька. cs — {точка: справи}.
+let DOCS_NOW={key:'',cs:undefined};
+function docsForRefs(refs){
+ const ids=[...new Set(refs.map(r=>r[0]))];
+ return Promise.all(ids.map(docsFor)).then(a=>{
+  if(a.some(x=>x===null)) return null;
+  const o={}; ids.forEach((pi,j)=>o[pi]=a[j]); return o})}
 function renderPlace(){
  const el=placeEl(); if(!PLACE){el.hidden=true; document.body.classList.remove('kp-open'); return}
  const d=placeData(), {p,pr,probs,evs}=d;
+ const dkey=PLACE.i+'|'+PLACE.pi;
  const body=el.querySelector('.kp-body'), top=body?body.scrollTop:0;
  const nDec=evs.length;
  const tabs=[['ogl','Огляд'],['rish',`Рішення (${nDec})`]].concat(p[3]?[['near',`Що поруч (${PLACE.near.length})`]]:[]);
@@ -518,19 +547,21 @@ function renderPlace(){
  el.innerHTML=`<div class="kp-head">
    ${pr?`<div class="kp-badge">Проблема · ${esc(pr.theme)}</div>`:''}
    <b class="kp-title">${esc(title)}</b>
-   <div class="kp-sum">${pr?`${evs.length} ${pl(evs.length,'подія','події','подій')} проблеми за поточним фільтром`:esc(placeSum(p,evs))}${p[3]?'':' · без номера будинку'}</div>
+   <div class="kp-sum">${pr?(evs.length===d.all?`${d.all} ${pl(d.all,'подія','події','подій')} проблеми`:`${d.all} ${pl(d.all,'подія','події','подій')} проблеми, за фільтром ${evs.length}`):esc(placeSum(p,evs))}${p[3]?'':' · без номера будинку'}</div>
    ${probs.length>1?`<div class="kp-probs">${probs.map((q,j)=>`<button data-kp-pi="${j}" aria-pressed="${j===Math.min(PLACE.pi,probs.length-1)}">${esc(q.mech)}</button>`).join('')}</div>`:''}
    <button class="kp-x" data-kp="close" aria-label="Закрити (Esc)" title="Закрити (Esc)">×</button>
   </div>
   <div class="kp-tabs" role="tablist">${tabs.map(([k,n])=>`<button role="tab" data-kp-tab="${k}" aria-selected="${k===PLACE.tab}">${n}</button>`).join('')}</div>
-  <div class="kp-body">${PLACE.tab==='ogl'?oglHTML(d):PLACE.tab==='rish'?rishHTML(d,DOCS_NOW.i===PLACE.i?DOCS_NOW.cs:undefined):nearHTML()}</div>`;
+  <div class="kp-body">${PLACE.tab==='ogl'?oglHTML(d):PLACE.tab==='rish'?rishHTML(d,DOCS_NOW.key===dkey?DOCS_NOW.cs:undefined):nearHTML()}</div>`;
  el.hidden=false; document.body.classList.add('kp-open');
  el.querySelector('.kp-body').scrollTop=top;
  // «Що поруч» — на карті лише поки відкрита його вкладка, з тими самими
  // номерами, що в переліку (рішення 28.09).
  if(PLACE.tab==='near') nearNumbered(p,PLACE.near); else clearNear(true);
- if(PLACE.tab==='rish'&&DOCS_NOW.i!==PLACE.i){const i=PLACE.i;
-  docsFor(i).then(cs=>{DOCS_NOW={i,cs}; if(PLACE&&PLACE.i===i&&PLACE.tab==='rish') renderPlace()})}
+ if(PLACE.tab==='rish'&&DOCS_NOW.key!==dkey){
+  // усі події картки, а не лише за фільтром: фільтр міняється без перезавантаження
+  const refs=(pr&&pr.ev&&pr.ev.length)?pr.ev:[[PLACE.i,0]];
+  docsForRefs(refs).then(cs=>{DOCS_NOW={key:dkey,cs}; if(PLACE&&PLACE.i+'|'+PLACE.pi===dkey&&PLACE.tab==='rish') renderPlace()})}
 }
 function openAt(i){
  if(POPUP) POPUP.remove();
@@ -563,7 +594,7 @@ placeEl().addEventListener('click',e=>{
  const pi=e.target.closest('[data-kp-pi]'); if(pi){PLACE.pi=+pi.dataset.kpPi; PLACE.open=-1; renderPlace(); return}
  const k=e.target.closest('[data-kp]'); if(k){ if(k.dataset.kp==='close') closePlace(); else if(k.dataset.kp==='arts'){PLACE.allArts=true; renderPlace()} return}
  if(e.target.closest('a')) return;
- const dc=e.target.closest('[data-dec]'); if(dc){const n=+dc.dataset.dec; PLACE.open=PLACE.open===n?-1:n; renderPlace(); return}
+ const dc=e.target.closest('[data-dec]'); if(dc){const n=dc.dataset.dec; PLACE.open=PLACE.open===n?-1:n; renderPlace(); return}
  const nr=e.target.closest('[data-near]'); if(nr){nearHighlight(+nr.dataset.near,true); return}
 });
 placeEl().addEventListener('keydown',e=>{const dc=e.target.closest('[data-dec]');
@@ -1107,7 +1138,7 @@ const simOff=k=>zStep(s=>(k-(SIMK.length-1)/2)*s);
 // Потоки (tpl_map): три шари нейтрального кольору чорнила, кожен зі своїм
 // зсувом (−4 / 0 / +4 px). Колір подій їм не дістається: інакше потік до
 // транспорту читався б як ще один вид правопорушень.
-const FLOWS=[['flow_school',-4,'🎒'],['flow_transit',0,'🚌'],['flow_shop',4,'🛒']].filter(f=>R.lines&&R.lines[f[0]]);
+const FLOWS=[['flow_school',-6,'🎒'],['flow_transit',-2,'🚌'],['flow_shop',2,'🛒'],['flow_all',6,'🚶']].filter(f=>R.lines&&R.lines[f[0]]);
 const fc=features=>({type:'FeatureCollection',features});
 const lineF=(pts,props)=>({type:'Feature',geometry:{type:'LineString',coordinates:lineLL(pts)},properties:props});
 // Значки потоків — картинками (addImage), а не текстом-емодзі в шарі
