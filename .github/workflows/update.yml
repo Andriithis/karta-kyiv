@@ -106,6 +106,9 @@ jobs:
             # statsmodels — покрокова регресія за BIC і негативна біноміальна (RTM, Б1)
             pip install --quiet numpy scikit-learn statsmodels
             python src/step4_engine.py
+            # Дослідження 1551 -> події (ZAVDANNYA-30, 3.7): лише звіт, у модель
+            # нічого не вмикає; потребує data/1551 з кроку вище
+            python src/doslid_1551.py || echo "дослідження 1551 пропущено"
           else
             echo "модель ризику цього запуску не перенавчається"
           fi
@@ -123,7 +126,7 @@ jobs:
         run: |
           git config user.name  "karta-bot"
           git config user.email "actions@github.com"
-          for f in data/events.csv.gz data/formy.csv.gz data/formy_dovidnyk.csv data/ustanovy.json data/network.json data/vykluchennya.txt data/borders.json data/engine_report.json data/risk.json data/radiusy.json data/problems_report.json ZVIT-KROK7.md; do
+          for f in data/events.csv.gz data/formy.csv.gz data/formy_dovidnyk.csv data/ustanovy.json data/network.json data/vykluchennya.txt data/borders.json data/engine_report.json data/risk.json data/radiusy.json data/problems_report.json ZVIT-KROK7.md ZVIT-1551-ZAKONOMIRNOSTI.md; do
             [ -f "$f" ] && git add -f "$f" && echo "додано $f"
           done
           [ -d data/posylannya ] && git add -f data/posylannya && echo "додано data/posylannya"

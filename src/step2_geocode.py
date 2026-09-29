@@ -282,14 +282,13 @@ def main():
     conn.execute('CREATE TABLE geo(doc_id TEXT PRIMARY KEY, lat REAL, lon REAL, precision TEXT, source TEXT, '
                  'adresa TEXT)')
     conn.commit()
-    # Перехрестя — точкою перетину ліній OSM (завдання 30, ч. 4): вулиці
-    # кроку 2b і магістралі, яких серед них немає
+    # Перехрестя — точкою перетину ліній OSM (завдання 30, ч. 4) за шаром
+    # вулиць кроку 2b. Магістралей (primary, trunk) у ньому немає, тож
+    # перехрестя з ними не знаходяться — шар для них чекає рішення Андрія.
     import perekhrestia as PX
     rawp = os.path.join(DATA, 'osm_risks_raw.json')
     rw = json.load(open(rawp, encoding='utf-8')) if os.path.exists(rawp) else {}
-    PXI = PX.Perekhrestia(rw.get('roads'), rw.get('dorogy_velyki'))
-    if not rw.get('dorogy_velyki'):
-        print('   магістралей (dorogy_velyki) у кеші OSM немає — перехрестя з проспектами не знайдуться')
+    PXI = PX.Perekhrestia(rw.get('roads'))
     del rw
     PXST = collections.Counter(); PXPR = []
 

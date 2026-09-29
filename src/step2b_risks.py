@@ -63,10 +63,6 @@ LIGHT = {
  # Окремий ключ, щоб наявний кеш докачав його сам. З межами (bb): ізолятор —
  # велика територія, і центр її точки буває за 70 м від адреси входу.
  'zakryti': '(nwr["amenity"="prison"](area.k););out tags center bb;',
- # Магістралі й проспекти (primary, trunk) — лише для точки перехрестя
- # (завдання 30, ч. 4): у шарі roads їх немає, а «перехрестя просп. Перемоги
- # та вул. …» без них не знайти. У модель ризику вони не йдуть.
- 'dorogy_velyki': '(way["highway"~"^(primary|trunk|primary_link)$"](area.k););out tags geom;',
  # --- занедбаність ---
  'abandon': '(nwr["building"~"^(ruins|abandoned|construction)$"](area.k);'
             'nwr["abandoned"="yes"](area.k);nwr["ruins"="yes"](area.k);'
@@ -250,17 +246,13 @@ def main():
                 json.dump(raw, open(RAW, 'w', encoding='utf-8'), ensure_ascii=False)
             else:
                 print('сирі дані OSM вже є (видаліть data/osm_risks_raw.json щоб перезавантажити)')
-        # Важкі шари докачуємо так само. Кеш, зібраний лише з вулицями й
-        # об'єктами Б1, не мав будинків і пішохідних доріжок — і крок 2c
-        # мовчки не рахував потоків, а голос мешканців не знав, де мешканці.
+        # Важкі шари (вулиці, доріжки, будинки) сам не докачуємо (Андрій,
+        # 30.09): їх перезавантажує лише галочка «Перезавантажити шар ризиків
+        # з OSM». Немає будинків — голос мешканців не рахує ознаку «жодного
+        # житла в 50 м»; немає доріжок — крок 2c не рахує потоків.
         hmiss = [k for k in HEAVY if not raw.get(k)]
         if hmiss:
-            print('докачую важкі шари плитками:', ', '.join(hmiss))
-            for k in hmiss:
-                acc = heavy(k)
-                if acc is not None:
-                    raw[k] = acc
-                    json.dump(raw, open(RAW, 'w', encoding='utf-8'), ensure_ascii=False)
+            print('у кеші немає важких шарів: ' + ', '.join(hmiss) + ' — лише повне перезавантаження')
     else:
         print('1) завантаження з OpenStreetMap (10-25 хв):')
         raw = {}
