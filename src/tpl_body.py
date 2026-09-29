@@ -30,7 +30,7 @@ BODY = r"""<body data-t="svitla"><div id="wrap"><div id="map"></div>
  </div>
  <div>
   <button class="sw" id="frisk" aria-pressed="false"><span>Прогноз ризику</span><span class="tog"></span></button>
-  <div class="chips" id="friskx" hidden><button class="chip" id="fquietc" aria-pressed="false">тихі вулиці</button></div>
+  <div class="chips" id="friskx" hidden></div>
  </div>
  <div class="grp" id="fctx">
   <button class="sw" data-ctx="pop" aria-pressed="false"><span>Населення</span><span class="tog"></span></button>

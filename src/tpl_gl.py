@@ -1178,8 +1178,7 @@ function ctxReady(){
  }
  SIMK.forEach((gi,k)=>{const v=R.lines[RISKOF[gi]];
   map.addSource('k-sim-'+gi,{type:'geojson',data:fc(
-   v.items.map((it,i)=>lineF(it[0],{i,q:0,rk:it[2]})).concat(
-   (v.quiet||[]).map((it,i)=>lineF(it[0],{i,q:1,rk:0}))))});
+   v.items.map((it,i)=>lineF(it[0],{i,q:0,rk:it[2]})))});
  });
  // Спершу світлі підкладки всіх видів, потім самі смуги: підкладка
  // сусіднього виду не лягає поверх смуги (на строкатій підкладці тонка
@@ -1192,9 +1191,7 @@ function ctxReady(){
    // Прозорість за рангом вулиці: верх переліку — насичено, хвіст — блідо.
    paint:{'line-offset':simOff(k),'line-width':zStep(s=>s*.85),
     'line-opacity':['max',.35,['*',.85,['/',['get','rk'],100]]]}});
-  // «Тихі вулиці» — подій не було, умови ті самі: пунктиром на тому самому місці.
-  add({id:'k-simq-'+gi,type:'line',source:'k-sim-'+gi,filter:['==',['get','q'],1],
-   paint:{'line-offset':simOff(k),'line-width':zStep(s=>s*.85),'line-opacity':.6,'line-dasharray':[2,1.5]}});
+  // Окремого шару «тихих вулиць» немає (RISHENNYA 33.2.1): шар один.
  });
  // Значки потоків — на найбільших відрізках, над лініями.
  map.addSource('k-flow-ic',{type:'geojson',data:fc(FLOWS.flatMap(([k])=>
@@ -1211,12 +1208,12 @@ function ctxReady(){
 const rOn=k=>{const x=document.querySelector(`[data-r="${k}"]`); return !!(x&&x.checked)};
 function drawRisks(){
  if(!STYLE_OK||!map.getSource('k-pop')) return;
- const quiet=!!($('#fquiet')||{}).checked, halo=cssv('--halo'), ink=cssv('--ink');
+ const halo=cssv('--halo'), ink=cssv('--ink');
  let dim=false;
  SIMK.forEach(gi=>{const on=rOn(RISKOF[gi]); dim=dim||on;
-  layerVis('k-simh-'+gi,on); layerVis('k-sim-'+gi,on); layerVis('k-simq-'+gi,on&&quiet);
+  layerVis('k-simh-'+gi,on); layerVis('k-sim-'+gi,on);
   map.setPaintProperty('k-simh-'+gi,'line-color',halo);
-  for(const id of ['k-sim-'+gi,'k-simq-'+gi]) map.setPaintProperty(id,'line-color',PALA[gi%PALA.length])});
+  map.setPaintProperty('k-sim-'+gi,'line-color',PALA[gi%PALA.length])});
  const fOn=FLOWS.filter(([k])=>rOn(k)).map(([k])=>k);
  for(const [k] of FLOWS){layerVis('k-flow-'+k,fOn.includes(k)); map.setPaintProperty('k-flow-'+k,'line-color',ink)}
  map.setFilter('k-flow-ic',['in',['get','f'],['literal',fOn]]); layerVis('k-flow-ic',fOn.length>0);
@@ -1409,17 +1406,27 @@ const pctUA=x=>(x<1?(Math.ceil(x*10)/10):Math.ceil(x)).toLocaleString('uk');
 function simPlace(v,i){
  return v.nseg?`серед ${pctUA(100*(i+1)/v.nseg)}% вулиць міста з найсхожішими умовами`
   :`місце ${i+1} із ${v.items.length} вулиць міста з найсхожішими умовами`}
+// Звідки ризик (ZAVDANNYA-30, 3.5): «Тут уже були події: N за 2 роки»
+// і/або «Умови як біля подій: …». Слова «причина» немає: модель міряє, що
+// поруч, а не через що.
+function simWhence(v,it){
+ const n=it[3]|0, fx=(it[4]||[]).map(f=>f[0]), out=[];
+ if(n>0) out.push(`Тут уже були події: ${n} за 2 роки`);
+ if(fx.length) out.push(`Умови як біля подій: ${fx.join(', ')}`);
+ if(!out.length) out.push('Подій тут за 2 роки не було; оцінка — за сукупністю умов довкола');
+ return out}
 function simLine(v,it,quiet,i){
- return v.title+' — '+(quiet?'подій не зафіксовано, але умови ті самі'
-  :simPlace(v,i)+((it[3]|0)>0?`, подій уже було: ${it[3]}`:', подій ще не було'))}
-function simItem(f){const gi=+f.layer.id.split('-').pop(), v=R.lines[RISKOF[gi]], q=!!f.properties.q, i=f.properties.i;
- return {v,q,i,it:(q?v.quiet:v.items)[i]}}
+ if(v.n2) return v.title+' — '+simPlace(v,i);
+ return v.title+' — '+simPlace(v,i)+((it[3]|0)>0?`, подій уже було: ${it[3]}`:', подій ще не було')}
+function simItem(f){const gi=+f.layer.id.split('-').pop(), v=R.lines[RISKOF[gi]], i=f.properties.i;
+ return {v,q:false,i,it:v.items[i]}}
 function simPopup(f,ll){
  const {v,q,i,it}=simItem(f);
  let h=`<div class="rpop"><b>${esc(it[1])}</b><span class="sub">${esc(simLine(v,it,q,i))}</span>`;
+ if(v.n2) h+=simWhence(v,it).map(t=>`<div class="rmeth">${esc(t)}</div>`).join('');
  // Чинники цієї вулиці — головне у вікні, тому стоять першими, до методики.
  h+=factRows(it[4]);
- if(!(it[4]&&it[4].length))
+ if(!v.n2&&!(it[4]&&it[4].length))
   h+=v.env?'<div class="rwhy">На цьому відрізку жодна з ознак не піднята помітно — умови схожі за сукупністю.</div>'
    :'<div class="rwhy">Модель не виділила на цьому відрізку жодної піднятої ознаки — оцінку дала здебільшого історія подій.</div>';
  // звичайним текстом, не класом rwhy: той набраний великими, як заголовок
@@ -1450,7 +1457,7 @@ function simPopup(f,ll){
  POPUP.on('close',()=>clearNear());
  keepClear(POPUP,[ll.lng,ll.lat],0);
 }
-const simIds=()=>SIMK.flatMap(gi=>['k-sim-'+gi,'k-simq-'+gi]).filter(id=>map.getLayer(id)&&map.getLayoutProperty(id,'visibility')==='visible');
+const simIds=()=>SIMK.map(gi=>'k-sim-'+gi).filter(id=>map.getLayer(id)&&map.getLayoutProperty(id,'visibility')==='visible');
 function ctxEvents(){
  // Підказка при наведенні — як sticky tooltip у Leaflet.
  const TIP=new maplibregl.Popup({closeButton:false,closeOnClick:false,className:'k-tip',offset:14,maxWidth:'280px'});

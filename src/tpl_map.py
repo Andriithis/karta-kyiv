@@ -308,7 +308,6 @@ function bindRisk(pl,k,it,quiet){
 }
 function drawRisks(){
  rlayer.clearLayers();
- const quietOn=!!(document.querySelector('#fquiet')||{}).checked;
  const pc=document.querySelector('[data-r="pop"]');
  if(pc&&pc.checked){
   if(!map.hasLayer(poplayer)){
@@ -348,9 +347,7 @@ function drawRisks(){
        interactive:false}).addTo(rlayer);
      bindRisk(L.polyline(it[0],{color:col,weight:w,lineCap:'round',
        opacity:Math.max(.35,.85*it[2]/100)}),k,it,false).addTo(rlayer);});
-   if(quietOn) (v.quiet||[]).forEach(it=>{
-     bindRisk(L.polyline(it[0],{color:col,weight:2,opacity:.5,dashArray:'7,5'}),
-       k,it,true).addTo(rlayer);});
+   // окремого переліку «тихих вулиць» більше немає (RISHENNYA 33.2.1)
   } else {
    const mxf=Math.max(...v.items.map(x=>x[2]))||1;
    v.items.forEach(it=>

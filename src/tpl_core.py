@@ -34,7 +34,7 @@ Object.keys(R.lines||{}).forEach(k=>{const v=R.lines[k];
  if(k.startsWith('risk_')&&(v.kind==='theme'||v.nodata)&&RISKOF[v.theme|0]===undefined)
   RISKOF[v.theme|0]=k});
 $('#fasub').insertAdjacentHTML('beforeend',Object.keys(RISKOF).map(gi=>
- `<input type="checkbox" data-r="${RISKOF[gi]}">`).join('')+'<input type="checkbox" id="fquiet">');
+ `<input type="checkbox" data-r="${RISKOF[gi]}">`).join(''));
 // Короткі назви видів з макета. Видів шість (розд. 18, виконано 27.09):
 // «Середовище» розійшлося в Порядок і Майно. Ключ — повна назва з M.groups,
 // щоб не залежати від порядку.
@@ -75,10 +75,8 @@ function syncRisk(){
 }
 $('#frisk').onclick=()=>{RISK_ON=!RISK_ON; swSet($('#frisk'),RISK_ON);
  $('#friskx').hidden=!RISK_ON; syncRisk()};
-// «Тихі вулиці» — інший погляд на ті самі шари ризику, тож їх видно лише
-// тоді, коли прогноз увімкнено.
-$('#fquietc').onclick=()=>{const q=$('#fquiet'); q.checked=!q.checked;
- swSet($('#fquietc'),q.checked); drawRisks()};
+// Перемикача «тихі вулиці» більше немає: шар ризику один (RISHENNYA
+// 33.2.1), тиха вулиця з високою оцінкою — у тому самому переліку.
 // ---- КОНТЕКСТ ----
 // Потоки — один перемикач на всі чотири: розділяються вони на самій карті.
 const CTX={pop:['pop'],flows:['flow_school','flow_transit','flow_shop','flow_all']};

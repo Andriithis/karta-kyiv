@@ -28,28 +28,31 @@ N_LAMBDA = 24
 N_FOLDS = 5
 
 
-def _fit_enet(X, y, off, lam, l1, b=None, b0=None, iters=400, tol=1e-6):
+def _fit_enet(X, y, off, lam, l1, b=None, b0=None, iters=400, tol=1e-6, pw=None):
     """Пуассон з offset і штрафом lam*(l1*|b| + (1-l1)/2*b²) — FISTA з
-    пошуком кроку. X уже стандартизований; вільний член не штрафується."""
+    пошуком кроку. X уже стандартизований; вільний член не штрафується.
+    pw — вага штрафу кожної змінної: 0 — змінна не штрафується (історія
+    подій у моделі «разом» є завжди, ZAVDANNYA-30, 3.3)."""
     n, p = X.shape
+    pw = np.ones(p) if pw is None else pw
     b = np.zeros(p) if b is None else b.copy()
     b0 = math.log(max(y.sum(), 1e-9) / np.exp(off).sum()) if b0 is None else b0
 
     def loss(bb, bb0):
         eta = np.clip(X @ bb + bb0 + off, -30, 30)
-        return (np.exp(eta) - y * eta).mean() + lam * (1 - l1) / 2 * (bb @ bb)
+        return (np.exp(eta) - y * eta).mean() + lam * (1 - l1) / 2 * ((pw * bb) @ bb)
 
     zb, zb0, t, step = b.copy(), b0, 1.0, 1.0
     f_old = None
     for _ in range(iters):
         eta = np.clip(X @ zb + zb0 + off, -30, 30)
         mu = np.exp(eta)
-        g = X.T @ (mu - y) / n + lam * (1 - l1) * zb
+        g = X.T @ (mu - y) / n + lam * (1 - l1) * pw * zb
         g0 = (mu - y).mean()
-        fz = (mu - y * eta).mean() + lam * (1 - l1) / 2 * (zb @ zb)
+        fz = (mu - y * eta).mean() + lam * (1 - l1) / 2 * ((pw * zb) @ zb)
         while True:
             nb = zb - step * g
-            nb = np.sign(nb) * np.maximum(np.abs(nb) - step * lam * l1, 0)
+            nb = np.sign(nb) * np.maximum(np.abs(nb) - step * lam * l1 * pw, 0)
             nb0 = zb0 - step * g0
             d, d0 = nb - zb, nb0 - zb0
             if loss(nb, nb0) <= fz + g @ d + g0 * d0 + (d @ d + d0 * d0) / (2 * step) + 1e-12:
@@ -60,7 +63,7 @@ def _fit_enet(X, y, off, lam, l1, b=None, b0=None, iters=400, tol=1e-6):
         zb = nb + (t - 1) / t2 * (nb - b)
         zb0 = nb0 + (t - 1) / t2 * (nb0 - b0)
         b, b0, t = nb, nb0, t2
-        f = loss(b, b0) + lam * l1 * np.abs(b).sum()
+        f = loss(b, b0) + lam * l1 * np.abs(pw * b).sum()
         if f_old is not None and abs(f_old - f) < tol * max(1.0, abs(f)):
             break
         f_old = f
@@ -211,7 +214,140 @@ def predict(sel, X, expo):
 
 
 def hit_rate(score, actual, pct=0.10):
-    """частка подій наступного періоду на верхніх pct відрізків"""
+    """частка подій наступного періоду на верхніх pct відрізків — стара
+    міра, «як рахувалося» до 30.09: верхні 10% ВІДРІЗКІВ за оцінкою, а не за
+    щільністю. Довгий відрізок має більшу оцінку просто довжиною, тож цей
+    PAI завищувався (аудит 4, розд. 2.3). Лишається для порівняння у звіті."""
     k = max(1, int(len(score) * pct))
     top = np.argsort(-score, kind='stable')[:k]
     return float(actual[top].sum() / max(actual.sum(), 1))
+
+
+def top_dovzhyna(dens, length, pct=0.10):
+    """індекси відрізків з найвищою щільністю, доки їхня довжина не сягне
+    pct усієї довжини"""
+    o = np.argsort(-dens, kind='stable')
+    c = np.cumsum(length[o])
+    k = int(np.searchsorted(c, pct * length.sum())) + 1
+    return o[:k]
+
+
+def pai_dovzhyna(dens, actual, length, pct=0.10):
+    """PAI на довжину (ZAVDANNYA-30, 3.4): частка подій перевірки на
+    відрізках з найвищою щільністю (оцінка ÷ довжина), що разом займають pct
+    довжини вулиць, ÷ їхня частка довжини. Повертає (PAI, частка подій)."""
+    top = top_dovzhyna(dens, length, pct)
+    hit = float(actual[top].sum() / max(actual.sum(), 1))
+    share = float(length[top].sum() / length.sum())
+    return hit / share, hit
+
+
+# ---------------------------------------------------------------- стійкість
+# Відбір стійкості (Meinshausen, Bühlmann 2010) замість покрокового за BIC
+# (ZAVDANNYA-30, 3.3; аудит 4): покроковий відбір на одній вибірці давав
+# різні чинники від року до року — ~50% спільних вулиць між навчанням на
+# 2024 і на 2025. Тут чинник лишається, лише якщо elastic net обирає його в
+# ≥70% прогонів на випадковій половині відрізків.
+import os as _os
+N_STAB = int(_os.environ.get('N_STAB', '100'))     # менше — лише для перевірки коду
+STAB_POROG = 0.7
+N_LAM_STAB = 16
+
+
+def lam_bloky(Z, y, off, pw, folds, log=print):
+    """λ elastic net — перехресною перевіркою БЛОКАМИ ЗА РАЙОНАМИ: відрізки
+    одного району або всі в навчанні, або всі в перевірці. Випадкові частини
+    підглядали б у сусідні відрізки тієї ж вулиці, і λ виходив би замалим."""
+    n = len(y)
+    g = (Z.T @ (y - y.sum() / np.exp(off).sum() * np.exp(off))) / n
+    g = np.where(pw > 0, g, 0)
+    lmax = float(np.abs(g).max() / L1_RATIO) or 1e-3
+    lams = lmax * np.logspace(0, -2.5, N_LAM_STAB)
+    cv = np.zeros(len(lams))
+    for f in np.unique(folds):
+        tr, te = folds != f, folds == f
+        if te.sum() == 0 or tr.sum() == 0: continue
+        b = b0 = None
+        for i, lam in enumerate(lams):
+            b, b0 = _fit_enet(Z[tr], y[tr], off[tr], lam, L1_RATIO, b, b0, iters=250, pw=pw)
+            mu = np.exp(np.clip(Z[te] @ b + b0 + off[te], -30, 30))
+            cv[i] += _dev(y[te], mu)
+    best = int(np.argmin(cv))
+    return lams, best
+
+
+def stijkist(X, y, expo, typ, H=None, folds=None, runs=None, seed=30, log=print):
+    """Відбір стійкості. X — кандидати середовища, H — стовпчик історії (не
+    штрафується, є в кожній моделі) або None для моделі «лише середовище».
+    Повертає dict(cols — обрані змінні X, chastka — {змінна: частка
+    прогонів}, typy — {тип: частка прогонів, де обрано будь-який його радіус
+    чи форму}, lam)."""
+    runs = runs or N_STAB
+    A = X if H is None else np.column_stack([H, X])
+    k0 = 0 if H is None else 1
+    mean, sd = A.mean(0), A.std(0)
+    sd[sd == 0] = 1
+    Z = (A - mean) / sd
+    off = np.log(expo)
+    pw = np.r_[np.zeros(k0), np.ones(X.shape[1])]
+    folds = np.zeros(len(y), dtype=int) if folds is None else folds
+    lams, best = lam_bloky(Z, y, off, pw, folds, log=log)
+    b = b0 = None
+    for lam in lams[:best + 1]:               # теплий старт по шляху, як у glmnet
+        b, b0 = _fit_enet(Z, y, off, lam, L1_RATIO, b, b0, pw=pw)
+    rng = np.random.default_rng(seed)
+    n = len(y)
+    R = np.zeros((runs, X.shape[1]), dtype=bool)
+    for r in range(runs):
+        ix = rng.choice(n, n // 2, replace=False)
+        br, _ = _fit_enet(Z[ix], y[ix], off[ix], lams[best], L1_RATIO, b, b0, iters=300, pw=pw)
+        R[r] = np.abs(br[k0:]) > 1e-8
+    chast = R.mean(0)
+    by = {}
+    for j, t in enumerate(typ):
+        by.setdefault(t if t else ('_', j), []).append(j)
+    cols, typy = [], {}
+    for t, js in by.items():
+        f = float(R[:, js].any(1).mean())
+        if t[0] != '_': typy[t] = f
+        if f >= STAB_POROG:
+            # радіус і форма — ті, що обиралися найчастіше
+            cols.append(max(js, key=lambda j: (R[:, j].sum(), -j)))
+    cols.sort()
+    log(f'      стійкість: λ {lams[best]:.2e} ({best + 1}/{len(lams)}, блоки за районами), '
+        f'{runs} прогонів на половині відрізків; лишилось {len(cols)} (поріг {STAB_POROG:.0%})')
+    return dict(cols=cols, chastka={j: float(chast[j]) for j in range(X.shape[1]) if chast[j] > 0},
+                typy=typy, lam=float(lams[best]))
+
+
+def nb_fit(A, y, expo):
+    """Остаточна модель — негативна біноміальна з довжиною як експозицією
+    (ZAVDANNYA-30, 3.3). A — стовпчики без вільного члена. Розсіяння α —
+    дискретною NB statsmodels; не зійшлося — Пуассон. Повертає (модель
+    GLM, 'NB'|'P')."""
+    import statsmodels.api as sm
+    Aa = np.column_stack([np.ones(len(y))] + ([A] if A.shape[1] else []))
+    alpha = None
+    try:
+        # statsmodels сам вмикає свої попередження про збіжність — глушимо
+        # тут: α з такої підгонки однаково перевіряється нижче
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            r = sm.NegativeBinomial(y, Aa, offset=np.log(expo)).fit(disp=0, maxiter=300)
+        a = float(r.params[-1])
+        if np.isfinite(a) and a > 1e-4: alpha = a
+    except Exception:
+        pass
+    fam = sm.families.NegativeBinomial(alpha=alpha) if alpha else sm.families.Poisson()
+    try:
+        g = sm.GLM(y, Aa, family=fam, offset=np.log(expo)).fit(maxiter=200)
+        if np.all(np.isfinite(g.params)): return g, ('NB' if alpha else 'P')
+    except Exception:
+        pass
+    return sm.GLM(y, Aa, family=sm.families.Poisson(), offset=np.log(expo)).fit(maxiter=200), 'P'
+
+
+def nb_predict(fit, A, expo):
+    """очікувана кількість подій на відрізку (з довжиною)"""
+    Aa = np.column_stack([np.ones(len(expo))] + ([A] if A.shape[1] else []))
+    return np.exp(np.clip(Aa @ fit.params, -30, 30)) * expo
