@@ -7,7 +7,7 @@
 | Що | Файли |
 |---|---|
 | Стан і перелік робіт до 25.09 | `STAN.md`, `STAN-CHATU.md`, `ZAVDANNYA.md` |
-| Виконані завдання | `ZAVDANNYA-DYZAIN.md`, `ZAVDANNYA-KOLIR.md`, `ZAVDANNYA-MAPLIBRE.md`, `ZAVDANNYA-PANEL.md`, `ZAVDANNYA-ADRESY.md`, `ZAVDANNYA-TEKSTY.md` |
+| Виконані завдання | `ZAVDANNYA-KROK9.md`, `ZAVDANNYA-DYZAIN.md`, `ZAVDANNYA-KOLIR.md`, `ZAVDANNYA-MAPLIBRE.md`, `ZAVDANNYA-PANEL.md`, `ZAVDANNYA-ADRESY.md`, `ZAVDANNYA-TEKSTY.md` |
 | Виконані плани | `PLAN-TEKSTY.md`, `PLAN-ZVITY.md` |
 | Аудити, знахідки яких закрито | `AUDYT-2-VYGLIAD.md`, `AUDYT-3-ZRUCHNIST.md`, `POMYLKA-ADRES.md` |
 | Звіти виконавців | `ZVIT-TEKSTY-1..3.md`, `ZVIT-SUT.md`, `ZVIT-GPT.md`, `ZVIT-GPT-SUT.md` |
@@ -19,6 +19,9 @@
 `PERERAHUVATY`, `ROZVIDKA-TEKSTIV`, `ZNIMOK`) — усе це тепер робить GitHub
 Actions; разові діагностики адрес `src/diag_addr*.py`, `src/diag_case.py`,
 `src/diag_fabula.py`; `src/sut.py` (суть фабули відкочено 24.09);
-`src/export_snapshot.py` (знімок бази пише сам `step1_download.py`).
+`src/export_snapshot.py` (знімок бази пише сам `step1_download.py`);
+`src/step6_base.py`, `step6_intro.py`, `step6_research.py`, `step6_state.py`,
+`step6_theme.py` — генератори старих документів, замінені `step6_zvity.py`
+(збірку перевірено: карта й чотири звіти збираються без змін).
 Лишилися `3-MAP.bat`, `PODYVYTYSYA.bat`, `PEREVIRKA.bat` — ними перевіряють
 карту локально (CLAUDE.md).

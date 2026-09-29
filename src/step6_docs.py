@@ -8,7 +8,7 @@ step6_zvity.py):
 Старі адреси лишаються переадресаціями з тими самими якорями й параметрами:
   doslidzhennya.html (з ?st= і #t-…) -> skhozhi-umovy.html;
   analiz.html, rezyume.html          -> stan-mista.html.
-Старі модулі step6_research/step6_state/step6_intro більше не збираються.
+Старі модулі step6_base/intro/research/state/theme видалено 29.09.2026 (аудит 4).
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
