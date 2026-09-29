@@ -114,6 +114,14 @@ def main():
     roads, foot = VR.vulytsi(raw), raw.get('foot', [])
     houses = centers(raw.get('houses', []))
     print(f'дороги {len(roads):,}   пішохідні {len(foot):,}   будинки {len(houses):,}')
+    if not houses or not foot:
+        # Без будинків маршрутів немає зовсім; без доріжок потоки йшли б лише
+        # проїжджою частиною. network.json лишається з минулого запуску, а
+        # крок 4 бере з нього потік лінії OSM, на якій лежить відрізок.
+        print('УВАГА: у кеші OSM немає ' + ' і '.join(n for n, v in (('будинків (houses)', houses),
+                                                                    ('пішохідних доріжок (foot)', foot)) if not v)
+              + ' — потоки не перераховуються; повне перезавантаження OSM — лише галочкою')
+        sys.exit(1)
     print(f'межа ходьби: {MAX_M} м')
 
     # --- ВАГА БУДИНКІВ ЗА НАСЕЛЕННЯМ ---

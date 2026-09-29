@@ -403,8 +403,13 @@ class BezMeshk:
                        and t.get('station') != 'subway' and 'subway' not in (t.get('subway') or ''))
         s.tc = pts(raw.get('b1_mall'))
         s.park = pts(raw.get('park'))
-        log('   місця без мешканців: будинки OSM ' + ('є' if s.houses else 'НЕМАЄ в кеші — ознака «жодного будинку в 50 м» не рахується')
-            + ', парки ' + ('є' if s.park else 'немає'))
+        if s.houses is None:
+            log('   УВАГА: житлових будинків OSM (houses) у кеші немає — «не вимірюється» ставиться лише за '
+                'типом місця (вокзал, ТЦ, площа, парк), ознака «жодного житла в 50 м» не рахується; '
+                'повне перезавантаження OSM — лише галочкою')
+        else:
+            log(f'   місця без мешканців: житлових будинків OSM {len(s.houses.p):,}')
+        if s.park is None: log('   парків OSM (park) у кеші немає — ознака «парк» не рахується')
 
     def __call__(s, pts, adresy):
         near = lambda g: g is not None and any(g.near(p[0], p[1], R_MESHK) for p in pts)
