@@ -55,6 +55,11 @@ LIGHT = {
  # Хороброго, 9» різні рядки, а будівля одна.
  'ustanovy':'(nwr["amenity"~"^(police|courthouse|prosecutor)$"](area.k);'
             'nwr["government"~"^(police|prosecutor)$"](area.k););out tags center;',
+ # Закриті установи — СІЗО, колонії (завдання 30, ч. 0 і 2): події всередині
+ # ізолятора не стосуються публічного простору, адреса виключається завжди.
+ # Окремий ключ, щоб наявний кеш докачав його сам. З межами (bb): ізолятор —
+ # велика територія, і центр її точки буває за 70 м від адреси входу.
+ 'zakryti': '(nwr["amenity"="prison"](area.k););out tags center bb;',
  # --- занедбаність ---
  'abandon': '(nwr["building"~"^(ruins|abandoned|construction)$"](area.k);'
             'nwr["abandoned"="yes"](area.k);nwr["ruins"="yes"](area.k);'
@@ -181,6 +186,8 @@ def center(el):
     if c: return c['lat'], c['lon']
     g = el.get('geometry')
     if g: return sum(p['lat'] for p in g)/len(g), sum(p['lon'] for p in g)/len(g)
+    b = el.get('bounds')      # «out bb» дає межі замість центру
+    if b: return (b['minlat'] + b['maxlat']) / 2, (b['minlon'] + b['maxlon']) / 2
     return None
 
 # --- геометрія ---
@@ -310,12 +317,17 @@ def main():
 
     # --- установи: окремий маленький файл для виключення з карти ---
     ust = []
-    for el in raw.get('ustanovy', []):
-        c = center(el)
-        if c:
-            t = el.get('tags', {})
-            ust.append([round(c[0], 5), round(c[1], 5),
-                        (t.get('name') or t.get('amenity') or '')[:60]])
+    for k in ('ustanovy', 'zakryti'):
+        for el in raw.get(k, []):
+            c = center(el)
+            if c:
+                t = el.get('tags', {})
+                # 4-те поле: 1 — закрита установа (виключається завжди, map_excl);
+                # 5-те — межі її території [мін. шир., мін. довг., макс. шир., макс. довг.]
+                b = el.get('bounds') or {}
+                ust.append([round(c[0], 5), round(c[1], 5),
+                            (t.get('name') or t.get('amenity') or '')[:60], 1 if k == 'zakryti' else 0]
+                           + ([[b['minlat'], b['minlon'], b['maxlat'], b['maxlon']]] if b else []))
     if ust:
         up = os.path.join(DATA, 'ustanovy.json')
         json.dump(ust, open(up, 'w', encoding='utf-8'),

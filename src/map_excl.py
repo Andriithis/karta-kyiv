@@ -69,12 +69,13 @@ _MLAT = 111320.0                    # метрів в одному градус�
 _MLON = 111320.0 * 0.6374           # ...і довготи на широті Києва
 
 def load_ustanovy():
-    """координати установ; порожньо, якщо крок 2b ще не збирав їх"""
+    """(lat, lon, закрита?) установ; порожньо, якщо крок 2b ще не збирав їх.
+    Закрита установа — СІЗО, колонія (amenity=prison): четверте поле 1."""
     if not os.path.exists(USTANOVY):
         return []
     try:
-        return [(float(x[0]), float(x[1])) for x in
-                json.load(open(USTANOVY, encoding='utf-8'))]
+        return [(float(x[0]), float(x[1]), bool(x[3]) if len(x) > 3 else False,
+                 x[4] if len(x) > 4 else None) for x in json.load(open(USTANOVY, encoding='utf-8'))]
     except Exception as e:
         print('   не прочитав data/ustanovy.json:', e)
         return []
@@ -156,47 +157,84 @@ def detect_institutional(rows, manual, potv=None):
         if r[2] in MARKERS:
             prof_mark[(r[5] + ', ' + r[6]) if r[6] else r[5]] += 1
 
-    # координати кожної адреси — беремо з будь-якої її події, вони спільні
+    # координати кожної адреси — з події на точному будинку, якщо така є:
+    # та сама адреса буває й «центром вулиці» (будинку не знайшлося в
+    # старому геокодуванні), і перша-ліпша подія ставила СІЗО на
+    # Дегтярівській у центр вулиці за 1,5 км від ізолятора
     addr_pt = {}
     for r in rows:
-        if not r[5]: continue
+        if not r[5] or not (r[7] and r[8]): continue
         a = (r[5] + ', ' + r[6]) if r[6] else r[5]
-        if a not in addr_pt and r[7] and r[8]: addr_pt[a] = (r[7], r[8])
+        if a not in addr_pt or (r[9] != 'street' and addr_pt[a][2] == 'street'):
+            addr_pt[a] = (r[7], r[8], r[9])
+    addr_pt = {a: (la, lo) for a, (la, lo, _p) in addr_pt.items()}
 
     ust = load_ustanovy()
-    on_ust = set()
+    on_ust, on_zakr = set(), set()
     if ust:
         # сітка на 0,001° (~110 м), щоб не міряти кожну адресу до кожної установи
         cell = collections.defaultdict(list)
-        for la, lo in ust:
-            cell[(int(la * 1000), int(lo * 1000))].append((la, lo))
+        zakr = [(la, lo, bb) for la, lo, zk, bb in ust if zk]
+        for la, lo, zk, _bb in ust:
+            if not zk: cell[(int(la * 1000), int(lo * 1000))].append((la, lo))
         for a, (la, lo) in addr_pt.items():
             ci, cj = int(la * 1000), int(lo * 1000)
-            near = False
             for di in (-1, 0, 1):
                 for dj in (-1, 0, 1):
                     for ula, ulo in cell.get((ci + di, cj + dj), ()):
                         if ((la - ula) * _MLAT) ** 2 + ((lo - ulo) * _MLON) ** 2 <= NEAR_M ** 2:
-                            near = True; break
-                    if near: break
-                if near: break
-            if near: on_ust.add(a)
-        print(f'   установ з OpenStreetMap: {len(ust)}; адрес на них: {len(on_ust)}')
+                            on_ust.add(a)
+            # Закрита установа — адреса в межах її території (прямокутник меж
+            # з OSM) або в NEAR_M від точки, якщо меж немає. Не до центру:
+            # центр ізолятора на Дегтярівській за 71 м від адреси входу. І не
+            # «60 м від меж»: прямокутник уже більший за сам ізолятор, і з
+            # запасом вилітали сусідні будинки Бердичівської й Лобановського.
+            for zla, zlo, bb in zakr:
+                if bb:
+                    y0, x0, y1, x1 = bb
+                    if y0 <= la <= y1 and x0 <= lo <= x1: on_zakr.add(a)
+                elif ((la - zla) * _MLAT) ** 2 + ((lo - zlo) * _MLON) ** 2 <= NEAR_M ** 2:
+                    on_zakr.add(a)
+        print(f'   установ з OpenStreetMap: {len(ust)} (закритих {sum(1 for x in ust if x[2])}); '
+              f'адрес на них: {len(on_ust | on_zakr)}')
     else:
         print('   data/ustanovy.json немає — установи ловляться лише за числами '
               '(запустіть крок 2b (src/step2b_risks.py), щоб додати будівлі з OpenStreetMap)')
 
+    # ---- ОДНА АДРЕСА — ОДИН КЛЮЧ (завдання 29, п. 3) ----
+    # «вул. С. Хороброго, 9» і «вул. Святослава Хороброго, 9» — один відділ
+    # поліції. Рахуємо й вирішуємо за ключем адреси (adr_kliuch), а
+    # виключаємо всі написання ключа — без ручного списку.
+    import adr_kliuch
+    KL = adr_kliuch.Kliuch()
+    parts = {}
+    for r in rows:
+        if r[5]:
+            a = (r[5] + ', ' + r[6]) if r[6] else r[5]
+            if a not in parts: parts[a] = (r[5], r[6])
+    gkey = {a: (KL(s, h) or a.lower()) for a, (s, h) in parts.items()}
+    grp = collections.defaultdict(list)
+    for a, k in gkey.items(): grp[k].append(a)
+
     keep = load_keep()
     auto = {}
-    for a, n in per_addr.items():
-        pv = n_potv[a] / n_ev[a] if n_ev[a] else 0.0
-        mark = prof_mark[a] / n if n else 0
+    for k, adrs in grp.items():
+        n = sum(per_addr[a] for a in adrs)
+        ne = sum(n_ev[a] for a in adrs)
+        pv = sum(n_potv[a] for a in adrs) / ne if ne else 0.0
+        mark = sum(prof_mark[a] for a in adrs) / n if n else 0
         nepotv = pv < POTV_MIN
-        why = ('будівля' if a in on_ust and nepotv
-               else 'не підтверджена' if (n_ev[a] >= POTV_N and nepotv)
+        # Закрита установа — завжди, незалежно від підтвердження: адресу
+        # СІЗО в описі названо, бо подія сталася всередині ізолятора, а
+        # публічного простору це не стосується
+        why = ('закрита установа' if any(a in on_zakr for a in adrs)
+               else 'будівля' if any(a in on_ust for a in adrs) and nepotv
+               else 'не підтверджена' if (ne >= POTV_N and nepotv)
                else ('склад' if (n >= PROC_MIN and mark >= PROC_SHARE) else None))
-        if why and a.lower() not in keep:
-            auto[a] = (n, round(100 * pv), why, round(100 * mark))
+        if not why: continue
+        for a in adrs:
+            if a.lower() not in keep:
+                auto[a] = (per_addr[a], round(100 * pv), why, round(100 * mark))
     # звіт: топ-100 адрес із профілем статей, щоб можна було оцінити очима
     prof = collections.defaultdict(collections.Counter)
     for r in rows:
@@ -220,7 +258,8 @@ def detect_institutional(rows, manual, potv=None):
     if auto or not os.path.exists(EXCL):
         with open(EXCL, 'w', encoding='utf-8') as f:
             f.write('# Адреси, виключені з карти як установи (суди, відділи поліції).\n')
-            f.write('# Визначено автоматично за трьома ознаками:\n')
+            f.write('# Визначено автоматично за чотирма ознаками (усі написання однієї адреси — разом):\n')
+            f.write(f'#   закрита установа — СІЗО, колонія за OpenStreetMap у {NEAR_M} м, завжди;\n')
             f.write('#   будівля — адреса стоїть на відділі поліції, суді чи прокуратурі\n')
             f.write(f'#             за даними OpenStreetMap (радіус {NEAR_M} м), і в описі\n')
             f.write(f'#             подій її названо менш ніж у {POTV_MIN*100:g}%;\n')
@@ -234,7 +273,8 @@ def detect_institutional(rows, manual, potv=None):
             f.write('# вийде: якщо адреса справжня, впишіть її у vykluchennya_ne.txt.\n')
             f.write('# Один рядок = одна адреса.\n\n')
             for a, (n, pc, why, mk) in sorted(auto.items(), key=lambda x: -x[1][0]):
-                tail = ({'будівля': f'{n} подій, будівля установи за OpenStreetMap, в описі {pc}%',
+                tail = ({'закрита установа': f'{n} подій, закрита установа (СІЗО, колонія) за OpenStreetMap',
+                         'будівля': f'{n} подій, будівля установи за OpenStreetMap, в описі {pc}%',
                          'не підтверджена': f'{n} подій, вулицю названо в описі {pc}%'}
                         .get(why, f'{n} подій, {mk}% ст.130 і ст.122-4'))
                 f.write(f'{a}   # {tail}\n')
