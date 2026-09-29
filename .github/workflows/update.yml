@@ -111,7 +111,10 @@ jobs:
           fi
 
       - name: Крок 3 — збірка карти
-        run: python src/step3_map.py
+        run: |
+          # numpy — нульовий рівень Р8 у відборі проблем (problems.py)
+          pip install --quiet numpy
+          python src/step3_map.py
 
       - name: Крок 5 — сайт з районами (викладач/слухач)
         run: python src/step5_site.py
@@ -120,7 +123,7 @@ jobs:
         run: |
           git config user.name  "karta-bot"
           git config user.email "actions@github.com"
-          for f in data/events.csv.gz data/formy.csv.gz data/formy_dovidnyk.csv data/risks.json data/network.json data/vykluchennya.txt data/borders.json data/engine_report.json data/risk.json data/radiusy.json data/problems_report.json ZVIT-KROK7.md; do
+          for f in data/events.csv.gz data/formy.csv.gz data/formy_dovidnyk.csv data/ustanovy.json data/network.json data/vykluchennya.txt data/borders.json data/engine_report.json data/risk.json data/radiusy.json data/problems_report.json ZVIT-KROK7.md; do
             [ -f "$f" ] && git add -f "$f" && echo "додано $f"
           done
           [ -d data/posylannya ] && git add -f data/posylannya && echo "додано data/posylannya"
@@ -132,6 +135,12 @@ jobs:
             git pull --rebase --autostash origin main || true
             git push
           fi
+
+      # Самоперевірка збірки (ZAVDANNYA-30, ч. 5): компіляція, розмітка, JS,
+      # установи не на карті, шари ризику з PAI на довжину ≥ 3. Упала — сайт
+      # не публікується: наступні кроки не запускаються.
+      - name: Перевірка збірки
+        run: python src/check_build.py
 
       # Версія одна для всіх: поділу на викладацьку й слухацьку більше немає.
       # Перелік проблем відкритий — перший крок ланцюга саме «обрати проблему

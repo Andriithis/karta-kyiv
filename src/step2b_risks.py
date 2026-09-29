@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
-"""Крок 2b. Шар РИЗИКІВ з OpenStreetMap: об'єкти + відсутності."""
+"""Крок 2b. Кеш OpenStreetMap: вулиці, об'єкти середовища, установи.
+
+Лише «що є»: шари «чого немає» (тротуари, освітлення, переходи) прибрано —
+RISHENNYA 27 визнав їх хибними, а data/risks.json з ними більше ніхто не
+читав (ZAVDANNYA-30, ч. 5)."""
 import os, sys, json, time, math, urllib.request, urllib.parse, urllib.error, collections
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
 RAW  = os.path.join(DATA, 'osm_risks_raw.json')
-OUT  = os.path.join(DATA, 'risks.json')
 
 # overpass.osm.ch виключено: стабільно повертає порожню відповідь замість помилки
 ENDPOINTS = ['https://overpass-api.de/api/interpreter',
@@ -194,32 +197,6 @@ def center(el):
     if b: return (b['minlat'] + b['maxlat']) / 2, (b['minlon'] + b['maxlon']) / 2
     return None
 
-# --- геометрія ---
-def m_per_deg(lat): return 111320.0, 111320.0 * math.cos(math.radians(lat))
-
-def seg_len_m(geom):
-    t = 0
-    for a, b in zip(geom, geom[1:]):
-        my, mx = m_per_deg((a['lat']+b['lat'])/2)
-        t += math.hypot((a['lat']-b['lat'])*my, (a['lon']-b['lon'])*mx)
-    return t
-
-class Grid:
-    """проста сітка для пошуку найближчих точок"""
-    def __init__(self, pts, cell=0.0025):
-        self.c = cell; self.g = collections.defaultdict(list)
-        for la, lo in pts: self.g[(int(la/cell), int(lo/cell))].append((la, lo))
-    def near(self, la, lo, rad_m):
-        my, mx = m_per_deg(la)
-        r = max(rad_m/my, rad_m/mx)
-        n = int(r/self.c)+1
-        ci, cj = int(la/self.c), int(lo/self.c)
-        for i in range(ci-n, ci+n+1):
-            for j in range(cj-n, cj+n+1):
-                for pa, po in self.g.get((i, j), ()):
-                    if math.hypot((pa-la)*my, (po-lo)*mx) <= rad_m: return True
-        return False
-
 def heavy(k):
     """важкий шар плитками; None — якщо хоч одна плитка не завантажилась"""
     s_, w_, n_, e_ = BBOX
@@ -298,26 +275,10 @@ def main():
         json.dump(raw, open(RAW, 'w', encoding='utf-8'), ensure_ascii=False)
 
     print('\n2) обробка')
-    out = {'points': {}, 'lines': {}}
-
-    NAMES = {'alcohol':'Алкоголь: бари, клуби, магазини','bar_on':'Заклади на місці (бари, клуби)',
-             'bar_off':'Алкоголь на винос','shop24':'Магазини біля дому і фастфуд',
-             'finance':'Ломбарди, обмінники, банкомати','gambling':'Гральні заклади',
-             'food':'Кафе і ресторани','fuel':'Автозаправки','parking':'Паркінги',
-             'metro':'Метро і вокзали','busstop':'Зупинки транспорту','market':'Ринки і ТЦ',
-             'transit':'Метро, вокзали, ринки','school':'Школи і садки','univer':'ВНЗ',
-             'health':'Лікарні й аптеки','abandon':'Покинуті та недобудовані',
-             'bench':'Лавки й урни','play':'Дитячі майданчики','cctv':'Камери спостереження',
-             'trees':'Дерева','park':'Парки і сквери','grass':'Трав\'яні ділянки'}
-    for k, title in NAMES.items():
-        pts = []
-        for el in raw.get(k, []):
-            c = center(el)
-            if c:
-                t = el.get('tags', {})
-                pts.append([round(c[0],5), round(c[1],5), (t.get('name') or t.get('amenity') or t.get('shop') or '')[:40]])
-        out['points'][k] = {'title': title, 'items': pts}
-        print(f'   {title}: {len(pts):,}')
+    # data/risks.json (точки й шари «чого немає») більше не пишеться: його читав
+    # лише danger_schools() на шарі OSM «немає тротуару», який RISHENNYA 27
+    # визнав хибним (ZAVDANNYA-30, ч. 5). Сирі дані лишаються в кеші для
+    # кроків 2c, 2e і 4.
 
     # --- установи: окремий маленький файл для виключення з карти ---
     ust = []
@@ -338,74 +299,4 @@ def main():
                   ensure_ascii=False, separators=(',', ':'))
         print(f'   установи (поліція, суди, прокуратура): {len(ust):,} -> data/ustanovy.json')
 
-    # --- відсутності ---
-    houses = [c for c in (center(e) for e in raw.get('houses', [])) if c]
-    hg = Grid(houses)
-    print(f'   житлових будинків: {len(houses):,}')
-
-    fpts = []
-    for w in raw.get('foot', []):
-        for p in w.get('geometry', []) or []: fpts.append((p['lat'], p['lon']))
-    fg = Grid(fpts); print(f'   точок пішохідних шляхів: {len(fpts):,}')
-
-    lamps = [(e['lat'], e['lon']) for e in raw.get('lamps', []) if 'lat' in e]
-    lg = Grid(lamps); print(f'   ліхтарів: {len(lamps):,}')
-    if not lamps:
-        print('   УВАГА: ліхтарі не завантажились — шар "без освітлення" буде майже порожній')
-
-    cross = [(e['lat'], e['lon']) for e in raw.get('cross', []) if 'lat' in e]
-    cg = Grid(cross); print(f'   переходів: {len(cross):,}')
-
-    no_walk, maybe_walk, no_light, no_cross = [], [], [], []
-    NOSW = {'no', 'none'}
-    for w in raw.get('roads', []):
-        g = w.get('geometry')
-        if not g or len(g) < 2: continue
-        t = w.get('tags', {})
-        L = seg_len_m(g)
-        if L < 80: continue
-        # три контрольні точки замість однієї середини
-        pts = [g[0], g[len(g)//2], g[-1]]
-        if not any(hg.near(p['lat'], p['lon'], 130) for p in pts): continue
-        line = [[round(p['lat'],5), round(p['lon'],5)] for p in g[::max(1, len(g)//12)]]
-        nm = (t.get('name') or '')[:44]
-        hw = t.get('highway', '')
-
-        # --- 1. ЯВНО вказано, що тротуару немає ---
-        sw_vals = {str(t.get(k, '')).lower() for k in
-                   ('sidewalk', 'sidewalk:both', 'sidewalk:left', 'sidewalk:right')} - {''}
-        explicit_no = (bool(sw_vals) and sw_vals <= NOSW) or str(t.get('foot', '')).lower() in NOSW
-        has_sw = bool(sw_vals - NOSW)
-        if explicit_no:
-            no_walk.append([line, nm, int(L)])
-            continue
-
-        # --- 2. Тег відсутній -> лише припущення, і лише для дрібних вулиць ---
-        # магістралі й проспекти виключаємо: там тротуар практично завжди є
-        small = hw in ('residential', 'living_street', 'unclassified', 'service')
-        bigname = any(x in nm.lower() for x in ('проспект', 'бульвар', 'набережна', 'шосе', 'площа'))
-        if (not has_sw and not sw_vals and small and not bigname
-                and not any(fg.near(p['lat'], p['lon'], 35) for p in pts)):
-            maybe_walk.append([line, nm, int(L)])
-
-        # --- освітлення: тільки якщо ліхтарі взагалі є в базі ---
-        if str(t.get('lit', '')).lower() in NOSW:
-            no_light.append([line, nm, int(L)])
-        elif lamps and not t.get('lit') and not any(lg.near(p['lat'], p['lon'], 70) for p in pts):
-            no_light.append([line, nm, int(L)])
-
-        # --- розриви між переходами ---
-        if L > 300 and not any(cg.near(p['lat'], p['lon'], 170) for p in pts):
-            no_cross.append([line, nm, int(L)])
-
-    # шари відсутностей прибрано: дані OSM про ВІДСУТНІСТЬ ненадійні,
-    # двигун стабільно давав по них нуль
-    out['lines'] = {}
-    for k, v in out['lines'].items(): print(f"   {v['title']}: {len(v['items']):,}")
-
-    json.dump(out, open(OUT, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',',':'))
-    print(f"\n=== ГОТОВО === data/risks.json ({os.path.getsize(OUT)/1048576:.1f} МБ)")
-    print('тепер запустіть 3-MAP')
-
-if __name__ == '__main__':
-    main()
+    print('\n=== ГОТОВО === кеш OSM і data/ustanovy.json')

@@ -206,6 +206,20 @@ def main(save=False):
     if missed or leaked:
         return 1
 
+    print('4а. Шари ризику: PAI на довжину ≥ 3')
+    # Шар, гірший за втричі від навмання, на карту не йде (ZAVDANNYA-30, ч. 5).
+    # risk.json до перенавчання моделі «разом» PAI на довжину не має — тоді
+    # попередження, а не помилка: інакше тиждень без перенавчання не
+    # публікувався б зовсім.
+    rp = os.path.join(DATA, 'risk.json')
+    if os.path.exists(rp):
+        lay = json.load(open(rp, encoding='utf-8')).get('layers', {})
+        bez = [k for k, v in lay.items() if 'pai' not in v]
+        slabki = [f"{k} ({v['pai']})" for k, v in lay.items() if 'pai' in v and v['pai'] < 3]
+        for s in slabki: print(f'   ПОМИЛКА шар з PAI на довжину < 3: {s}')
+        if bez: print(f'   попередження: {len(bez)} шарів старого формату без PAI на довжину — перенавчіть модель')
+        if slabki: return 1
+        if not bez: print(f'   усі {len(lay)} шарів — PAI ≥ 3')
     print('5. Розмітка і JavaScript')
     if problems:
         for p in problems:
