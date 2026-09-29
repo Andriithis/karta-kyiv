@@ -163,6 +163,12 @@ def fetch(name, body, label='', allow_empty=False, retry_empty=False):
         except Exception as e:
             print(f'збій {type(e).__name__}: {str(e)[:70]}')
             time.sleep(15)
+    if retry_empty and zeros:
+        # Решта спроб — 504, а кожна успішна відповідь казала 0: плитка
+        # порожня (кут рамки за межами Києва). Без цього важкий шар будинків
+        # не докачувався ніколи — сервери чергували 0 і 504.
+        print(f'   {name}{label}: {zeros} відповідей «0», решта — збої; плитка порожня')
+        return []
     print(f'   !!! {name}{label} НЕ ЗАВАНТАЖЕНО')
     return None
 

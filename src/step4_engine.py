@@ -185,33 +185,14 @@ def podii(log):
     return out, drop
 
 
-def main():
+def oznaky(raw, log=print):
+    """Відрізки між перехрестями й змінні-кандидати середовища — одні для
+    моделі (main) і для дослідження 1551 (doslid_1551): кандидати мають
+    бути ті самі, інакше порівняння «що додає 1551» нечесне."""
     import numpy as np
     from sklearn.neighbors import BallTree
-    t0 = time.time()
-    log = lambda *a: print(*a, flush=True)
-
-    for f in (DB, RAW):
-        if not os.path.exists(f): log(f'немає {f}'); sys.exit(1)
-    raw = json.load(open(RAW, encoding='utf-8'))
     import step2b_risks as S2B
-    pusti = S2B.raiony_bez(raw.get('roads', []))
-    if pusti:
-        # Кеш OSM без частини міста (порожня плитка Overpass) — модель
-        # тихо навчилася б без центру. Краще не вчитися зовсім.
-        log('у osm_risks_raw.json немає вулиць у районах: ' + ', '.join(pusti)
-            + ' — перезавантажте шар (галочка «Перезавантажити шар ризиків з OSM»)')
-        sys.exit(1)
-    miss = [k for k in S2B.B1 if not raw.get(k)]
-    if miss:
-        # Порожній тип тихо випав би з моделі, і звіт виглядав би так, ніби
-        # модель його відкинула. Краще зупинитися.
-        log('у osm_risks_raw.json немає типів Б1: ' + ', '.join(miss) + ' — спершу крок 2b')
-        sys.exit(1)
-    # стара модель — для порівняння в звіті, до того як файли перезапишуться
-    OLD = json.load(open(OUT, encoding='utf-8')) if os.path.exists(OUT) else {}
-    OLDR = json.load(open(RISK, encoding='utf-8')) if os.path.exists(RISK) else {}
-
+    byid = {}
     # ---- 1. відрізки вулиць між перехрестями (ZAVDANNYA-30, 1.1) ----
     import vidrizky as VR
     SEG = VR.build(raw.get('roads', []))
@@ -310,6 +291,57 @@ def main():
     # ЕКСПОЗИЦІЯ: довжина вулиці. Модель вчиться на щільності подій на метр,
     # оцінка множиться назад на довжину.
     expo = np.maximum(slen, 20.0); expo = expo / expo.mean()
+
+    return dict(SEG=SEG, segs=segs, RD=RD, names=names, sids=sids, mid=mid, slen=slen, blocks_m=blocks_m, n_ways=n_ways, X=X, cname=cname, ctyp=ctyp, cform=cform, crad=crad, COUNT=COUNT, RAWV=RAWV, expo=expo, byid=byid, VR=VR)
+
+
+def main():
+    import numpy as np
+    from sklearn.neighbors import BallTree
+    t0 = time.time()
+    log = lambda *a: print(*a, flush=True)
+
+    for f in (DB, RAW):
+        if not os.path.exists(f): log(f'немає {f}'); sys.exit(1)
+    raw = json.load(open(RAW, encoding='utf-8'))
+    import step2b_risks as S2B
+    pusti = S2B.raiony_bez(raw.get('roads', []))
+    if pusti:
+        # Кеш OSM без частини міста (порожня плитка Overpass) — модель
+        # тихо навчилася б без центру. Краще не вчитися зовсім.
+        log('у osm_risks_raw.json немає вулиць у районах: ' + ', '.join(pusti)
+            + ' — перезавантажте шар (галочка «Перезавантажити шар ризиків з OSM»)')
+        sys.exit(1)
+    miss = [k for k in S2B.B1 if not raw.get(k)]
+    if miss:
+        # Порожній тип тихо випав би з моделі, і звіт виглядав би так, ніби
+        # модель його відкинула. Краще зупинитися.
+        log('у osm_risks_raw.json немає типів Б1: ' + ', '.join(miss) + ' — спершу крок 2b')
+        sys.exit(1)
+    # стара модель — для порівняння в звіті, до того як файли перезапишуться
+    OLD = json.load(open(OUT, encoding='utf-8')) if os.path.exists(OUT) else {}
+    OLDR = json.load(open(RISK, encoding='utf-8')) if os.path.exists(RISK) else {}
+
+    F = oznaky(raw, log)
+    SEG = F['SEG']
+    segs = F['segs']
+    RD = F['RD']
+    names = F['names']
+    sids = F['sids']
+    mid = F['mid']
+    slen = F['slen']
+    blocks_m = F['blocks_m']
+    n_ways = F['n_ways']
+    X = F['X']
+    cname = F['cname']
+    ctyp = F['ctyp']
+    cform = F['cform']
+    crad = F['crad']
+    COUNT = F['COUNT']
+    RAWV = F['RAWV']
+    expo = F['expo']
+    byid = F['byid']
+    VR = F['VR']
 
     # ---- 3. події -> відрізки ----
     log('2) події...')
@@ -600,7 +632,7 @@ def main():
               open(RADF, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     log(f'   -> data/radiusy.json: ' + ', '.join(f'{k} {v}' for k, v in shcho.items() if v))
 
-    danger = pishokhidnyi(ev_seg, sids, names, segs, byid if 'byid' in locals() else {}, ROKY3, log)
+    danger = pishokhidnyi(ev_seg, sids, names, segs, byid, ROKY3, log)
     versiia = dict(дата=time.strftime('%Y-%m-%d'), остання_подія=last,
                    вікно='історія 2024 → події 2025; перевірка: історія 2025 → події 2026',
                    вікно_карти=[MAPW[0], MAPW[-1]], відрізків=n, ліній_OSM=n_ways,
