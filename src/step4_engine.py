@@ -162,7 +162,7 @@ def podii(log):
         kl = (TKD.get(r[0]) or {}).get('klass')
         if kl != 'B': drop[(th, 'не клас B')] += 1; continue
         if r[9] != 'house': drop[(th, 'не точний будинок')] += 1; continue
-        out.append((th, r[2], evy.get(r[0], ''), r[7], r[8], M.is_proactive(r[2])))
+        out.append((th, r[2], evy.get(r[0], ''), r[7], r[8], M.is_proactive(r[2]), r[5] or ''))
     log(f'   подій на карті: {len(V["rows"]):,}; клас B на точному будинку: {len(out):,}')
     return out, drop
 
@@ -194,23 +194,22 @@ def main():
     OLD = json.load(open(OUT, encoding='utf-8')) if os.path.exists(OUT) else {}
     OLDR = json.load(open(RISK, encoding='utf-8')) if os.path.exists(RISK) else {}
 
-    # ---- 1. відрізки вулиць ----
-    segs, names, RD = {}, {}, {}
-    for w in raw.get('roads', []):
-        g = w.get('geometry')
-        if not g or len(g) < 2: continue
-        pts = [(p['lat'], p['lon']) for p in g]
-        if seg_len(pts) < 40: continue
-        segs[w['id']] = pts
-        RD[w['id']] = w.get('tags', {}) or {}
-        names[w['id']] = RD[w['id']].get('name', '')
+    # ---- 1. відрізки вулиць між перехрестями (ZAVDANNYA-30, 1.1) ----
+    import vidrizky as VR
+    SEG = VR.build(raw.get('roads', []))
+    segs = {s: v['pts'] for s, v in SEG.items()}
+    RD = {s: v['tags'] for s, v in SEG.items()}
+    names = {s: v['name'] for s, v in SEG.items()}
     sids = sorted(segs)
     mid = np.array([segs[s][len(segs[s])//2] for s in sids])
-    slen = np.array([seg_len(segs[s]) for s in sids])
+    slen = np.array([SEG[s]['len'] for s in sids])
     # Довжина кварталу (RTMDx радить середню для міста): щоб у звіті було
     # видно, скільки кварталів дає кожен радіус-кандидат.
     blocks_m = int(round(float(slen.mean())))
-    log(f'відрізків вулиць: {len(sids):,}; середня довжина (квартал) {blocks_m} м')
+    n_ways = sum(1 for w in raw.get('roads', []) if len(w.get('geometry') or []) > 1
+                 and seg_len([(p['lat'], p['lon']) for p in w['geometry']]) >= 40)
+    log(f'відрізків вулиць: {len(sids):,} між перехрестями (ліній OSM ≥40 м — {n_ways:,}); '
+        f'середня довжина (квартал) {blocks_m} м')
 
     # ---- 2. ознаки-кандидати ----
     log('1) ознаки середовища...')
@@ -255,6 +254,12 @@ def main():
         for it in json.load(open(npth, encoding='utf-8')).get('items', []):
             if len(it) > 6 and it[6] is not None:
                 byid[it[6]] = (it[2], it[3], it[4], it[5])
+        # network.json старого формату (до 30.09) рахував потік на лінію OSM
+        # (id — число). Доки крок 2c не перерахував його на відрізки, відрізок
+        # бере потік своєї лінії: це та сама середня по лінії, що й була.
+        if byid and not any(isinstance(k, str) for k in byid):
+            log('   network.json — по лініях OSM (старий формат): відрізок бере потік своєї лінії')
+            byid = {s: byid[SEG[s]['way']] for s in sids if SEG[s]['way'] in byid}
         for j, ua in ((0, 'прохідність'), (1, 'потік_школи'),
                       (2, 'потік_транспорт'), (3, 'потік_торгівля')):
             rv = [byid.get(s, (0, 0, 0, 0))[j] for s in sids]
@@ -272,13 +277,14 @@ def main():
     cont('клас_дороги', [HW.get(RD[s].get('highway', ''), 2) for s in sids])
     cont('смуг', [float(RD[s].get('lanes')) if str(RD[s].get('lanes', '')).isdigit() else 2.0
                   for s in sids])
-    ngp = os.path.join(DATA, 'netgeo.json')
-    if os.path.exists(ngp):
-        NG = json.load(open(ngp, encoding='utf-8'))
-        for fld, ua in (('perm', 'проникність'), ('cross4', 'хрестоподібні'),
-                        ('cross3', 'T_подібні'), ('dead', 'тупик'),
-                        ('sinuo', 'звивистість'), ('inner', 'перехрестя_всередині')):
-            cont(ua, [float(NG.get(str(s), {}).get(fld, 0)) for s in sids])
+    # Будова вулиці — прямо з графа вулиць (vidrizky.budova), а не з
+    # netgeo.json кроку 2c: той крок падає без пішохідної мережі, і тоді
+    # модель тихо лишалася без будови вулиці.
+    NG = VR.budova(SEG, VR.stupeni(raw.get('roads', [])))
+    for fld, ua in (('perm', 'проникність'), ('cross4', 'хрестоподібні'),
+                    ('cross3', 'T_подібні'), ('dead', 'тупик'),
+                    ('sinuo', 'звивистість'), ('inner', 'перехрестя_всередині')):
+        cont(ua, [float(NG.get(s, {}).get(fld, 0)) for s in sids])
     X = np.column_stack(cols)
     med = np.median(X, axis=0)
     log(f'   змінних-кандидатів: {X.shape[1]} ({sum(1 for t in ctyp if t)} — типи × радіуси × форми)')
@@ -290,7 +296,18 @@ def main():
     # ---- 3. події -> відрізки ----
     log('2) події...')
     ev, drop = podii(log)
-    sg = SegGrid(segs)
+    # Прив'язка — до відрізка СВОЄЇ вулиці в SNAP_M, до найближчої точки
+    # лінії (завдання 29, п. 6.2); немає такого — найближчий відрізок. Для
+    # звіту рахуємо, скільки подій стало на іншу лінію OSM, ніж давала стара
+    # прив'язка (найближча вершина будь-якої лінії).
+    PV = VR.Pryviazka(SEG)
+    old_way = {}
+    for w in raw.get('roads', []):
+        g = w.get('geometry')
+        if g and len(g) > 1:
+            pts = [(p['lat'], p['lon']) for p in g]
+            if seg_len(pts) >= 40: old_way[w['id']] = pts
+    sg_old = SegGrid(old_way)
     six = [t for t in L.ORDER if t != 'ДОМ']
     # B1_VYDY=ГП — прогнати лише названі види (перевірка коду на копії даних;
     # перенавчання в Actions рахує всі шість)
@@ -299,14 +316,22 @@ def main():
     idx = {s: i for i, s in enumerate(sids)}
     Y = collections.defaultdict(lambda: np.zeros(len(sids)))   # (вид, рік, заявна?) -> лічильник
     n_snap = collections.Counter(); n_all = collections.Counter(); n_pro = collections.Counter()
+    SNAPST = collections.Counter()
     cache = {}
-    for th, _cat, y, la, lo, pro in ev:
+    for th, _cat, y, la, lo, pro, street in ev:
         n_all[th] += 1; n_pro[th] += pro
-        ck = (round(la, 5), round(lo, 5))
-        s = cache[ck] if ck in cache else cache.setdefault(ck, sg.nearest(la, lo, SNAP_M))
-        if s is None: continue
+        ck = (round(la, 5), round(lo, 5), street)
+        if ck not in cache:
+            s, svoya = PV.znaity(la, lo, SNAP_M, VR.vulytsia(street))
+            o = sg_old.nearest(la, lo, SNAP_M)
+            cache[ck] = (s, svoya, o)
+        s, svoya, o = cache[ck]
+        if s is None: SNAPST['поза вулицями'] += 1; continue
+        SNAPST['своя вулиця' if svoya else 'найближчий відрізок'] += 1
+        if o is None or SEG[s]['way'] != o: SNAPST['інша лінія OSM, ніж раніше'] += 1
         n_snap[th] += 1
         Y[(th, y, pro)][idx[s]] += 1
+    log('   прив\'язка: ' + ', '.join(f'{k} {v:,}' for k, v in SNAPST.most_common()))
 
     def cnt(th, years, only_reported=False):
         v = np.zeros(len(sids))

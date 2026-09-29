@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import labels as L
 import mech as M
 import podii as PD
+import vidrizky as VR
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
@@ -97,6 +98,18 @@ class Pts:
                     q = s.p[k]
                     if math.hypot((q[0] - la) * my, (q[1] - lo) * mx) <= r: out.append(k)
         return out
+
+
+_SEG = {}
+def vidrizky_misto():
+    """відрізки між перехрестями і пошук по них — один раз на запуск:
+    карта кличе run() для кожного району"""
+    if 'seg' not in _SEG:
+        rawp = os.path.join(DATA, 'osm_risks_raw.json')
+        seg = VR.build(json.load(open(rawp, encoding='utf-8')).get('roads', [])) if os.path.exists(rawp) else {}
+        _SEG['seg'] = seg
+        _SEG['pv'] = VR.Pryviazka(seg) if seg else None
+    return _SEG['seg'], _SEG['pv']
 
 
 def kv(d):
@@ -438,14 +451,12 @@ def skhozhi_1551(G, dmap, log, seed=31):
     проти випадкових вулиць — та сама кількість, ті самі райони, N_VYPADK
     разів. Окремо — «тихі вулиці» шару, на які мешканці скаржаться."""
     import numpy as np
-    rk = os.path.join(DATA, 'risk.json'); rawp = os.path.join(DATA, 'osm_risks_raw.json')
-    if G is None or not os.path.exists(rk) or not os.path.exists(rawp): return None
+    rk = os.path.join(DATA, 'risk.json')
+    if G is None or not os.path.exists(rk): return None
     import step4_engine as E4
     layers = json.load(open(rk, encoding='utf-8')).get('layers', {})
-    segs = []
-    for w in json.load(open(rawp, encoding='utf-8')).get('roads', []):
-        g = [(q['lat'], q['lon']) for q in w.get('geometry') or []]
-        if len(g) > 1 and E4.seg_len(g) >= 40: segs.append(g)
+    # пул випадкових — ті самі відрізки між перехрестями, що й у моделі
+    segs = [v['pts'] for v in vidrizky_misto()[0].values()]
     if not segs: return None
     lo = (dt.date.fromisoformat(G['last']) - dt.timedelta(days=365)).isoformat()
     rng = np.random.default_rng(seed)
@@ -631,48 +642,24 @@ def run(V=None, log=print, FACT=None):
 
     # ---- рівень «лінія»: точки не пройшли — відрізок вулиці × механізм ----
     lines = 0
-    rawp = os.path.join(DATA, 'osm_risks_raw.json')
-    if os.path.exists(rawp):
-        import step4_engine as E4
-        raw = json.load(open(rawp, encoding='utf-8'))
-        segs, names = {}, {}
-        for w in raw.get('roads', []):
-            g_ = w.get('geometry')
-            if not g_ or len(g_) < 2: continue
-            pts = [(q['lat'], q['lon']) for q in g_]
-            if E4.seg_len(pts) < 40: continue
-            segs[w['id']] = pts; names[w['id']] = (w.get('tags') or {}).get('name', '')
+    SEG, PV = vidrizky_misto()
+    if SEG:
+        segs = {s: v['pts'] for s, v in SEG.items()}
+        names = {s: v['name'] for s, v in SEG.items()}
         if segs:
-            # Лінія — відрізок СВОЄЇ вулиці: подія прив'язується лише до
-            # відрізка з тією самою назвою. Без цього події з Хрещатика
-            # «прилипали» до сусіднього відрізка Б. Хмельницького.
-            from step2_geocode import skey
-            def slova(s):
-                return {w for w in skey(s or '').split() if len(w) >= 4}
-            sl = {sid: slova(nm) for sid, nm in names.items()}
-            by_name = collections.defaultdict(dict)
-            for sid in segs:
-                for w in sl[sid]: by_name[w][sid] = segs[sid]
-            grids = {}
+            # Лінія — відрізок СВОЄЇ вулиці між перехрестями (ZAVDANNYA-30,
+            # ч. 1): подія прив'язується лише до відрізка з тією самою назвою.
+            # Без цього події з Хрещатика «прилипали» до сусіднього відрізка
+            # Б. Хмельницького. Відрізка своєї вулиці немає — події в лінію
+            # не йдуть (на відміну від моделі, де є запасний найближчий).
             by = collections.defaultdict(list)
             cache = {}
             for i, e in enumerate(ev):
                 if id(e) in is_problem_ev or e['klas'] != 'B': continue
-                ws = slova(e['adr'].split(',')[0])
-                key = (e['p'], frozenset(ws))
+                key = (e['p'], e['adr'].split(',')[0])
                 if key not in cache:
-                    best = None
-                    for w in ws:
-                        if w not in by_name: continue
-                        g = grids.get(w) or grids.setdefault(w, E4.SegGrid(by_name[w]))
-                        s = g.nearest(*e['p'], SNAP_M)
-                        # одна назва має повністю входити в іншу: «Ав. Антонова»
-                        # в «Авіаконструктора Антонова» — так, «Північно-Сирецька»
-                        # у «Парково-Сирецьку» — ні
-                        if s is not None and (ws <= sl[s] or sl[s] <= ws):
-                            d = min(dist(e['p'], q) for q in segs[s])
-                            if best is None or d < best[0]: best = (d, s)
-                    cache[key] = best[1] if best else None
+                    s, svoya = PV.znaity(*e['p'], SNAP_M, VR.vulytsia(e['adr']))
+                    cache[key] = s if svoya else None
                 s = cache[key]
                 if s is not None: by[(e['sim'], s)].append((place[i][2], e))
             for (sim, sid), lst in by.items():

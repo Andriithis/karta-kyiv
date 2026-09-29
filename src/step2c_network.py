@@ -256,21 +256,26 @@ def main():
     if not total:
         print('жодного маршруту — перевірте дані'); sys.exit(1)
 
-    print('4) зводжу по вулицях...')
-    # Навантаження вулиці = СЕРЕДНЄ по її власних відрізках, зважене на довжину.
+    print('4) зводжу по відрізках між перехрестями...')
+    # Навантаження відрізка = СЕРЕДНЄ по його власних ребрах, зважене на довжину.
     # Пішохідна доріжка враховується, якщо йде впритул уздовж дороги (коридор),
-    # але кожна вулиця збирає лише свій слід — без запозичення в сусідів.
-    road_nm = {w['id']: (w.get('tags', {}) or {}).get('name', '') for w in roads}
-    road_ids = set(road_nm)
+    # але кожен відрізок збирає лише свій слід — без запозичення в сусідів.
+    # Одиниця — відрізок між перехрестями (ZAVDANNYA-30, 1.1), та сама, що в
+    # моделі ризику: потік лінії OSM через три квартали розмазував би
+    # великий потік одного кварталу на всі три.
+    import vidrizky as VR
+    SEG = VR.build(roads)
+    seg_of = VR.rebra(SEG)
+    road_nm = {sid: s['name'] for sid, s in SEG.items()}
 
-    # 1) слід кожного ребра прив'язуємо до найближчої ДОРОГИ (не далі 35 м)
+    # 1) слід кожного ребра прив'язуємо до найближчого відрізка ДОРОГИ (не далі 35 м)
     CELL = 0.0006
     rgrid = collections.defaultdict(list)
-    for w in roads:
-        g = w.get('geometry') or []
+    for sid, s in SEG.items():
+        g = s['pts']
         for a, b in zip(g, g[1:]):
-            mla, mlo = (a['lat'] + b['lat']) / 2, (a['lon'] + b['lon']) / 2
-            rgrid[(int(mla / CELL), int(mlo / CELL))].append((mla, mlo, w['id']))
+            mla, mlo = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+            rgrid[(int(mla / CELL), int(mlo / CELL))].append((mla, mlo, sid))
 
     def owner(la, lo, rad=35.0):
         my, mx = mdeg(la)
@@ -289,8 +294,8 @@ def main():
         ln  = collections.defaultdict(float)   # сума довжин
         for e, c in load.items():
             if e not in seg: continue
-            wid, nm = seg[e]
-            if wid not in road_ids:
+            wid = seg_of.get(e)
+            if wid is None:
                 (la1, lo1), (la2, lo2) = e
                 mk = (round((la1 + la2) / 2, 5), round((lo1 + lo2) / 2, 5))
                 if mk in own_cache: wid = own_cache[mk]
@@ -308,11 +313,15 @@ def main():
     flow_w = {f: by_way(l) for f, l in per_flow.items()}
 
     geo = {}
-    for w in roads:
-        g = w.get('geometry')
-        if g and w.get('id') in tot_w:
+    for sid, s in SEG.items():
+        g = s['pts']
+        if sid in tot_w:
             st = max(1, len(g)//10)
-            geo[w['id']] = [[round(p['lat'],5), round(p['lon'],5)] for p in g[::st]]
+            # кінцеву точку лишаємо завжди: без неї відрізки між перехрестями
+            # на карті не сходилися б у вузлах
+            geo[sid] = [[round(p[0],5), round(p[1],5)] for p in g[::st]]
+            if geo[sid][-1] != [round(g[-1][0],5), round(g[-1][1],5)]:
+                geo[sid].append([round(g[-1][0],5), round(g[-1][1],5)])
 
     items = []
     for wid, (c, nm) in tot_w.items():
@@ -320,37 +329,20 @@ def main():
             sch = flow_w.get('school', {}).get(wid, [0, ''])[0]
             trn = flow_w.get('transit', {}).get(wid, [0, ''])[0]
             shp = flow_w.get('shop', {}).get(wid, [0, ''])[0]
-            # 7-й елемент — id відрізка OSM. Потрібен кроку 4, щоб брати потік
-            # ПО ВІДРІЗКУ, а не максимум по назві вулиці (див. коментар там).
+            # 7-й елемент — id відрізка між перехрестями («<way>:<n>»,
+            # vidrizky.build). Потрібен кроку 4, щоб брати потік ПО ВІДРІЗКУ,
+            # а не максимум по назві вулиці (див. коментар там).
             items.append([geo[wid], nm, c, sch, trn, shp, wid])
     # ---- ГЕОМЕТРІЯ МЕРЕЖІ: проникність, перехрестя, звивистість ----
     # Johnson & Bowers (2014), "Examining the Relationship Between Road Structure and
     # Burglary Risk Via Quantitative Network Analysis", J. of Quantitative Criminology
     # 30(2). (У попередній редакції коду рік було вказано помилково — 2010.)
     print('5) геометрія мережі...')
-    deg = collections.Counter()
-    for u in adj: deg[u] = len(set(v for v, _ in adj[u]))
-    netgeo = {}
-    for w in roads:
-        g = w.get('geometry')
-        if not g or len(g) < 2: continue
-        pts = [key(p['lat'], p['lon']) for p in g]
-        ends = [pts[0], pts[-1]]
-        # тип кінців: 1 = тупик, 2 = продовження, 3 = T-подібне, 4+ = хрестоподібне
-        dg = [deg.get(e, 1) for e in ends]
-        cross4 = sum(1 for d in dg if d >= 4)
-        cross3 = sum(1 for d in dg if d == 3)
-        dead = sum(1 for d in dg if d <= 1)
-        # проникність: скільки різних напрямків доступно з кінців
-        perm = sum(dg)
-        # звивистість: відношення довжини по осі до прямої
-        L = sum(dist_m(a, b) for a, b in zip(pts, pts[1:]))
-        straight = dist_m(pts[0], pts[-1]) or 1.0
-        sinuo = L / straight
-        # щільність перехресть уздовж відрізка
-        inner = sum(1 for p in pts[1:-1] if deg.get(p, 2) >= 3)
-        netgeo[w['id']] = dict(perm=perm, cross4=cross4, cross3=cross3, dead=dead,
-                               sinuo=round(sinuo, 3), inner=inner, length=round(L))
+    # Будова — по відрізках між перехрестями і з графа самих вулиць
+    # (ZAVDANNYA-30, 1.1): той самий vidrizky.budova, що й у кроці 4, щоб
+    # файл і модель не розходилися. Тип кінців тепер і є тип перехрестя,
+    # яким квартал починається й кінчається.
+    netgeo = VR.budova(SEG, VR.stupeni(roads))
     json.dump(netgeo, open(os.path.join(DATA, 'netgeo.json'), 'w', encoding='utf-8'),
               separators=(',', ':'))
     dd = collections.Counter()

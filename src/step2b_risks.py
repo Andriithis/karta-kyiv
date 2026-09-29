@@ -209,6 +209,28 @@ class Grid:
                     if math.hypot((pa-la)*my, (po-lo)*mx) <= rad_m: return True
         return False
 
+def heavy(k):
+    """важкий шар плитками; None — якщо хоч одна плитка не завантажилась"""
+    s_, w_, n_, e_ = BBOX
+    dla, dlo = (n_ - s_) / TILES, (e_ - w_) / TILES
+    acc, seen = [], set()
+    outmode = 'out tags geom;' if k in ('roads', 'foot') else 'out center;'
+    for i in range(TILES):
+        for j in range(TILES):
+            bb = f'{s_+i*dla:.4f},{w_+j*dlo:.4f},{s_+(i+1)*dla:.4f},{w_+(j+1)*dlo:.4f}'
+            els = fetch(k, f'({HEAVY[k]}(area.k)({bb}););{outmode}',
+                        f'{i*TILES+j+1}/{TILES*TILES}', allow_empty=True, retry_empty=True)
+            if els is None:
+                print(f'   !!! {k} {i*TILES+j+1}/{TILES*TILES} не завантажено')
+                return None
+            for el in els:
+                if el.get('id') not in seen:
+                    seen.add(el.get('id')); acc.append(el)
+            time.sleep(5)
+    print(f'   {k}: разом {len(acc):,}')
+    return acc
+
+
 def main():
     os.makedirs(DATA, exist_ok=True)
     if os.path.exists(RAW):
@@ -234,6 +256,17 @@ def main():
                 json.dump(raw, open(RAW, 'w', encoding='utf-8'), ensure_ascii=False)
             else:
                 print('сирі дані OSM вже є (видаліть data/osm_risks_raw.json щоб перезавантажити)')
+        # Важкі шари докачуємо так само. Кеш, зібраний лише з вулицями й
+        # об'єктами Б1, не мав будинків і пішохідних доріжок — і крок 2c
+        # мовчки не рахував потоків, а голос мешканців не знав, де мешканці.
+        hmiss = [k for k in HEAVY if not raw.get(k)]
+        if hmiss:
+            print('докачую важкі шари плитками:', ', '.join(hmiss))
+            for k in hmiss:
+                acc = heavy(k)
+                if acc is not None:
+                    raw[k] = acc
+                    json.dump(raw, open(RAW, 'w', encoding='utf-8'), ensure_ascii=False)
     else:
         print('1) завантаження з OpenStreetMap (10-25 хв):')
         raw = {}
@@ -241,26 +274,12 @@ def main():
             r_ = fetch(k, q)
             raw[k] = r_ if r_ is not None else []
             time.sleep(5)
-        s_, w_, n_, e_ = BBOX
-        dla, dlo = (n_ - s_) / TILES, (e_ - w_) / TILES
-        for k, sel in HEAVY.items():
-            acc, seen = [], set()
-            outmode = 'out tags geom;' if k in ('roads', 'foot') else 'out center;'
-            for i in range(TILES):
-                for j in range(TILES):
-                    bb = f'{s_+i*dla:.4f},{w_+j*dlo:.4f},{s_+(i+1)*dla:.4f},{w_+(j+1)*dlo:.4f}'
-                    els = fetch(k, f'({sel}(area.k)({bb}););{outmode}',
-                                f'{i*TILES+j+1}/{TILES*TILES}', allow_empty=True, retry_empty=True)
-                    if els is None:
-                        # плитку не завантажено — не зберігаємо діряві дані в кеш
-                        print(f'   !!! {k} {i*TILES+j+1}/{TILES*TILES} не завантажено — зупиняюсь')
-                        sys.exit(1)
-                    for el in els:
-                        if el.get('id') not in seen:
-                            seen.add(el.get('id')); acc.append(el)
-                    time.sleep(5)
+        for k in HEAVY:
+            acc = heavy(k)
+            if acc is None:
+                # плитку не завантажено — не зберігаємо діряві дані в кеш
+                print('   зупиняюсь'); sys.exit(1)
             raw[k] = acc
-            print(f'   {k}: разом {len(acc):,}')
         pusti = raiony_bez(raw.get('roads', []))
         if pusti:
             print('   !!! немає жодної вулиці в районах: ' + ', '.join(pusti) + ' — кеш не зберігаю')
