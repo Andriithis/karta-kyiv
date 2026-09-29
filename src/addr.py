@@ -376,6 +376,44 @@ def mentions(text, floor):
     return sorted(out, key=lambda x: x[0])
 
 
+# ---- ПЕРЕХРЕСТЯ У ФАБУЛІ (RISHENNYA 33.2.3; завдання 30, ч. 4) ----
+# «на перехресті вул. X та вул. Y», «на розі вулиць X і Y», «на перехресті
+# Харківського шосе та вул. Ревуцького». Тип може стояти й після назви
+# (варіант PB), тож після кожної назви дивимося, чи не йде тип.
+ROZI = re.compile(r"(?:перехрест\w*|\bна\s+розі|\bрозі)\s+(?:(?:вулиць|вулиці|вул\.)\s*)?", re.I | re.U)
+_TYPE_AFTER = re.compile(r"\s*(шосе|проспект\w*|бульвар\w*|вулиц\w*|площ\w*|набережн\w*|провулк\w*|"
+                         r"провулок|узвоз\w*|узвіз|алеї|алея)\b", re.I | re.U)
+
+
+def _nazva(text, pos):
+    """(вулиця з типом, кінець) з позиції pos — тип перед назвою чи після"""
+    t = re.match(rf"({TYPE_RE})\s*", text[pos:])
+    a0 = pos + (t.end() if t else 0)
+    n, e = street_name(text, a0)
+    if not n: return None, pos
+    ta = None if t else _TYPE_AFTER.match(text, e)
+    if ta:
+        tp, nm = pb_street(pb_type(ta.group(1)), n)
+        return (f'{tp} {nm}' if nm and nm.lower() not in STOP and len(nm) >= 3 else None), ta.end()
+    return _street(t.group(1) if t else 'вул.', n), e
+
+
+def perekhrestia(text):
+    """Перше перехрестя двох названих вулиць у тексті: (вулиця 1, вулиця 2)
+    або None. Лише коли обидві назви розібрано: одна назва — це вулиця, не
+    перехрестя."""
+    text = fix_typos(text or '')
+    for m in ROZI.finditer(text):
+        s1, e1 = _nazva(text, m.end())
+        if not s1: continue
+        j = CROSS_JOIN.match(text, e1)
+        if not j: continue
+        # тип другої вулиці CROSS_JOIN уже з'їв — _nazva має побачити його сам
+        s2, _e2 = _nazva(text, j.start(1) if j.group(1) else j.end())
+        if s2 and s2 != s1: return s1, s2
+    return None
+
+
 def sentence_end(text, pos, cap=400):
     """Кінець речення, в якому стоїть pos."""
     lim = min(len(text), pos + cap)

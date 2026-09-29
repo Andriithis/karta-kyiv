@@ -60,6 +60,10 @@ LIGHT = {
  # Окремий ключ, щоб наявний кеш докачав його сам. З межами (bb): ізолятор —
  # велика територія, і центр її точки буває за 70 м від адреси входу.
  'zakryti': '(nwr["amenity"="prison"](area.k););out tags center bb;',
+ # Магістралі й проспекти (primary, trunk) — лише для точки перехрестя
+ # (завдання 30, ч. 4): у шарі roads їх немає, а «перехрестя просп. Перемоги
+ # та вул. …» без них не знайти. У модель ризику вони не йдуть.
+ 'dorogy_velyki': '(way["highway"~"^(primary|trunk|primary_link)$"](area.k););out tags geom;',
  # --- занедбаність ---
  'abandon': '(nwr["building"~"^(ruins|abandoned|construction)$"](area.k);'
             'nwr["abandoned"="yes"](area.k);nwr["ruins"="yes"](area.k);'

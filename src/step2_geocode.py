@@ -91,37 +91,8 @@ def spread_km(pts):
     la = [p[0] for p in pts]; lo = [p[1] for p in pts]
     return max(max(la)-min(la)*1, 0)*111 + (max(lo)-min(lo))*71
 
-CROSS_M = 150      # далі за це найближчі будинки двох вулиць — вулиці не перетинаються
-
-def _street_key(s, streets, tail):
-    ns = norm(s)
-    if ns in streets: return ns
-    cand = tail.get(ns.split()[-1], []) if ns else []
-    return cand[0] if len(cand) == 1 else None
-
-def cross_point(s1, s2, streets, centro, tail):
-    """Перехрестя двох вулиць. Перехресть в адресній базі немає — лише
-    будинки, тож беремо середину між найближчими будинками двох вулиць.
-    Не знайшли — центр першої вулиці з рівнем 'street': точку перехрестя
-    не вигадуємо."""
-    k1, k2 = _street_key(s1, streets, tail), _street_key(s2, streets, tail)
-    if k1 and k2 and k1 != k2:
-        cell = collections.defaultdict(list)
-        for la, lo in streets[k2]:
-            cell[(int(la * 500), int(lo * 500))].append((la, lo))
-        best = None
-        for la, lo in streets[k1]:
-            ci, cj = int(la * 500), int(lo * 500)
-            for di in (-1, 0, 1):
-                for dj in (-1, 0, 1):
-                    for la2, lo2 in cell.get((ci + di, cj + dj), ()):
-                        d = ((la - la2) * 111320) ** 2 + ((lo - lo2) * 71000) ** 2
-                        if best is None or d < best[0]:
-                            best = (d, (la + la2) / 2, (lo + lo2) / 2)
-        if best and best[0] <= CROSS_M ** 2:
-            return (round(best[1], 6), round(best[2], 6), 'cross')
-    k = k1 if k1 in centro else None
-    return (*centro[k], 'street') if k else None
+# Перехрестя — src/perekhrestia.py (завдання 30, ч. 4): точка перетину ліній
+# OSM, а не середина між найближчими будинками двох вулиць, як було тут.
 
 # ---- БУДИНКИ, ЯКИХ НЕМАЄ В OSM (PLAN-TEKSTY.md, 4б) ----
 # Лише для подій класу B — чужу адресу розстановка зробила б точнішою, ніж
@@ -306,9 +277,21 @@ def main():
     conn = sqlite3.connect(DB)
     conn.execute('DROP TABLE IF EXISTS geo')
     # source — звідки точка: osm | kmda. Щоб точки геокодера можна було
-    # зняти одним фільтром, не перераховуючи решти.
-    conn.execute('CREATE TABLE geo(doc_id TEXT PRIMARY KEY, lat REAL, lon REAL, precision TEXT, source TEXT)')
+    # зняти одним фільтром, не перераховуючи решти. adresa — підпис точки,
+    # якщо він не з адреси документа: «перехрестя вул. X і вул. Y».
+    conn.execute('CREATE TABLE geo(doc_id TEXT PRIMARY KEY, lat REAL, lon REAL, precision TEXT, source TEXT, '
+                 'adresa TEXT)')
     conn.commit()
+    # Перехрестя — точкою перетину ліній OSM (завдання 30, ч. 4): вулиці
+    # кроку 2b і магістралі, яких серед них немає
+    import perekhrestia as PX
+    rawp = os.path.join(DATA, 'osm_risks_raw.json')
+    rw = json.load(open(rawp, encoding='utf-8')) if os.path.exists(rawp) else {}
+    PXI = PX.Perekhrestia(rw.get('roads'), rw.get('dorogy_velyki'))
+    if not rw.get('dorogy_velyki'):
+        print('   магістралей (dorogy_velyki) у кеші OSM немає — перехрестя з проспектами не знайдуться')
+    del rw
+    PXST = collections.Counter(); PXPR = []
 
     # Адреса з проходу по текстах (крок 6, data/teksty) перемагає адресу
     # кроку 1: її взято чинним addr.extract() з повного тексту. Документ,
@@ -326,8 +309,16 @@ def main():
             street, house = r['street'] or None, r['house'] or None
         h2 = A.unglue(house, (r['addr_sentence'] or r['fab']) if r else fab.get(doc, ''))
         n_unglued += h2 != house
-        if street:
-            todo.append((doc, street, h2, r['klass'] if r else ''))
+        # Подія без номера будинку — шукаємо у фабулі перехрестя двох вулиць
+        # (завдання 30, 4.1): «на перехресті вул. X та вул. Y», «на розі …»
+        px = None
+        if not h2:
+            if street and ' / ' in street: px = tuple(street.split(' / ', 1))
+            elif r is not None: px = A.perekhrestia(r['fab'] or '')
+        if px:
+            todo.append((doc, street or px[0], None, r['klass'] if r else '', px))
+        elif street:
+            todo.append((doc, street, h2, r['klass'] if r else '', None))
     print(f'   номер без прилиплого прийменника («1/5У» -> «1/5»): {n_unglued:,}')
     print(f'2) зіставлення заново: {len(todo):,} записів (з проходу по текстах: {len(tk):,})')
 
@@ -344,12 +335,23 @@ def main():
 
     kmda = kmda_index(streets) if KMDA_ON else {}
     out = []; st = collections.Counter()
-    for doc, street, house, klass in todo:
+    for doc, street, house, klass, px in todo:
         ns, h = norm(street), nh(house)
-        hit = None; src = 'osm'
-        if ' / ' in street:
-            # перехрестя (addr.extract, level='cross'): «вул. X / вул. Y»
-            hit = cross_point(*street.split(' / ', 1), streets, centro, tail)
+        hit = None; src = 'osm'; adr = None
+        if px:
+            # перехрестя: точка перетину ліній OSM або нічого (4.2)
+            PXST['знайдено у фабулі'] += 1
+            la, lo, why = PXI.tochka(*px)
+            if la is not None:
+                hit = (la, lo, 'cross'); adr = PX.adresa(*px)
+                PXST['поставлено'] += 1
+                PXPR.append((doc, px, la, lo))
+            else:
+                PXST['відкинуто: ' + why] += 1
+                # як і раніше: центр вулиці, на карту не йде
+                if ns in centro: hit = (*centro[ns], 'street')
+        elif ' / ' in street:
+            hit = None
         elif h and (ns, h) in exact:
             hit = (*exact[(ns, h)], 'house')
         # Точний будинок КМДА — раніше за «20Б біля 20»: це сам будинок, а
@@ -366,14 +368,19 @@ def main():
                 k = cand[0]
                 hit = (*(exact.get((k, h)) or centro[k]), 'house' if (k, h) in exact else 'street')
         if hit:
-            out.append((doc, hit[0], hit[1], hit[2], src))
+            out.append((doc, hit[0], hit[1], hit[2], src, adr))
             st[hit[2] + (' (КМДА)' if src == 'kmda' else '')] += 1
         else: st['не знайдено'] += 1
-    conn.executemany('INSERT OR REPLACE INTO geo VALUES(?,?,?,?,?)', out)
+    conn.executemany('INSERT OR REPLACE INTO geo VALUES(?,?,?,?,?,?)', out)
     conn.commit()
     print('\n=== ГОТОВО ===')
     for k, v in st.most_common():
         print(f'  {k:14} {v:8,}  {100*v/max(len(todo),1):5.1f}%')
+    print('перехрестя: ' + ', '.join(f'{k} {v:,}' for k, v in PXST.most_common()))
+    # 20 випадкових для ручної перевірки (адреса з фабули -> точка)
+    import random
+    for doc, px, la, lo in random.Random(30).sample(PXPR, min(20, len(PXPR))):
+        print(f'   {doc}  {PX.adresa(*px)}  ->  {la}, {lo}')
 
 if __name__ == '__main__':
     main()

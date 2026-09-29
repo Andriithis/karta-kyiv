@@ -257,7 +257,8 @@ def podii(V, log):
     out, n_ots = [], 0
     for r in V['rows']:
         th = PD.theme(r[2])
-        if th not in KAT or r[9] != 'house': continue
+        # точне місце — будинок або перехрестя (RISHENNYA 33.2.3)
+        if th not in KAT or r[9] not in ('house', 'cross'): continue
         tk = TKD.get(r[0]) or {}
         ed = S3.ev_date(tk, r[3])
         try:

@@ -67,7 +67,8 @@ INITIAL = re.compile(r'\b([А-ЯІЇЄҐ])\.([А-ЯІЇЄҐ])')
 # будинку 20, 4 — між сусідніми номерами. Усе, крім 0, — справжнє місце;
 # 3 і 4 вікно адреси позначає як приблизні.
 PREC = {'house': 1, 'cross': 2, 'base': 3, 'interp': 4}
-POINT = {'house', 'base', 'interp'}
+# перехрестя — точне місце нарівні з будинком (RISHENNYA 33.2.3)
+POINT = {'house', 'base', 'interp', 'cross'}
 # Лише точний будинок (RISHENNYA, розд. 24; рішення Андрія 26.09 — вмикаємо,
 # не чекаючи бази): «20Б -> 20» (base) і «між сусідами» (interp) — не місце
 # події, а здогад про нього, тож на карту й у лічильники не йдуть. Одна
@@ -135,12 +136,25 @@ def vybir(c, print=print):
                 extra[r['doc_id']] = (r['cause_num'], docref(r['doc_url']))
     print(f'посилань на рішення: {len(extra):,} (з data/posylannya — {n_links:,})')
 
+    has_adr = any(x[1] == 'adresa' for x in c.execute('PRAGMA table_info(geo)'))
     rows = list(c.execute("""SELECT e.doc_id,e.court,e.cat,e.date,e.tm,e.street,e.house,
-        g.lat,g.lon,g.precision FROM events e JOIN geo g ON g.doc_id=e.doc_id"""))
+        g.lat,g.lon,g.precision""" + (',g.adresa' if has_adr else ",''") +
+        """ FROM events e JOIN geo g ON g.doc_id=e.doc_id"""))
     # Прохід по текстах (крок 6): адреса документа — з проходу, так само як
     # у step2_geocode, інакше підпис точки й перевірка на установи брали б
     # стару адресу при новій точці.
     TKD = TK.load_done()
+    # Перехрестя (завдання 30, ч. 4): підпис — «перехрестя вул. X і вул. Y»,
+    # і клас B, бо перехрестя названо в описі самої події (4.3)
+    n_cross = 0
+    for r in rows:
+        if r[9] == 'cross' and r[10] and r[0] in TKD:
+            TKD[r[0]] = dict(TKD[r[0]], street=r[10], house='', klass='B')
+            n_cross += 1
+    # документ без проходу по текстах — підпис перехрестя прямо в рядок
+    rows = [(r[:5] + (r[10], None) + r[7:10]) if (r[9] == 'cross' and r[10] and r[0] not in TKD)
+            else r[:10] for r in rows]
+    if n_cross: print(f'подій на перехрестях (точка перетину вулиць OSM): {n_cross:,}')
     rows = [(r[:5] + (TKD[r[0]]['street'], TKD[r[0]]['house'] or None) + r[7:]) if r[0] in TKD else r
             for r in rows]
     print(f'подій з координатами: {len(rows):,} (з проходу по текстах: {len(TKD):,})')
@@ -319,8 +333,9 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
     KL = adr_kliuch.Kliuch()
     def akey(street, house, prec):
         if prec not in ('house', 'cross') or not street: return None
-        if ' / ' in street:
-            return ('перехрестя',) + tuple(sorted(KL.vulytsia(x) for x in street.split(' / ', 1)))
+        if prec == 'cross':
+            import vidrizky as VR
+            return ('перехрестя',) + tuple(sorted(KL.vulytsia(x) for x in VR.vulytsia(street)))
         return KL(street, house)
     kpt = collections.defaultdict(collections.Counter)
     for r in rows:
