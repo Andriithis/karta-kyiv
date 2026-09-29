@@ -13,6 +13,8 @@ RAW  = os.path.join(DATA, 'osm_risks_raw.json')
 # overpass.osm.ch виключено: стабільно повертає порожню відповідь замість помилки
 ENDPOINTS = ['https://overpass-api.de/api/interpreter',
              'https://overpass.kumi.systems/api/interpreter',
+             # третій сервер — щоб 504 двох основних не лишали шар порожнім
+             'https://overpass.private.coffee/api/interpreter',
              'https://overpass-api.de/api/interpreter',
              'https://overpass.kumi.systems/api/interpreter']
 
@@ -63,10 +65,6 @@ LIGHT = {
  # Окремий ключ, щоб наявний кеш докачав його сам. З межами (bb): ізолятор —
  # велика територія, і центр її точки буває за 70 м від адреси входу.
  'zakryti': '(nwr["amenity"="prison"](area.k););out tags center bb;',
- # Магістралі (рішення Андрія 30.09): у шарі roads їх немає. Легка категорія
- # — докачується сама, без повного перезавантаження; vidrizky.vulytsi додає
- # її до вулиць для відрізків, прив'язки подій, моделі й перехресть.
- 'dorogy_velyki': '(way["highway"~"^(primary|trunk|motorway)(_link)?$"](area.k););out tags geom;',
  # --- занедбаність ---
  'abandon': '(nwr["building"~"^(ruins|abandoned|construction)$"](area.k);'
             'nwr["abandoned"="yes"](area.k);nwr["ruins"="yes"](area.k);'
@@ -122,6 +120,16 @@ HEAVY = {
  'foot':   'way["highway"~"^(footway|path|pedestrian)$"]',
  'houses': 'way["building"~"^(apartments|residential|house|dormitory)$"]',
 }
+# Магістралі (рішення Андрія 30.09; ZAVDANNYA-31, ч. 1): у шарі roads їх
+# немає. Одним запитом на все місто сервер відповідав 504, тож — плитками, як
+# важкі шари, але докачуються самі, без повного перезавантаження.
+# vidrizky.vulytsi додає їх до вулиць для відрізків, прив'язки, моделі й перехресть.
+PLYTKY = {
+ 'dorogy_velyki': 'way["highway"~"^(primary|trunk|motorway)(_link)?$"]',
+}
+# Без цих категорій модель і карта неправильні: немає — крок падає, а не
+# «пропускається» (ZAVDANNYA-31, 1.3). Решта необов'язкові — рядок у журналі.
+OBOV = ('roads', 'dorogy_velyki', 'ustanovy')
 BBOX = (50.21, 30.24, 50.59, 30.83)
 TILES = 3
 
@@ -204,15 +212,17 @@ def center(el):
     return None
 
 def heavy(k):
-    """важкий шар плитками; None — якщо хоч одна плитка не завантажилась"""
+    """важкий шар (чи магістралі) плитками; None — якщо хоч одна плитка не
+    завантажилась"""
+    sel = HEAVY.get(k) or PLYTKY[k]
     s_, w_, n_, e_ = BBOX
     dla, dlo = (n_ - s_) / TILES, (e_ - w_) / TILES
     acc, seen = [], set()
-    outmode = 'out tags geom;' if k in ('roads', 'foot') else 'out center;'
+    outmode = 'out tags geom;' if k in ('roads', 'foot', 'dorogy_velyki') else 'out center;'
     for i in range(TILES):
         for j in range(TILES):
             bb = f'{s_+i*dla:.4f},{w_+j*dlo:.4f},{s_+(i+1)*dla:.4f},{w_+(j+1)*dlo:.4f}'
-            els = fetch(k, f'({HEAVY[k]}(area.k)({bb}););{outmode}',
+            els = fetch(k, f'({sel}(area.k)({bb}););{outmode}',
                         f'{i*TILES+j+1}/{TILES*TILES}', allow_empty=True, retry_empty=True)
             if els is None:
                 print(f'   !!! {k} {i*TILES+j+1}/{TILES*TILES} не завантажено')
@@ -257,6 +267,13 @@ def main():
         hmiss = [k for k in HEAVY if not raw.get(k)]
         if hmiss:
             print('у кеші немає важких шарів: ' + ', '.join(hmiss) + ' — лише повне перезавантаження')
+        for k in PLYTKY:
+            if not raw.get(k):
+                print(f'докачую {k} плитками')
+                acc = heavy(k)
+                if acc:
+                    raw[k] = acc
+                    json.dump(raw, open(RAW, 'w', encoding='utf-8'), ensure_ascii=False)
     else:
         print('1) завантаження з OpenStreetMap (10-25 хв):')
         raw = {}
@@ -264,7 +281,7 @@ def main():
             r_ = fetch(k, q)
             raw[k] = r_ if r_ is not None else []
             time.sleep(5)
-        for k in HEAVY:
+        for k in list(HEAVY) + list(PLYTKY):
             acc = heavy(k)
             if acc is None:
                 # плитку не завантажено — не зберігаємо діряві дані в кеш
@@ -275,6 +292,15 @@ def main():
             print('   !!! немає жодної вулиці в районах: ' + ', '.join(pusti) + ' — кеш не зберігаю')
             sys.exit(1)
         json.dump(raw, open(RAW, 'w', encoding='utf-8'), ensure_ascii=False)
+
+    nema = [k for k in OBOV if not raw.get(k)]
+    if nema:
+        print('!!! немає обов\'язкових категорій OSM: ' + ', '.join(nema)
+              + ' — без них відрізки, модель і виключення установ неправильні; крок зупиняється')
+        sys.exit(1)
+    neob = [k for k in LIGHT if not raw.get(k)]
+    if neob:
+        print('необов\'язкові категорії порожні (пропущено): ' + ', '.join(neob))
 
     print('\n2) обробка')
     # data/risks.json (точки й шари «чого немає») більше не пишеться: його читав

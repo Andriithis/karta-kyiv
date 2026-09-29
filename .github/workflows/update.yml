@@ -79,7 +79,10 @@ jobs:
           if [ "${{ github.event.inputs.refresh_risks }}" = "true" ]; then
             rm -f data/osm_risks_raw.json
           fi
-          python src/step2b_risks.py || echo "шар ризиків пропущено"
+          # Без «|| echo»: 29.09 крок падав за секунду, а запуск ішов далі без
+          # магістралей. Обов'язкових категорій немає — запуск зупиняється
+          # (ZAVDANNYA-31, 1.3); необов'язкові крок пропускає сам, з рядком у журналі.
+          python src/step2b_risks.py
 
       - name: Крок 2c — мережевий аналіз
         env:
