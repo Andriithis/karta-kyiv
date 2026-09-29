@@ -199,7 +199,8 @@ def street_lines(streets):
     lines = collections.defaultdict(list)
     raw = os.path.join(DATA, 'osm_risks_raw.json')
     if os.path.exists(raw):
-        for w in json.load(open(raw, encoding='utf-8')).get('roads', []):
+        import vidrizky as VR
+        for w in VR.vulytsi(json.load(open(raw, encoding='utf-8'))):
             nm = (w.get('tags') or {}).get('name')
             g = [(q['lat'], q['lon']) for q in w.get('geometry') or []]
             if nm and len(g) > 1: lines[skey(nm)] += list(zip(g, g[1:]))
@@ -283,12 +284,14 @@ def main():
                  'adresa TEXT)')
     conn.commit()
     # Перехрестя — точкою перетину ліній OSM (завдання 30, ч. 4) за шаром
-    # вулиць кроку 2b. Магістралей (primary, trunk) у ньому немає, тож
-    # перехрестя з ними не знаходяться — шар для них чекає рішення Андрія.
+    # вулиць разом із магістралями (vidrizky.vulytsi)
     import perekhrestia as PX
     rawp = os.path.join(DATA, 'osm_risks_raw.json')
     rw = json.load(open(rawp, encoding='utf-8')) if os.path.exists(rawp) else {}
-    PXI = PX.Perekhrestia(rw.get('roads'))
+    import vidrizky as VR
+    PXI = PX.Perekhrestia(VR.vulytsi(rw))
+    if not rw.get('dorogy_velyki'):
+        print('   магістралей (dorogy_velyki) у кеші OSM немає — перехрестя з проспектами не знайдуться')
     del rw
     PXST = collections.Counter(); PXPR = []
 

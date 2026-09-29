@@ -120,7 +120,7 @@ def vidrizky_misto():
     карта кличе run() для кожного району"""
     if 'seg' not in _SEG:
         rawp = os.path.join(DATA, 'osm_risks_raw.json')
-        seg = VR.build(json.load(open(rawp, encoding='utf-8')).get('roads', [])) if os.path.exists(rawp) else {}
+        seg = VR.build(VR.vulytsi(json.load(open(rawp, encoding='utf-8')))) if os.path.exists(rawp) else {}
         _SEG['seg'] = seg
         _SEG['pv'] = VR.Pryviazka(seg) if seg else None
     return _SEG['seg'], _SEG['pv']

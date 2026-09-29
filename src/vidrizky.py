@@ -36,6 +36,14 @@ def dovzhyna(pts):
     return t
 
 
+def vulytsi(raw):
+    """Шар вулиць з кешу OSM: вулиці кроку 2b (residential … secondary) і
+    магістралі (primary, trunk, motorway і їхні _link — рішення Андрія
+    30.09). Без магістралей події на проспектах лишалися «поза вулицями»
+    (~8,6 тис.), а перехрестя з проспектами не знаходились."""
+    return list(raw.get('roads') or []) + list(raw.get('dorogy_velyki') or [])
+
+
 def stupeni(roads):
     """вузол -> скільки різних сусідів у графі вулиць. Лише шар roads:
     пішохідна доріжка, що перетинає вулицю, — не перехрестя вулиць, інакше

@@ -110,7 +110,8 @@ def main():
     if not os.path.exists(RAW):
         print('немає data/osm_risks_raw.json — спершу крок 2b (src/step2b_risks.py)'); sys.exit(1)
     raw = json.load(open(RAW, encoding='utf-8'))
-    roads, foot = raw.get('roads', []), raw.get('foot', [])
+    import vidrizky as VR
+    roads, foot = VR.vulytsi(raw), raw.get('foot', [])
     houses = centers(raw.get('houses', []))
     print(f'дороги {len(roads):,}   пішохідні {len(foot):,}   будинки {len(houses):,}')
     print(f'межа ходьби: {MAX_M} м')

@@ -195,7 +195,7 @@ def oznaky(raw, log=print):
     byid = {}
     # ---- 1. відрізки вулиць між перехрестями (ZAVDANNYA-30, 1.1) ----
     import vidrizky as VR
-    SEG = VR.build(raw.get('roads', []))
+    SEG = VR.build(VR.vulytsi(raw))
     segs = {s: v['pts'] for s, v in SEG.items()}
     RD = {s: v['tags'] for s, v in SEG.items()}
     names = {s: v['name'] for s, v in SEG.items()}
@@ -205,7 +205,7 @@ def oznaky(raw, log=print):
     # Довжина кварталу (RTMDx радить середню для міста): щоб у звіті було
     # видно, скільки кварталів дає кожен радіус-кандидат.
     blocks_m = int(round(float(slen.mean())))
-    n_ways = sum(1 for w in raw.get('roads', []) if len(w.get('geometry') or []) > 1
+    n_ways = sum(1 for w in VR.vulytsi(raw) if len(w.get('geometry') or []) > 1
                  and seg_len([(p['lat'], p['lon']) for p in w['geometry']]) >= 40)
     log(f'відрізків вулиць: {len(sids):,} між перехрестями (ліній OSM ≥40 м — {n_ways:,}); '
         f'середня довжина (квартал) {blocks_m} м')
@@ -272,14 +272,15 @@ def oznaky(raw, log=print):
         rv = [w_[i].sum() for i in ind]
         cont('населення_500м', np.log1p(rv), rv)
     HW = {'residential': 1, 'living_street': 1, 'unclassified': 2,
-          'tertiary': 3, 'secondary': 4, 'primary': 5}
-    cont('клас_дороги', [HW.get(RD[s].get('highway', ''), 2) for s in sids])
+          'tertiary': 3, 'secondary': 4, 'primary': 5, 'trunk': 6, 'motorway': 6}
+    # з'їзд (_link) — того ж класу, що й дорога, до якої він веде
+    cont('клас_дороги', [HW.get(RD[s].get('highway', '').replace('_link', ''), 2) for s in sids])
     cont('смуг', [float(RD[s].get('lanes')) if str(RD[s].get('lanes', '')).isdigit() else 2.0
                   for s in sids])
     # Будова вулиці — прямо з графа вулиць (vidrizky.budova), а не з
     # netgeo.json кроку 2c: той крок падає без пішохідної мережі, і тоді
     # модель тихо лишалася без будови вулиці.
-    NG = VR.budova(SEG, VR.stupeni(raw.get('roads', [])))
+    NG = VR.budova(SEG, VR.stupeni(VR.vulytsi(raw)))
     for fld, ua in (('perm', 'проникність'), ('cross4', 'хрестоподібні'),
                     ('cross3', 'T_подібні'), ('dead', 'тупик'),
                     ('sinuo', 'звивистість'), ('inner', 'перехрестя_всередині')):

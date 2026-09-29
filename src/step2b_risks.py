@@ -63,6 +63,10 @@ LIGHT = {
  # Окремий ключ, щоб наявний кеш докачав його сам. З межами (bb): ізолятор —
  # велика територія, і центр її точки буває за 70 м від адреси входу.
  'zakryti': '(nwr["amenity"="prison"](area.k););out tags center bb;',
+ # Магістралі (рішення Андрія 30.09): у шарі roads їх немає. Легка категорія
+ # — докачується сама, без повного перезавантаження; vidrizky.vulytsi додає
+ # її до вулиць для відрізків, прив'язки подій, моделі й перехресть.
+ 'dorogy_velyki': '(way["highway"~"^(primary|trunk|motorway)(_link)?$"](area.k););out tags geom;',
  # --- занедбаність ---
  'abandon': '(nwr["building"~"^(ruins|abandoned|construction)$"](area.k);'
             'nwr["abandoned"="yes"](area.k);nwr["ruins"="yes"](area.k);'

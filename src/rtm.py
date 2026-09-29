@@ -282,6 +282,8 @@ def stijkist(X, y, expo, typ, H=None, folds=None, runs=None, seed=30, log=print)
     Повертає dict(cols — обрані змінні X, chastka — {змінна: частка
     прогонів}, typy — {тип: частка прогонів, де обрано будь-який його радіус
     чи форму}, lam)."""
+    import time as _t
+    t0 = _t.time()
     runs = runs or N_STAB
     A = X if H is None else np.column_stack([H, X])
     k0 = 0 if H is None else 1
@@ -292,6 +294,7 @@ def stijkist(X, y, expo, typ, H=None, folds=None, runs=None, seed=30, log=print)
     pw = np.r_[np.zeros(k0), np.ones(X.shape[1])]
     folds = np.zeros(len(y), dtype=int) if folds is None else folds
     lams, best = lam_bloky(Z, y, off, pw, folds, log=log)
+    t_lam = _t.time() - t0
     b = b0 = None
     for lam in lams[:best + 1]:               # теплий старт по шляху, як у glmnet
         b, b0 = _fit_enet(Z, y, off, lam, L1_RATIO, b, b0, pw=pw)
@@ -315,7 +318,8 @@ def stijkist(X, y, expo, typ, H=None, folds=None, runs=None, seed=30, log=print)
             cols.append(max(js, key=lambda j: (R[:, j].sum(), -j)))
     cols.sort()
     log(f'      стійкість: λ {lams[best]:.2e} ({best + 1}/{len(lams)}, блоки за районами), '
-        f'{runs} прогонів на половині відрізків; лишилось {len(cols)} (поріг {STAB_POROG:.0%})')
+        f'{runs} прогонів на половині відрізків; лишилось {len(cols)} (поріг {STAB_POROG:.0%}); '
+        f'{_t.time() - t0:.0f} с (λ {t_lam:.0f} с)')
     return dict(cols=cols, chastka={j: float(chast[j]) for j in range(X.shape[1]) if chast[j] > 0},
                 typy=typy, lam=float(lams[best]))
 
