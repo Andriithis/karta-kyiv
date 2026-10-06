@@ -531,6 +531,9 @@ class BezMeshk:
                 t = el.get('tags') or {}
                 la = el.get('lat') or (el.get('center') or {}).get('lat')
                 lo = el.get('lon') or (el.get('center') or {}).get('lon')
+                b = el.get('bounds')
+                if not la and b:      # будинки зі знімка — лише рамка
+                    la, lo = (b['minlat'] + b['maxlat']) / 2, (b['minlon'] + b['maxlon']) / 2
                 if la and lo and ok(t): out.append((la, lo))
             return Pts(out) if out else None
         s.houses = pts(raw.get('houses'))

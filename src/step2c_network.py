@@ -75,6 +75,9 @@ def centr(el):
     if la and lo: return (la, lo)
     g = el.get('geometry')
     if g: return (sum(p['lat'] for p in g) / len(g), sum(p['lon'] for p in g) / len(g))
+    # «out center bb» віддає лише рамку — центр з неї
+    b = el.get('bounds')
+    if b: return ((b['minlat'] + b['maxlat']) / 2, (b['minlon'] + b['maxlon']) / 2)
     return None
 
 
@@ -333,8 +336,10 @@ def main():
             R = R_[b0 + r]
             for m, (keys, share, _v) in METY.items():
                 nodes, ws = tn[m]
-                if not len(nodes): continue
-                ok, p = rozpodil(D[r, nodes], ws)
+                # цілей мети немає зовсім (шар не завантажився) — для роботи
+                # й шкіл це «поза ходьбою», а не «нікуди не йдуть»
+                if not len(nodes) and m not in TRANSPORTOM: continue
+                ok, p = rozpodil(D[r, nodes], ws) if len(nodes) else (nodes, None)
                 if p is not None:
                     st[m + ': пішки'] += 1
                     for j, pj in zip(ok, p): walk(Pr[r], s, nodes[j], R * share * pj)

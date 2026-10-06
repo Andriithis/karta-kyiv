@@ -243,9 +243,12 @@ def stysnuty(k, el):
     keep = {x: t[x] for x in ('building', 'building:levels', 'height', 'office', 'landuse', 'amenity', 'name')
             if x in t}
     out = {'type': el.get('type'), 'id': el.get('id'), 'tags': keep}
-    c = el.get('center') or ({'lat': el['lat'], 'lon': el['lon']} if 'lat' in el else None)
-    if c: out['center'] = {'lat': round(c['lat'], 6), 'lon': round(c['lon'], 6)}
     b = el.get('bounds')
+    # «out center bb» віддає лише рамку, без центру (перевірено 06.10) —
+    # центр тоді з рамки
+    c = el.get('center') or ({'lat': el['lat'], 'lon': el['lon']} if 'lat' in el else None) or (
+        {'lat': (b['minlat'] + b['maxlat']) / 2, 'lon': (b['minlon'] + b['maxlon']) / 2} if b else None)
+    if c: out['center'] = {'lat': round(c['lat'], 6), 'lon': round(c['lon'], 6)}
     if b: out['bounds'] = {x: round(b[x], 6) for x in ('minlat', 'minlon', 'maxlat', 'maxlon')}
     return out
 
