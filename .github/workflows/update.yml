@@ -8,6 +8,9 @@ on:
       max_docs:
         description: 'Максимум документів за цей запуск (0 = без обмеження)'
         default: '20000'
+      dump_years:
+        description: 'Перечитати дамп минулих років (напр. «2023 2024 2025») — після нових статей у labels'
+        default: ''
       refresh_risks:
         description: 'Перезавантажити шар ризиків з OSM'
         type: boolean
@@ -62,6 +65,12 @@ jobs:
           if [ "$(date +%d)" -le 07 ]; then
             python src/step0_fetch_dump.py $(( $(date +%Y) - 1 )) || true
           fi
+          # Нові статті в labels (RISHENNYA 34.2) у минулих роках мають інші
+          # коди категорій — щоб їхні документи потрапили в чергу кроку 1,
+          # архів тих років треба перечитати (разово, полем dump_years)
+          for y in ${{ github.event.inputs.dump_years }}; do
+            python src/step0_fetch_dump.py $y || echo "дамп $y не прочитано"
+          done
           # номери справ і посилання минулих років (data/posylannya): качає
           # лише ті роки, яких ще немає, тобто зазвичай нічого
           python src/step0_fetch_dump.py --posylannya || true

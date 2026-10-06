@@ -236,7 +236,6 @@ def build(district, labels):
     # навчального року), модель не будується. Раніше такі теми просто зникали з
     # панелі, і виглядало це як розсинхрон назв. Тепер показуємо їх окремим рядком.
     for _i, _th in enumerate(L.ORDER):
-        if _th == 'ДОМ': continue                       # домашнє насильство на карту не йде
         if ('risk_' + _th) in risks.get('lines', {}): continue
         if not any(k[0] == _th for k in labels): continue
         risks.setdefault('lines', {})['risk_' + _th] = {

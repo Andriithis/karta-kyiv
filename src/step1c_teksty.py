@@ -629,16 +629,25 @@ def nar_keep(text, ms):
     return out or ms
 
 
-def adresa(fab, text='', nar=False):
+def VBYVSTVO(cat):
+    """вбивство й домашнє насильство — адреса й у житлі (RISHENNYA 34.2, 35.8):
+    «за місцем проживання за адресою …» тут і є місце події. Без цього
+    домашнє насильство майже ніколи не діставало б точки — фільтр шуму
+    відкидає житлові адреси як адреси учасника."""
+    import mech as _M
+    return _M.simgroup(cat) in ('НАС_вбивство', 'НАС_домашнє')
+
+
+def adresa(fab, text='', nar=False, zhytlo=False):
     """Адреса — спершу з самої фабули: у повному тексті body_start ловить
     пізнє «встановив» (у мотивах), і адреса з опису лишалася за межею
     пошуку — на першій частині проходу так без місця лишилося 172 фабули.
     Повний текст — лише запасний шлях, коли у фабулі місця не названо."""
     keep = nar_keep if nar else None
     t = 'ВСТАНОВИВ: ' + fab if fab else ''
-    res = A.extract(t, keep) if t else dict(street=None, house=None, level='none', time=None, pos=None)
+    res = A.extract(t, keep, zhytlo) if t else dict(street=None, house=None, level='none', time=None, pos=None)
     if res['level'] == 'none' and text:
-        res2 = A.extract(text, keep)
+        res2 = A.extract(text, keep, zhytlo)
         if res2['level'] != 'none':
             res, t = res2, text
     sent = ''
@@ -652,7 +661,7 @@ def rozbir(text, cat):
     """Усе, що прохід бере з одного тексту рішення."""
     full, found = fabula(text)
     full, v = mend(full, found)
-    res, sent = adresa(full, text, nar=PD.theme(cat) == 'НАР')
+    res, sent = adresa(full, text, nar=PD.theme(cat) == 'НАР', zhytlo=VBYVSTVO(cat))
     kd = kodeks(cat)
     return dict(
         fab=_cut(full, CAP[kd]), fab_len=len(full), end_found=found, kodeks=kd, vada=v,
@@ -675,7 +684,7 @@ def pererakhuvaty(r, cat=''):
     # знімав би «косметичну» з 225 фабул, у яких нічого не змінилось
     if not v and fab == r['fab'] and r['vada'] == 'косметична':
         v = 'косметична'
-    res, sent = adresa(fab, nar=PD.theme(cat) == 'НАР')
+    res, sent = adresa(fab, nar=PD.theme(cat) == 'НАР', zhytlo=VBYVSTVO(cat))
     if res['level'] == 'none' and r['level'] != 'none':
         res = dict(street=r['street'] or None, house=r['house'] or None, level=r['level'], time=None)
         sent = r['addr_sentence']
@@ -699,8 +708,9 @@ REESTR = 'https://od.reyestr.court.gov.ua/files/'
 # v3 (24.09): у наркотичних місце замовлення не місце події; хвіст
 # «Відповідальність за вказане правопорушення передбачена ст. …».
 RULE = 'v3'
-# Шість видів (розд. 18): колишнє «Середовище» розійшлося в ГП і МАЙ.
-ORDER = ['МАЙ', 'НАР', 'НАС', 'ГП', 'АЛК', 'ДОР']
+# Сім видів: колишнє «Середовище» розійшлося в ГП і МАЙ (розд. 18), ДТП
+# окремо від порушень на дорозі (34.3).
+ORDER = ['МАЙ', 'НАР', 'НАС', 'ГП', 'АЛК', 'ДТП', 'ДОР']
 COLS = ['doc_id', 'rule', 'vada', 'klass', 'date', 'time', 'street', 'house', 'level',
         'addr_sentence', 'fab_len', 'end_found', 'fab']
 SAVE_EVERY = 1000          # частину переписуємо по ходу: обрив запуску не губить зроблене

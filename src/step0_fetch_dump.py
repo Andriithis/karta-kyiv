@@ -27,7 +27,9 @@ PAUSE = 20         # секунд між спробами
 COURTS = {"2601":"Golosiivskyi","2602":"Darnytskyi","2603":"Desnianskyi","2604":"Dniprovskyi",
  "2605":"Obolonskyi","2606":"Pecherskyi","2607":"Podilskyi","2608":"Sviatoshynskyi",
  "2609":"Solomianskyi","2610":"Shevchenkivskyi"}
-SKIP_THEME = {'ДОМ'}   # домашнє насильство на публічну карту не йде
+# Вида, який не качаємо, більше немає: домашнє насильство на карті, як усі
+# (RISHENNYA 35.8). Множина лишається гніздом на майбутнє.
+SKIP_THEME = set()
 
 def have_data():
     """чи є з чим працювати наступним крокам, якщо дамп не приїхав"""

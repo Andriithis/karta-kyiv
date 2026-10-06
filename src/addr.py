@@ -125,6 +125,10 @@ NOISE_OK = re.compile(r"огляд\w*\s+місц\w*\s+(?:події|пригод
                       r"(?:працівник|співробітник)\w*\s+(?:\S+\s+){0,6}?(?:поліці\w*|УПП|ГУ\s?НП|РУП)|поліцейськ\w*|"
                       r"(?:дитяч|паркувальн|спортивн|ігров|автомобільн)\w*\s+майданчик\w*",
                       re.I|re.U)
+# Житлові слова з NOISE. Для вбивства вони адресу не глушать (RISHENNYA 34.2:
+# «усі, і в житлі теж»): «за місцем проживання за адресою … вбив» — це і є
+# місце події, а не адреса учасника, як у решті справ.
+ZHYTLO = re.compile(r"прожива|зареєстрован|місц\w*\s+реєстрац|мешка|місце проживання", re.I | re.U)
 STOP = {'києва','київ','києві','україни','район','районного','районний','місто','міста'}
 
 # ---- НАЗВА З ДАВАЛЬНОГО ВІДМІНКА ----
@@ -216,7 +220,7 @@ def find_all(text):
         out.append(('вул.', m.group(1), norm_house(m.group(2)), m.start()))
     return out
 
-def context_ok(text, pos, win=170, floor=0):
+def context_ok(text, pos, win=170, floor=0, zhytlo=False):
     """чи немає перед адресою слів, що виказують адресу установи.
     `floor` не дає вікну зазирнути в шапку: слова «суд», «прокуратура»
     там стоять завжди й не стосуються адреси, названої вже у фабулі."""
@@ -231,6 +235,8 @@ def context_ok(text, pos, win=170, floor=0):
     cut = list(WHAT.finditer(seg))
     if cut:
         seg = seg[cut[-1].end():]
+    if zhytlo:
+        seg = ZHYTLO.sub(' ', seg)
     return not NOISE.search(seg)
 
 
@@ -306,7 +312,7 @@ def _street(t, n):
     return f"{t} {n}" if n and n.lower() not in STOP and len(n) >= 3 else None
 
 
-def mentions(text, floor):
+def mentions(text, floor, zhytlo=False):
     """Усі згадки місця після floor: (позиція, рівень, вулиця, будинок).
 
     Рівні: house — вулиця з номером; cross — перехрестя двох вулиць;
@@ -323,7 +329,7 @@ def mentions(text, floor):
 
     def clean(p):
         prev = [e for e in ends if e <= p]
-        return context_ok(text, p, floor=max(floor, prev[-1] if prev else 0))
+        return context_ok(text, p, floor=max(floor, prev[-1] if prev else 0), zhytlo=zhytlo)
 
     houses = {c[3] for c in find_all(text)}
     for t, n, h, p in find_all(text):
@@ -430,7 +436,7 @@ def sentence_end(text, pos, cap=400):
 RANK = {'house': 0, 'cross': 1, 'street': 2, 'hidden': 3}
 
 
-def extract(text, keep=None):
+def extract(text, keep=None, zhytlo=False):
     """Місце події: dict(street, house, level, time).
 
     level: house | cross | street | hidden | none.
@@ -458,7 +464,7 @@ def extract(text, keep=None):
     (у наркотичних — місце замовлення не місце події, step1c_teksty)."""
     text = fix_typos(text)
     bs = body_start(text)
-    ms = mentions(text, bs)
+    ms = mentions(text, bs, zhytlo)
     if not ms and bs:
         # Опису не знайшлося — шукаємо по всьому тексту. Шапка з адресою суду
         # тут не загроза: її відсіює той самий контекст («суд»).
@@ -467,7 +473,7 @@ def extract(text, keep=None):
         # `pool = good if good else cands`, і коли чистих не було, функція
         # віддавала адресу суду з позначкою level='house' — тобто вигадувала
         # місце події. Краще чесне «адреси немає», ніж хибна точність.
-        ms = mentions(text, 0)
+        ms = mentions(text, 0, zhytlo)
     if ms and keep:
         ms = keep(text, ms)
     if not ms:

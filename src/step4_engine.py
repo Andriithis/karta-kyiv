@@ -164,7 +164,7 @@ def podii(log):
     n_dtp = collections.Counter()
     for r in V['rows']:
         th = PD.theme(r[2])
-        if th not in L.ORDER or th == 'ДОМ': continue
+        if th not in L.ORDER: continue
         tk = TKD.get(r[0]) or {}
         if tk.get('klass') != 'B': drop[(th, 'не клас B')] += 1; continue
         if r[9] not in TOCHNE: drop[(th, 'не точне місце')] += 1; continue
@@ -365,7 +365,7 @@ def main():
             pts = [(p['lat'], p['lon']) for p in g]
             if seg_len(pts) >= 40: old_way[w['id']] = pts
     sg_old = SegGrid(old_way)
-    six = [t for t in L.ORDER if t != 'ДОМ']
+    six = list(L.ORDER)   # з 06.10 видів сім: ДТП окремо (34.3), ДОМ — у НАС (35.8)
     # B1_VYDY=ГП,МАЙ_крадіжка — прогнати лише названі види й механізми
     # (перевірка коду на копії даних; перенавчання в Actions рахує всі)
     KEYS = [(t, 'тема') for t in six] + [(m, 'механізм') for m in MEKH]
@@ -698,7 +698,7 @@ def pishokhidnyi(ev_seg, sids, names, segs, byid, ROKY3, log):
     r3 = set(ROKY3)
     kf = collections.Counter(); vt = collections.Counter()
     for i, e in ev_seg:
-        if e['th'] != 'ДОР' or e['m'] not in r3: continue
+        if e['th'] != 'ДТП' or e['m'] not in r3: continue
         if e['sim'] == 'ДОР_залишення_місця': kf[i] += 1; vt[i] += 1
         elif KONFLIKT.search(e['fab'] or ''): kf[i] += 1
     out = {}

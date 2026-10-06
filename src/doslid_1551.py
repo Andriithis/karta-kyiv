@@ -113,7 +113,7 @@ def main():
         for di, d in enumerate(dn):
             if MP.in_ring(mid[i][0], mid[i][1], B[d]): fold[i] = di % 5 + 1; break
 
-    KEYS = [(t, 'вид') for t in L.ORDER if t != 'ДОМ'] + [(m, 'механізм') for m in E.MEKH]
+    KEYS = [(t, 'вид') for t in L.ORDER] + [(m, 'механізм') for m in E.MEKH]
     if os.environ.get('B1_VYDY'):
         KEYS = [k for k in KEYS if k[0] in os.environ['B1_VYDY'].split(',')]
     rez = {}
