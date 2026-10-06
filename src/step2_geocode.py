@@ -30,6 +30,50 @@ def norm(s):
     s = s.replace('-', ' ').replace("'", '')
     return re.sub(r'\s+', ' ', s).strip()
 
+# ---- ТИП ВУЛИЦІ ОКРЕМО ВІД НАЗВИ (ZAVDANNYA-32, 2.1) ----
+# norm() викидає тип: «бульв. Лесі Українки» = «вул. Лесі Українки». Для
+# ключа це правильно — суди пишуть тип як завгодно, — але 651 пара «вулиця +
+# номер» існує в OSM у кількох місцях далі 500 м, і геокодер брав першу
+# ліпшу. Тепер тип — окрема підказка, а останнє слово за районом суду.
+TYPE_CANON = [  # порядок важливий: довші спершу
+    (r'просп\w*|пр-т|пр\.', 'просп'), (r'бульв\w*|б-р', 'бульв'),
+    (r'пров\w*', 'пров'), (r'пл\.|площ\w*|майдан', 'пл'), (r'наб\w*', 'наб'),
+    (r'шосе', 'шосе'), (r'узв\w*', 'узвіз'), (r'проїзд\w*', 'проїзд'),
+    (r'алея|алеї', 'алея'), (r'тупик', 'тупик'), (r'вул\w*', 'вул'),
+]
+TYPE_CANON = [(re.compile(r'(?:^|\s)(?:' + p + r')(?:\s|$|\.)'), c) for p, c in TYPE_CANON]
+# Тип, який суди пишуть замість справжнього: «вул. Перемоги» про проспект.
+# Конкретний тип у тексті (пл., пров., бульв.), якого немає серед кандидатів,
+# — інша вулиця: «пл. Тараса Шевченка, 2» (Оболонь) ставала на «провулок
+# Тараса Шевченка, 2» біля Майдану (2.2а).
+TYPE_LOOSE = {'', 'вул'}
+R_ODNA = 0.5            # км: далі — це вже різні місця з однаковою адресою
+
+
+def stype(s):
+    """Тип вулиці з назви OSM чи з адреси рішення; '' — не названо."""
+    t = ' ' + (s or '').lower() + ' '
+    for rx, canon in TYPE_CANON:
+        if rx.search(t):
+            return canon
+    return ''
+
+
+# Підпис адреси — назва вулиці як в OSM (2.3): «шосе Набережне, 25» і «вул.
+# Набережне шосе, 25» в одній картці — одним підписом. Тип скорочено, як
+# пишуть на карті.
+SKOR = [(r'^вулиця\s', 'вул. '), (r'^проспект\s', 'просп. '), (r'^бульвар\s', 'бульв. '),
+        (r'^провулок\s', 'пров. '), (r'^площа\s', 'пл. '), (r'^набережна\s', 'наб. '),
+        (r'\sвулиця$', ' вул.'), (r'\sпроспект$', ' просп.'), (r'\sбульвар$', ' бульв.'),
+        (r'\sпровулок$', ' пров.'), (r'\sплоща$', ' пл.')]
+
+
+def pidpys(st):
+    for a, b in SKOR:
+        st = re.sub(a, b, st)
+    return st
+
+
 def nh(h):
     if not h: return ''
     h = h.upper().replace(' ', '').replace('\\', '/')
@@ -214,6 +258,37 @@ def street_lines(streets):
     return lines
 
 
+R_LANKA = 0.4          # км: сусідні адреси однієї вулиці не далі
+
+
+def komponenty(keys, streets_t):
+    """(назва, тип, точка) -> номер зв'язної частини адрес вулиці."""
+    out = {}
+    for ns, typ in keys:
+        pts = sorted(set(streets_t.get((ns, typ), [])))
+        par = list(range(len(pts)))
+        def root(i):
+            while par[i] != i:
+                par[i] = par[par[i]]; i = par[i]
+            return i
+        for i in range(len(pts)):
+            for j in range(i + 1, len(pts)):
+                if abs(pts[j][0] - pts[i][0]) * 111 > R_LANKA: break   # sorted за широтою
+                if spread_km([pts[i], pts[j]]) <= R_LANKA:
+                    par[root(i)] = root(j)
+        for i, p in enumerate(pts):
+            out[(ns, typ, p)] = (ns, typ, root(i))
+    return out
+
+
+def district_of(p, borders):
+    """Назва району, у якому точка (data/borders.json), або None."""
+    for name, ring in borders.items():
+        if in_kyiv(p, [ring]):
+            return name
+    return None
+
+
 def in_kyiv(p, rings):
     """Точка в одному з районів (data/borders.json, кільця [lat, lon])."""
     la, lo = p
@@ -242,13 +317,15 @@ def kmda_index(streets):
             st['вулиці немає в OSM'] += 1; continue
         if near > KMDA_NEAR:
             st[f'далі {KMDA_NEAR} м від своєї вулиці'] += 1; continue
-        cand[(k, nh(h))].append(p)
+        cand[(k, nh(h))].append((la, lo, stype(s), s))
+    # Однакова адреса в кількох місцях — тепер не викидається одразу: усі
+    # кандидати з типом ідуть у pick(), як і в OSM (2.1). Викидаються лише
+    # ті, що й з типом лишаються неоднозначними.
     idx = {}
     for key, ps in cand.items():
-        if max(math.hypot(*[x - y for x, y in zip(_m(*a, a[0]), _m(*b, a[0]))])
-               for a in ps for b in ps) > KMDA_DUP:
-            st['неоднозначна адреса'] += len(ps); continue
-        idx[key] = ps[0]; st['прийнято'] += len(ps)
+        idx[key] = ps; st['прийнято'] += len(ps)
+        if spread_km([(a, b) for a, b, _t, _s in ps]) > KMDA_DUP / 1000:
+            st['кілька місць (вирішує тип чи суд)'] += len(ps)
     print(f'   геокодер КМДА: {len(rows):,} адрес; ' + ', '.join(f'{k} {v:,}' for k, v in st.most_common()))
     return idx
 
@@ -261,18 +338,35 @@ def main():
         print('   ПОМИЛКА: адресну базу не отримано. Спробуйте пізніше.')
         sys.exit(1)
 
-    exact = {}; streets = collections.defaultdict(list)
+    # Усі кандидати адреси, а не перший (2.1): (назва, номер) -> [(lat, lon,
+    # тип, назва OSM)] — «kand», бо «cand» нижче вже зайняте хвостом назви. exact — лише однозначні: усі кандидати в R_ODNA; на
+    # ньому тримаються «20Б → 20» і розстановка між сусідами.
+    kand = collections.defaultdict(list); streets = collections.defaultdict(list)
+    streets_t = collections.defaultdict(list)
     for st, h, la, lo in rows:
         ns = norm(st)
         if not ns: continue
-        exact.setdefault((ns, nh(h)), (la, lo))
-        streets[ns].append((la, lo))
+        kand[(ns, nh(h))].append((la, lo, stype(st), st))
+        streets[ns].append((la, lo)); streets_t[(ns, stype(st))].append((la, lo))
+    exact = {k: (c[0][0], c[0][1]) for k, c in kand.items()
+             if spread_km([(a, b) for a, b, _t, _s in c]) <= R_ODNA}
+    n_bagato = sum(1 for k, c in kand.items() if k not in exact)
+    print(f'   адрес OSM у кількох місцях далі {R_ODNA * 1000:.0f} м: {n_bagato:,}')
+    # Та сама адреса далі 500 м — не завжди однойменні вулиці: «просп.
+    # Академіка Глушкова, 1» — кілька будівель Експоцентру на одній вулиці.
+    # Однойменні вулиці — розірвані скупчення адрес (Лугова на Оболоні й у
+    # Бортничах); одна вулиця — неперервний ланцюжок адрес. Тож для вулиць
+    # з такими адресами — зв'язні частини адрес з кроком до R_LANKA.
+    KOMP = komponenty({(k[0], x[2]) for k, c in kand.items() if k not in exact for x in c}, streets_t)
 
     # центроїд вулиці - лише якщо вулиця компактна (не розкидана по місту)
     centro = {}
     for k, v in streets.items():
         if spread_km(v) <= 6.0:
             centro[k] = (sum(a for a, b in v)/len(v), sum(b for a, b in v)/len(v))
+    # центроїд з типом: «бульв. Лесі Українки» і «вул. Лесі Українки» — різні
+    centro_t = {k: (sum(a for a, b in v)/len(v), sum(b for a, b in v)/len(v))
+                for k, v in streets_t.items() if k[1] and spread_km(v) <= 6.0}
     print(f'   вулиць: {len(streets):,}, з них придатні для прив\'язки без номера: {len(centro):,}')
 
     conn = sqlite3.connect(DB)
@@ -305,6 +399,10 @@ def main():
     # взято адресу, — тим самим addr.unglue, що й підпис точки в step3_map.
     fab = PD.load_fab(conn)
     todo = []; n_unglued = 0
+    COURT_D = {}
+    from map_problems import COURTS
+    for doc, court in conn.execute("SELECT doc_id, court FROM events"):
+        COURT_D[doc] = COURTS.get(court)      # лише районні суди; решта — None
     for doc, street, house in conn.execute("SELECT doc_id, street, house FROM events"):
         r = tk.get(doc)
         if r is not None:
@@ -336,9 +434,60 @@ def main():
         if h.isdigit(): nums[k].setdefault(int(h), ll)
 
     kmda = kmda_index(streets) if KMDA_ON else {}
+    borders = json.load(open(os.path.join(DATA, 'borders.json'), encoding='utf-8'))
+    _dcache = {}
+    def dist_of(la, lo):
+        k = (la, lo)
+        if k not in _dcache: _dcache[k] = district_of(k, borders)
+        return _dcache[k]
+    PICK = collections.Counter(); PRYKL = []
+
+    def pick(c, typ, court_d, ns=''):
+        """Точка для адреси з кандидатів [(lat, lon, тип, назва OSM)].
+        Однойменні вулиці: спершу тип, потім район суду; лишилось кілька далі
+        R_ODNA одна від одної — точки немає (краще без точки, ніж у іншому
+        кінці міста). -> (кандидат | None, як вирішено)"""
+        spread = lambda xs: spread_km([(a, b) for a, b, _t, _s in xs])
+        if not c: return None, ''
+        if spread(c) <= R_ODNA: return c[0], ''
+        def odna(xs):
+            """усі на одній зв'язній вулиці -> центральний кандидат"""
+            ids = {KOMP.get((ns, x[2], (x[0], x[1]))) for x in xs}
+            if len(ids) == 1 and None not in ids:
+                return min(xs, key=lambda x: sum(spread_km([(x[0], x[1]), (y[0], y[1])]) for y in xs))
+            return None
+        x = odna(c)
+        if x: return x, 'одна вулиця, кілька будівель'
+        def vyrish(xs, why):
+            if xs and spread(xs) <= R_ODNA: return xs[0], why
+            x = odna(xs) if xs else None
+            return (x, why) if x else (None, '')
+        # Конкретний тип у тексті (пл., пров., бульв.) — сильна підказка; «вул.»
+        # суди пишуть і про проспект, і про бульвар, тому вона — після суду:
+        # інакше «вул. Лесі Українки, 3» Печерського суду ставала на вулицю
+        # Лесі Українки на Троєщині замість бульвару.
+        if typ and typ not in TYPE_LOOSE:
+            same = [x for x in c if x[2] == typ]
+            if not same:
+                # такого типу серед кандидатів немає — лише «вулиці»; інакше
+                # це інша вулиця
+                same = [x for x in c if x[2] in TYPE_LOOSE]
+                if not same: return None, 'тип не збігся'
+            c = same
+            r = vyrish(c, 'тип')
+            if r[0]: return r
+        if court_d:
+            r = vyrish([x for x in c if dist_of(x[0], x[1]) == court_d], 'район суду')
+            if r[0]: return r
+        if typ in TYPE_LOOSE and typ:
+            r = vyrish([x for x in c if x[2] == typ], 'тип')
+            if r[0]: return r
+        return None, 'неоднозначна'
+
     out = []; st = collections.Counter()
     for doc, street, house, klass, px in todo:
         ns, h = norm(street), nh(house)
+        typ = stype(street)
         hit = None; src = 'osm'; adr = None
         if px:
             # перехрестя: точка перетину ліній OSM або нічого (4.2)
@@ -354,14 +503,26 @@ def main():
                 if ns in centro: hit = (*centro[ns], 'street')
         elif ' / ' in street:
             hit = None
-        elif h and (ns, h) in exact:
-            hit = (*exact[(ns, h)], 'house')
+        elif h and (ns, h) in kand:
+            x, why = pick(kand[(ns, h)], typ, COURT_D.get(doc), ns)
+            PICK[why or 'одна'] += 1
+            if x:
+                hit = (x[0], x[1], 'house'); adr = pidpys(x[3])
+                if why and len(PRYKL) < 400:
+                    PRYKL.append((street, house, why, kand[(ns, h)][0], x))
+            elif len(PRYKL) < 400:
+                PRYKL.append((street, house, why, kand[(ns, h)][0], None))
         # Точний будинок КМДА — раніше за «20Б біля 20»: це сам будинок, а
         # не місце поруч.
         elif h and (skey(street), h) in kmda:
-            hit = (*kmda[(skey(street), h)], 'house'); src = 'kmda'
+            x, why = pick(kmda[(skey(street), h)], typ, COURT_D.get(doc))
+            PICK['КМДА: ' + (why or 'одна')] += 1
+            # підпис КМДА не беремо: там «бульвар Шевченка Тараса» — прізвищем наперед
+            if x: hit = (x[0], x[1], 'house'); src = 'kmda'
         elif h and klass == 'B' and (near := nearby(ns, h, exact, nums)):
             hit = near
+        elif typ and (ns, typ) in centro_t:
+            hit = (*centro_t[(ns, typ)], 'street')
         elif ns in centro:
             hit = (*centro[ns], 'street')
         else:
@@ -379,6 +540,13 @@ def main():
     for k, v in st.most_common():
         print(f'  {k:14} {v:8,}  {100*v/max(len(todo),1):5.1f}%')
     print('перехрестя: ' + ', '.join(f'{k} {v:,}' for k, v in PXST.most_common()))
+    # Журнал однойменних (2.1): скільки вирішено типом, районом суду, скільки
+    # без точки, і приклади «було (перший кандидат) -> стало»
+    print('однойменні адреси: ' + ', '.join(f'{k} {v:,}' for k, v in PICK.most_common()))
+    import random
+    for s_, h_, why, was, now in random.Random(32).sample(PRYKL, min(10, len(PRYKL))):
+        print(f'   {s_}, {h_}: {why}; було {was[3]} ({was[0]:.4f}, {was[1]:.4f}) -> '
+              + (f'{now[3]} ({now[0]:.4f}, {now[1]:.4f})' if now else 'без точки'))
     # 20 випадкових для ручної перевірки (адреса з фабули -> точка)
     import random
     for doc, px, la, lo in random.Random(30).sample(PXPR, min(20, len(PXPR))):

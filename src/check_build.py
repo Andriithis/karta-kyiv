@@ -125,6 +125,45 @@ def check_js(html, tmp):
     return [] if r.returncode == 0 else [r.stderr.strip().split('\n')[-1]]
 
 
+# ---- СУД ↔ РАЙОН (ZAVDANNYA-32, 2.2) ----
+# Адмінсправу розглядає суд району, де вчинено порушення (ст. 276 КУпАП),
+# кримінальну — переважно теж. Тож район точки має збігатися з районом суду.
+# Незбіг — верхня межа помилок геокодера: частина законна (вулиці-межі,
+# передача справ), але 06.10 до лікування однойменних вулиць він був 5,7%.
+# Більше 8% — щось зламалося, сайт не публікується.
+SUD_MEZHA = 0.08
+SUD_ADRESA_MIN, SUD_ADRESA_CHASTKA = 5, 0.5
+
+
+def sud_raion(html_path):
+    """(частка незбігу, по видах, по районах, підозрілі адреси) з готової
+    карти: точні точки (будинок, перехрестя) й районні суди."""
+    import collections
+    html = open(html_path, encoding='utf-8').read()
+    m_ = re.search(r'const M=(\{.*?\}), P=(\[.*?\]);\n', html, re.S)
+    if not m_: return None
+    M, P = json.loads(m_.group(1)), json.loads(m_.group(2))
+    courts, dn = M.get('courts', []), M.get('dnames', [])
+    gi = {}
+    for g, (nm, ids, _n) in enumerate(M.get('groups', [])):
+        for i in ids: gi[i] = nm
+    vyd, raion, adr = (collections.defaultdict(lambda: [0, 0]) for _ in range(3))
+    for p in P:
+        if p[3] not in (1, 2) or len(p) < 9 or not (0 <= p[8] < len(dn)): continue
+        d = dn[p[8]]
+        for e in p[4]:
+            c = courts[e[0]] if e[0] < len(courts) else ''
+            if c not in dn: continue                 # апеляційний та інші — не районні
+            bad = int(c != d)
+            for t in (vyd[gi.get(e[1], '?')], raion[d], adr[p[2]]):
+                t[0] += 1; t[1] += bad
+    n = sum(v[0] for v in raion.values()); b = sum(v[1] for v in raion.values())
+    pidozr = sorted(((a, v[0], round(v[1] / v[0], 2)) for a, v in adr.items()
+                     if v[0] >= SUD_ADRESA_MIN and v[1] >= SUD_ADRESA_CHASTKA * v[0]), key=lambda x: -x[1])
+    return (b / n if n else 0, {k: round(v[1] / v[0], 3) for k, v in vyd.items() if v[0]},
+            {k: round(v[1] / v[0], 3) for k, v in raion.items() if v[0]}, pidozr, n)
+
+
 def main(save=False):
     print('1. Компіляція src/')
     drop_cache()
@@ -206,6 +245,32 @@ def main(save=False):
     if missed or leaked:
         return 1
 
+    print('4б. Суд ↔ район точки (ZAVDANNYA-32, 2.2)')
+    # На справжній карті (site/index.html, крок 3 у Actions іде перед
+    # перевіркою), а не на тестовій базі: частка незбігу тестової вибірки
+    # нічого не каже про живу карту.
+    sr = sud_raion(os.path.join(ROOT, 'site', 'index.html')) if os.path.exists(
+        os.path.join(ROOT, 'site', 'index.html')) else None
+    if sr is None:
+        print('   site/index.html немає — пропущено')
+    else:
+        ch, po_vyd, po_r, pidozr, n_ = sr
+        print(f'   незбіг {100 * ch:.1f}% з {n_:,} подій на точних адресах районних судів (межа {100 * SUD_MEZHA:.0f}%)')
+        print('   по видах: ' + '; '.join(f'{k} {100 * v:.1f}%' for k, v in sorted(po_vyd.items(), key=lambda x: -x[1])))
+        print('   по районах: ' + '; '.join(f'{k} {100 * v:.1f}%' for k, v in sorted(po_r.items(), key=lambda x: -x[1])))
+        print(f'   адрес з ≥{SUD_ADRESA_MIN} подіями й незбігом ≥{100 * SUD_ADRESA_CHASTKA:.0f}%: {len(pidozr)} '
+              '(кандидати в установи чи однойменні) — data/_check_last.json')
+        try:
+            st_ = json.load(open(STATE)) if os.path.exists(STATE) else {}
+        except Exception:
+            st_ = {}
+        st_['sud_raion'] = dict(chastka=round(ch, 4), po_vydah=po_vyd, po_raionah=po_r,
+                                adresy=[dict(adresa=a, podii=k, nezbig=r) for a, k, r in pidozr])
+        json.dump(st_, open(STATE, 'w'), ensure_ascii=False, indent=1)
+        if ch > SUD_MEZHA:
+            print(f'   ПОМИЛКА незбіг суду й району {100 * ch:.1f}% > {100 * SUD_MEZHA:.0f}%')
+            return 1
+
     print('4а. Шари ризику: PAI на довжину ≥ 3')
     # Шар, гірший за втричі від навмання, на карту не йде (ZAVDANNYA-30, ч. 5).
     # risk.json до перенавчання моделі «разом» PAI на довжину не має — тоді
@@ -230,12 +295,19 @@ def main(save=False):
     shutil.rmtree(tmp, ignore_errors=True)
 
     print('6. Порівняння з попереднім запуском')
+    def zberehty(d):
+        try:
+            old = json.load(open(STATE)) if os.path.exists(STATE) else {}
+        except Exception:
+            old = {}
+        if 'sud_raion' in old: d = dict(d, sud_raion=old['sud_raion'])
+        json.dump(d, open(STATE, 'w'), ensure_ascii=False, indent=1)
     if save:
-        json.dump(now, open(STATE, 'w'))
+        zberehty(now)
         print('   еталон збережено')
         return 0
     if not os.path.exists(STATE):
-        json.dump(now, open(STATE, 'w'))
+        zberehty(now)
         print('   еталона не було — збережено поточний результат')
         return 0
     before = json.load(open(STATE))
@@ -247,7 +319,7 @@ def main(save=False):
         else:
             same = False
             print(f'   {name}: ЗМІНИЛАСЯ  було {was}  стало {is_}')
-    json.dump(now, open(STATE, 'w'))
+    zberehty(now)
     if same:
         print('\n=== ГОТОВО === результат не змінився')
     else:

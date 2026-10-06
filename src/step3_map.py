@@ -29,6 +29,7 @@ from step2_geocode import BESIDE
 from map_problems import COURTS, SLUG
 
 LAST_META = {}          # meta останньої збірки — читає крок 5
+CANON = {}              # doc_id -> назва вулиці з OSM для підпису (vybir -> zbirka)
 LAST_DOCS = []          # справи адрес для панелі, паралельно до точок карти
 LAST_VYBIR = None       # відібрані події останньої збірки — їх беруть звіти (step6)
 LAST_KARTA = None       # точки міської карти з проблемами, підписи статей, meta —
@@ -151,6 +152,11 @@ def vybir(c, print=print):
         if r[9] == 'cross' and r[10] and r[0] in TKD:
             TKD[r[0]] = dict(TKD[r[0]], street=r[10], house='', klass='B')
             n_cross += 1
+    # Підпис будинку — назва вулиці як в OSM (ZAVDANNYA-32, 2.3): «шосе
+    # Набережне, 25» і «вул. Набережне шосе, 25» в одній картці — одним
+    # підписом. Ключ адреси (adr_kliuch) і так спільний; лишався підпис.
+    CANON.clear()
+    CANON.update({r[0]: r[10] for r in rows if r[9] == 'house' and len(r) > 10 and r[10]})
     # документ без проходу по текстах — підпис перехрестя прямо в рядок
     rows = [(r[:5] + (r[10], None) + r[7:10]) if (r[9] == 'cross' and r[10] and r[0] not in TKD)
             else r[:10] for r in rows]
@@ -400,7 +406,9 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
         hs = [e for e in evs if e[4] and e[6]]
         if hs:
             e = hs[0]
-            a = f"{e[6]}, {e[7]}" if e[7] else e[6]
+            # назва вулиці з OSM, якщо будинок звідти; інакше — як у рішенні
+            st_ = next((CANON[x[16]] for x in hs if x[16] in CANON), e[6])
+            a = f"{st_}, {e[7]}" if e[7] else st_
             prec = e[4]            # PREC: будинок, перехрестя, біля будинку, між сусідами
         else:
             e = next((e for e in evs if e[6]), None)
