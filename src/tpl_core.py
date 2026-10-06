@@ -35,12 +35,12 @@ Object.keys(R.lines||{}).forEach(k=>{const v=R.lines[k];
   RISKOF[v.theme|0]=k});
 $('#fasub').insertAdjacentHTML('beforeend',Object.keys(RISKOF).map(gi=>
  `<input type="checkbox" data-r="${RISKOF[gi]}">`).join(''));
-// Короткі назви видів з макета. Видів шість (розд. 18, виконано 27.09):
-// «Середовище» розійшлося в Порядок і Майно. Ключ — повна назва з M.groups,
-// щоб не залежати від порядку.
+// Короткі назви видів з макета. Видів сім: «Середовище» розійшлося в
+// Порядок і Майно (розд. 18), дорожній рух — на ДТП і порушення (34.3).
+// Ключ — повна назва з M.groups, щоб не залежати від порядку.
 const SHORT={'Громадський порядок':'Порядок','Алкоголь і торгівля':'Торгівля',
  'Наркотики':'Наркотики','Насильство проти особи':'Насильство','Майнові':'Майно',
- 'Дорожній рух':'Дорожній рух'};
+ 'ДТП':'ДТП','Порушення на дорозі':'Порушення на дорозі'};
 const shortOf=gi=>SHORT[M.groups[gi][0]]||M.groups[gi][0];
 const artOn=i=>{const b=document.querySelector(`[data-a="${i}"]`);return !!(b&&b.checked)};
 const setArt=(i,v)=>{const b=document.querySelector(`[data-a="${i}"]`);if(b)b.checked=v};
@@ -145,38 +145,18 @@ const sel=a=>new Set([...document.querySelectorAll(`[data-${a}]`)].filter(x=>x.c
 // Підпис статті в даних — «ст.124 КУпАП · ДТП з пошкодженням майна»:
 // назву звичайними словами показуємо рядком, номер статті — дрібно під нею.
 const splitArt=s=>{const m=/^(ст\.[^·]+?)\s*·\s*(.+)$/.exec(s||'');return m?[m[2],m[1]]:[s,'']};
-// Дорожній рух — найбільший вид, тож усередині поділений на три частини
-// (склад — RISHENNYA, розд. 18). Це групування, а не окремий вид і не
-// окремий колір: сьомий колір на темній темі не проходить перевірку для
-// дальтоніків. Стаття руху, якої немає в переліку, іде в «Інше».
-const ROAD={'ДТП':['124 КУпАП','122-4 КУпАП','123 КУпАП','286 КК'],
- 'За кермом':['130 КУпАП','126 КУпАП','122-2 КУпАП','121 КУпАП','122 КУпАП','287 КК'],
- 'Інше':['139 КУпАП','140 КУпАП','127 КУпАП','277 КК']};
-const roadPart=label=>{const m=/^ст\.([\d\-]+)\s+(КУпАП|КК)/.exec(label||'');
- if(m){const key=m[1]+' '+m[2]; for(const part in ROAD) if(ROAD[part].includes(key)) return part}
- return 'Інше'};
-const ROADGI=M.groups.findIndex(g=>g[0]==='Дорожній рух');
+// Підгруп «ДТП · За кермом · Інше» всередині дорожнього руху більше немає:
+// з 06.10 ДТП і порушення на дорозі — два види з двома кольорами (34.3;
+// сьомий колір перевірено на дальтонізм — ZVIT-32).
 $('#advgrid').innerHTML=M.groups.map((g,gi)=>{
  // порядок усередині виду — за кількістю подій; самі числа не показуємо
  const ids=g[1].slice().sort((a,b)=>(M.counts[b]||0)-(M.counts[a]||0));
  const art=i=>{const [nm,no]=splitArt(M.cats[i]);
   return `<label class="art"><input type="checkbox" data-art="${i}" checked>`+
          `<span>${esc(nm)}<small>${esc(no)}</small></span></label>`};
- let h=`<div class="ag"><h4><i data-g="${gi}"></i>${shortOf(gi)}</h4>`;
- if(gi===ROADGI){
-  for(const part of Object.keys(ROAD)){
-   const inPart=ids.filter(i=>roadPart(M.cats[i])===part); if(!inPart.length) continue;
-   h+=`<h5><span>${part}</span><button data-only="${part}">лише це</button></h5>`+inPart.map(art).join('');
-  }
- } else h+=ids.map(art).join('');
- return h+'</div>'}).join('');
+ return `<div class="ag"><h4><i data-g="${gi}"></i>${shortOf(gi)}</h4>`+ids.map(art).join('')+'</div>'}).join('');
 $('#advgrid').onchange=e=>{const x=e.target.closest('[data-art]'); if(!x) return;
  setArt(+x.dataset.art,x.checked); syncThemes(); syncRisk(); draw()};
-// «лише це» вмикає статті однієї частини руху й вимикає решту статей руху;
-// інших видів не чіпає.
-$('#advgrid').onclick=e=>{const b=e.target.closest('[data-only]'); if(!b) return;
- M.groups[ROADGI][1].forEach(i=>setArt(i,roadPart(M.cats[i])===b.dataset.only));
- syncThemes(); syncRisk(); draw()};
 function advOpen(v){$('#adv').hidden=!v; $('#advbtn').setAttribute('aria-expanded',v?'true':'false');
  $('#advbtn').textContent=v?'Розширено ‹':'Розширено ›'}
 $('#advbtn').onclick=()=>advOpen($('#adv').hidden);

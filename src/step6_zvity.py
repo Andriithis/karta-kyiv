@@ -26,11 +26,13 @@ import mech as M
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
 
-VYDY = ['ГП', 'АЛК', 'НАР', 'НАС', 'МАЙ', 'ДОР']
+VYDY = list(L.ORDER)
 KOROTKO = {'ГП': 'Порядок', 'АЛК': 'Торгівля', 'НАР': 'Наркотики', 'НАС': 'Насильство',
-           'МАЙ': 'Майно', 'ДОР': 'Дорожній рух'}
-# палітра «Яскрава», світла (розд. 23) — та сама, що на карті
-KOLIR = dict(zip(VYDY, ['#DF6D40', '#28AB7D', '#5244A5', '#D85151', '#367BCE', '#118412']))
+           'МАЙ': 'Майно', 'ДТП': 'ДТП', 'ДОР': 'Порушення на дорозі'}
+DOROZHNI = {'ДТП', 'ДОР'}
+# палітра «Яскрава», світла (розд. 23) — та сама, що на карті; сьомий колір —
+# «Порушення на дорозі» (34.3), перевірений на дальтонізм разом з рештою
+KOLIR = dict(zip(VYDY, ['#DF6D40', '#28AB7D', '#5244A5', '#D85151', '#367BCE', '#118412', '#8a7e9c']))
 MIS = ['січ', 'лют', 'бер', 'кві', 'тра', 'чер', 'лип', 'сер', 'вер', 'жов', 'лис', 'гру']
 
 
@@ -256,11 +258,11 @@ def stan_mista(D):
     except Exception:
         pass
     kl = collections.Counter(ACLS[e[4]] if e[4] < len(ACLS) else '' for _p, e in ev)
-    dtp = sum(1 for _p, e in ev if th_of[e[1]] == 'ДОР')
+    dtp = sum(1 for _p, e in ev if th_of[e[1]] in DOROZHNI)
     b.append('<h2>Що треба знати про ці дані</h2><ul>'
              '<li>Це лише події, які дійшли до суду й мають опубліковане рішення в ЄДРСР. Чого не оформили '
              'протоколом чи вироком, тут немає.</li>'
-             f'<li>Дорожній рух — {pct(dtp / n if n else 0)} усіх подій, тож загальні суми здебільшого про '
+             f'<li>ДТП і порушення на дорозі — {pct(dtp / n if n else 0)} усіх подій, тож загальні суми здебільшого про '
              'дороги; кожен вид варто читати окремо.</li>'
              f'<li>Адресу підтверджено в описі самої події (клас B) для {pct(kl["B"] / n if n else 0)} подій; '
              f'класи C і D — {pct((kl["C"] + kl["D"]) / n if n else 0)}. Проблеми й «Схожі умови» рахуються лише на '
@@ -298,7 +300,7 @@ def zaklady(D, rng):
     Z = json.load(open(zj, encoding='utf-8'))
     doma, th_of = D['doma'], D['th_of']
     pts = [(p[0], p[1]) for p in doma]
-    w = [sum(1 for e in p[4] if th_of[e[1]] != 'ДОР') for p in doma]
+    w = [sum(1 for e in p[4] if th_of[e[1]] not in DOROZHNI) for p in doma]
     g = PRB.Pts(pts)
     b = ['<h2 id="zaklady">Заклади, біля яких подій найбільше</h2><p>Для кожного типу закладів — скільки подій '
          '(без дорожнього руху) в 50 м від кожного і яку частку всіх таких подій дають верхні 10% закладів. '
@@ -359,7 +361,7 @@ def near_repeat(D, rng, R=200, T=14, N=99):
     for t in VYDY:
         ev = by.get(t, [])
         if len(ev) < 100: continue
-        if t == 'ДОР':
+        if t in DOROZHNI:
             b.append(f'<tr><td>{KOROTKO[t]}</td><td class="n">{num(len(ev))}</td><td colspan="4" class="muted">'
                      'не рахується: близьких пар десятки мільйонів (ДТП біля тих самих ТЦ)</td></tr>')
             continue
