@@ -22,7 +22,7 @@
 Запуск окремо: py -3 src/problems.py (пише data/problems_report.json).
 Карта кличе run() сама — step3_map.
 """
-import os, sys, glob, json, math, gzip, csv, collections, datetime as dt
+import os, sys, re, glob, json, math, gzip, csv, collections, datetime as dt
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import labels as L
 import mech as M
@@ -85,6 +85,35 @@ R_SERED = 50
 SERED_BARY = {'b1_bars', 'bar_on'}
 # Ключових слів фабули як запасного джерела середовища більше немає
 # (завдання 30, ч. 2): слово «кафе» в описі — не об'єкт у 50 м.
+#
+# Тип місця з фабул (ZAVDANNYA-31, 7.2) — інше: не одне слово, а те, що
+# називає щонайменше третина фабул пари («у приміщенні ТРЦ», «у підземному
+# переході»). Суд описує саме місце події, тож це надійніше за OSM у 50 м:
+# Майдан, 1 — підземний перехід, а не «бари поруч». Хто керує — лише
+# загальною назвою ролі, без вигаданих установ (CLAUDE.md).
+# (тип місця, шаблон у фабулі, середовище для посібника, хто керує)
+FAB_MISCE = [
+    ('ТЦ', r'\bтрц\b|\bтц\b|торг(?:ов|івел)\w*[\s-]+(?:розважальн\w*\s+)?(?:центр|комплекс)', 'торгівля', 'адміністрація ТЦ'),
+    ('підземний перехід', r'підземн\w*\s+(?:пішохідн\w*\s+)?перех', 'транспорт', 'балансоутримувач переходу'),
+    ('вокзал', r'вокзал', 'транспорт', 'Укрзалізниця'),
+    ('ринок', r'\bринк|\bринок', 'торгівля', 'адміністрація ринку'),
+    ('паркінг', r'паркінг|автостоянк|парковк|паркувальн|стоянц', 'паркінг', 'власник паркінгу'),
+    ('АЗС', r'\bазс\b|автозаправ', 'торгівля', 'власник АЗС'),
+    ('парк', r'\bпарк[уі]?\b|\bсквер', 'рекреація', 'балансоутримувач парку'),
+]
+FAB_MISCE = [(n, re.compile(p, re.I), s, k) for n, p, s, k in FAB_MISCE]
+FAB_CHASTKA = 1 / 3
+
+
+def misce_z_fabul(evs):
+    """(тип, середовище, хто керує, скільки фабул) — якщо тип місця називає
+    щонайменше третина фабул пари; інакше None."""
+    fabs = [e.get('fab') or '' for e in evs]
+    if not fabs: return None
+    best = max(((sum(1 for f in fabs if rx.search(f)), n, s, k) for n, rx, s, k in FAB_MISCE), key=lambda x: x[0])
+    if best[0] and best[0] >= FAB_CHASTKA * len(fabs):
+        return dict(mistse=best[1], ser=best[2], keruye=best[3], fabul=best[0], z=len(fabs))
+    return None
 
 
 def _m(la0):
@@ -416,10 +445,14 @@ class BezMeshk:
         near = lambda g: g is not None and any(g.near(p[0], p[1], R_MESHK) for p in pts)
         a = ' '.join(adresy[:3]).lower()
         if near(s.vokzal) or 'вокзал' in a: return 'вокзал'
-        if near(s.tc): return 'ТЦ'
         if a.startswith('пл.') or a.startswith('майдан'): return 'площа'
+        # ТЦ чи парк у 50 м не роблять місце безлюдним, якщо поруч житло:
+        # Велика Васильківська, 72 — житловий будинок біля ТЦ, мешканці там
+        # скаржаться (ZAVDANNYA-31, 7.3). Без будинків у кеші — як раніше.
+        if s.houses is not None and near(s.houses): return None
+        if near(s.tc): return 'ТЦ'
         if near(s.park): return 'парк'
-        if s.houses is not None and not near(s.houses): return 'житла в 50 м немає'
+        if s.houses is not None: return 'житла в 50 м немає'
         return None
 
 
@@ -683,9 +716,15 @@ def run(V=None, log=print, FACT=None):
             rec['statti'] = collections.Counter(e['cat'] for e in u).most_common()
             rec['roky'] = sorted({e['date'][:4] for e in u})
         if u and g.get('R3_podii'):
-            env, dz = seredovyshche(u, FACT)
-            rec['typ'] = M.problem_type(sim, env)
-            rec['typ']['dzherelo_seredovyshcha'] = dz or 'невизначено'
+            mf = misce_z_fabul(u)
+            if mf:
+                rec['typ'] = M.problem_type(sim, [mf['ser']])
+                rec['typ'].update(mistse=mf['mistse'], keruye=mf['keruye'],
+                                  dzherelo_seredovyshcha=f"у {mf['fabul']} з {mf['z']} фабул")
+            else:
+                env, dz = seredovyshche(u, FACT)
+                rec['typ'] = M.problem_type(sim, env)
+                rec['typ']['dzherelo_seredovyshcha'] = dz or 'невизначено'
             rec['proaktyvnykh'] = round(1 - s['zayavnykh'], 2)
             rec['golos'] = golos_misce(G, th, pts, dmap, bez_meshk=BM(pts, rec['adresy']))
             rec['raion'] = dmap(tuple(rep))

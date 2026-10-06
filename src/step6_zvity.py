@@ -573,7 +573,7 @@ def near_objs(D, p, lim=15):
         for q in c['pts']:
             d = math.hypot((q[0] - p[0]) * my, (q[1] - p[1]) * mx)
             if d <= r: out.append((round(d), c['n']))
-    return sorted(out)[:lim]
+    return sorted(out)[:lim] if lim else sorted(out)
 
 
 def problemy(D):
@@ -601,8 +601,7 @@ def problemy(D):
     if rep_:
         b.append(f'<p class="muted">Окремо, не в переліку: {num(rep_.get("dorozhnikh_dilianok", 0))} дорожніх ділянок '
                  'з ДТП без потерпілих (інша природа — знаменник тут транспортний потік) і '
-                 f'{num((rep_.get("formuietsia") or {}).get("vsogo", 0))} місць, де проблема, можливо, формується '
-                 '(на карту — після рішення про 1551).</p>')
+                 f'{num((rep_.get("formuietsia") or {}).get("vsogo", 0))} місць, де проблема, можливо, формується.</p>')
     b.append('<div class="tw"><table><tr><th>#</th><th>Місце</th><th>Що відбувається</th><th>Район</th>'
              '<th class="n">Подій</th><th>Мешканці (1551)</th></tr>')
     for k, (i, q) in enumerate(items, 1):
@@ -624,8 +623,11 @@ def problemy(D):
                [(i, j) for j, e in enumerate(p[4]) if cats[e[1]] in labs and e[4] == 0]
         evs = [P[a][4][j] for a, j in refs]
         b.append(f'<div class="prob" id="p-{k}"><h2 style="border:0;margin-top:0">{k}. {esc(p[2])}</h2>')
+        # у картки виду механізм і вид — одна назва: «Порядок · Порядок» (31, 7.4)
+        vyd_ = L.THEMES.get(th, th)
         b.append(f'<p><span class="sw" style="background:{KOLIR.get(th, "#888")}"></span><b>{esc(q["mech"])}</b> · '
-                 f'{esc(L.THEMES.get(th, th))} · {esc(dn[p[8]] if len(p) > 8 and 0 <= p[8] < len(dn) else "")} · '
+                 + (f'{esc(vyd_)} · ' if vyd_.lower() != str(q["mech"]).lower() else '') +
+                 f'{esc(dn[p[8]] if len(p) > 8 and 0 <= p[8] < len(dn) else "")} · '
                  f'<a href="https://www.openstreetmap.org/?mlat={p[0]}&mlon={p[1]}#map=18/{p[0]}/{p[1]}" target="_blank" rel="noopener">на мапі OSM ↗</a></p>')
         ad = q.get('adresy') or []
         rec = rec_of.get((q['sim'], (q.get('adresy') or [''])[0])) or {}
@@ -675,10 +677,13 @@ def problemy(D):
         ty = rec.get('typ') or {}
         b.append('<h3>Тип проблеми</h3>')
         ser = ty.get('seredovyshche') or 'невизначено'
+        if ty.get('mistse'):
+            b.append(f'<p>Тип місця: <b>{esc(ty["mistse"])}</b> <span class="muted">(названо '
+                     f'{esc(ty.get("dzherelo_seredovyshcha", "у фабулах"))})</span>.</p>')
         if ty.get('povedinka'):
             b.append(f'<p>За Еком і Кларком: <b>{esc(ty["povedinka"])} × {esc(ser)}</b>'
                      + (' <span class="muted">(середовище — об\'єкт OSM у 50 м від більшості подій)</span>'
-                        if ser != 'невизначено' else '')
+                        if ser != 'невизначено' and not ty.get('mistse') else '')
                      + '.' + (f' Хто керує місцем: {esc(ty["keruye"])}.' if ty.get('keruye') else '') + '</p>')
         else:
             b.append('<div class="empty">Тип не визначено: механізму немає в таблиці NAPRYAM-PROBLEMY, додаток Б.</div>')
@@ -702,13 +707,16 @@ def problemy(D):
                       f'при очікуваних {dec(g.get("ochikuvano", 0))} для такої кількості звернень у цьому районі')
                 if g.get('kategorii'): s += '; найчастіше — ' + '; '.join(g['kategorii'])
             b.append(f'<h3>Голос мешканців</h3><p>{esc(s)}.</p>')
-        nr = near_objs(D, p)
+        nr = near_objs(D, p, lim=None)
         if nr:
+            # тип — одним рядком: «Кафе, ресторани — 3, найближче 15 м» (31, 7.4)
+            grp = collections.OrderedDict()
+            for d, n in nr: grp.setdefault(n, []).append(d)
             b.append('<h3>Що поруч</h3><p class="muted">Кожен тип — у своєму радіусі (як на карті). Які з цих об\'єктів '
-                     'пов\'язані з подіями — перевіряє той, хто вийде на місце.</p><p>'
-                     + '; '.join(f'{esc(n)} — {d} м' for d, n in nr) + '.</p>')
+                     'пов\'язані з подіями — перевіряє той, хто вийде на місце.</p><ul>'
+                     + ''.join(f'<li>{esc(n)} — {len(ds)}, найближче {ds[0]} м</li>' for n, ds in grp.items()) + '</ul>')
         an = q.get('analysis')
-        b.append('<h3>Схожі умови тут</h3><p>' + (
+        b.append('<h3>Ризик</h3><p>' + (
             f'Вулиця — серед вулиць зі схожими умовами для цього виду.' if an else
             'Вулиця не входить до переліку вулиць зі схожими умовами для цього виду.') + '</p>')
         b.append('<div class="empty">Що перевірити на місці — визначає слухач за SARA; карта дає лише виміряне.</div></div>')
