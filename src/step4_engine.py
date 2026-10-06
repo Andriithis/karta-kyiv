@@ -434,7 +434,8 @@ def main():
     TOCHKY = os.environ.get('TOCHKY', '1') != '0'
     TP, nal = [], [None] * len(ev)
     if TOCHKY:
-        TP = RT.kandydaty(raw, VR.vulytsi(raw), sorted(adresy), VR)
+        # адрес серед кандидатів немає (рішення Андрія 06.10; rtm_tochky)
+        TP = RT.kandydaty(raw, VR.vulytsi(raw), [], VR)
         S_ = RT.Sitka([(t['la'], t['lo']) for t in TP])
         ist = [0] * len(TP)
         for e in ev:

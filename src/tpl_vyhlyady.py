@@ -124,7 +124,9 @@ const RSEG=[], RPT=[];
  Object.keys(R.tochky||{}).forEach(k=>{const v=R.tochky[k];
   (v.items||[]).forEach(x=>{const key=x[0]+','+x[1];
    let s=RPT.find(t=>t.key===key); if(!s){s={key,la:x[0],lo:x[1],typ:x[2],kinds:[]}; RPT.push(s)}
-   s.kinds.push({k,gi:v.theme|0,title:v.title,pct:x[4],mu:x[5],n2:x[3]|0,fx:(x[6]||[]).map(f=>[f])})})});}
+   // «кафе_є_150м» -> «кафе в 150 м»: назва ознаки моделі -> людська
+   const lyud=f=>String(f).replace(/_є_(\d+)м$/,' в $1 м').replace(/_(\d+)м$/,' в $1 м').replace(/_/g,' ');
+   s.kinds.push({k,gi:v.theme|0,title:v.title,pct:x[4],mu:x[5],n2:x[3]|0,fx:(x[6]||[]).map(f=>[lyud(f)])})})});}
 function riskData(){
  const on=s=>s.kinds.filter(x=>typeOn(x.gi));
  const val=x=>x.pct==null?50:Math.max(0,100-x.pct);
