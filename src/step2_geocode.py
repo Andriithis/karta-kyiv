@@ -477,8 +477,18 @@ def main():
             r = vyrish(c, 'тип')
             if r[0]: return r
         if court_d:
-            r = vyrish([x for x in c if dist_of(x[0], x[1]) == court_d], 'район суду')
+            vr = [x for x in c if dist_of(x[0], x[1]) == court_d]
+            r = vyrish(vr, 'район суду')
             if r[0]: return r
+            # У районі суду — комплекс будівель з цією адресою і одна далека
+            # точка (Лугова, 12 на Оболоні: 12 будівель і одна за 6 км, теж
+            # в Оболонському). Скупчення з ≥ 80% кандидатів (і ≥ 3) — воно.
+            if len(vr) >= 3:
+                gr = collections.defaultdict(list)
+                for x in vr: gr[KOMP.get((ns, x[2], (x[0], x[1])))].append(x)
+                big = max(gr.values(), key=len)
+                if len(big) >= 3 and len(big) >= .8 * len(vr):
+                    return min(big, key=lambda x: sum(spread_km([(x[0], x[1]), (y[0], y[1])]) for y in big)), 'район суду'
         if typ in TYPE_LOOSE and typ:
             r = vyrish([x for x in c if x[2] == typ], 'тип')
             if r[0]: return r
