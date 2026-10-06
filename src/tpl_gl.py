@@ -349,9 +349,8 @@ const r0Of=(n,mx)=>Math.max(R0_MIN,Math.min(14,R0_MIN+9.5*Math.pow(n/Math.max(mx
 // тож 16 — і з сусідів береться найближча до курсора).
 const HIT_R=8;
 function addrAt(p){ if(RINGS_ON||!map.getLayer('k-addr')) return null;
- // у сотах і стовпчиках крапки адрес з'являються лише з z14 (7.6) — до того
- // клік належить соті
- if((MODE==='soty'||MODE==='stovp')&&map.getZoom()<14.4) return null;
+ // у сотах і стовпчиках крапок адрес немає — клік належить соті
+ if(MODE==='soty'||MODE==='stovp') return null;
  const fs=map.queryRenderedFeatures([[p.x-HIT_R-14,p.y-HIT_R-14],[p.x+HIT_R+14,p.y+HIT_R+14]],{layers:['k-addr']});
  let best=null, bd=1e9; const zm=zmulAt(map.getZoom());
  for(const f of fs){const q=map.project(f.geometry.coordinates), d=Math.hypot(q.x-p.x,q.y-p.y);
@@ -374,7 +373,7 @@ function addrReady(){
   // а розмите коло дає ту саму м'яку тінь.
   map.addLayer({id:'k-addr-shadow',type:'circle',source:'k-addr',minzoom:DEEP_Z,
    layout:{'circle-sort-key':['get','k']},
-   paint:{'circle-radius':['+',ADDR_R,1.5],'circle-blur':.45,'circle-translate':[0,1]}});
+   paint:{'circle-radius':addrR(1.5),'circle-blur':.45,'circle-translate':[0,1]}});
   map.addLayer({id:'k-addr',type:'circle',source:'k-addr',
    // Малюється за зростанням ключа: великі адреси знизу, дрібні зверху, як у
    // Leaflet; адреси-проблеми — поверх усіх.
@@ -833,14 +832,16 @@ function addrLayerVisible(v){
 // поки ввімкнено «Схожі умови» чи потоки — приглушені (RING_A).
 function addrPaint(){
  if(!map.getLayer('k-addr')) return;
- // Перехід в адреси однаковий для всіх виглядів (7.6): соти й стовпчики
- // гаснуть з z14 до z14,8, з'являються крапки; кільця — своїм деревом.
+ // Соти й стовпчики в крапки адрес не переходять (рішення Андрія 06.10):
+ // крапки — у вигляді «Адреси» й на місці кілець, що розпалися.
  const hexy=MODE==='soty'||MODE==='stovp';
- const on=BASE_READY&&(hexy||ADDR_VIS!==false);
+ const on=BASE_READY&&!hexy&&ADDR_VIS!==false;
  const a=RING_A;
- const op=!on?0:hexy?['interpolate',['linear'],['zoom'],14,0,14.8,a]:MODE==='addr'?a
-  :['interpolate',['linear'],['zoom'],14.5,a,15.5,Math.min(1,a+.08)];
- const op1=!on?0:hexy?['interpolate',['linear'],['zoom'],14,0,14.8,1]:1;
+ // зблизька крапок мало й вони великі — щільніше (на темній темі 0,6 читалося
+ // блідо, перевірка 06.10)
+ const up=Math.min(.92,a+.3);
+ const op=!on?0:['interpolate',['linear'],['zoom'],14.5,a,15.5,up];
+ const op1=!on?0:1;
  map.setPaintProperty('k-addr','circle-opacity',op);
  map.setPaintProperty('k-addr','circle-stroke-opacity',op1);
  map.setPaintProperty('k-addr-shadow','circle-opacity',op1);
@@ -1108,8 +1109,9 @@ map.on('click',e=>{
  const o=hitRing(e.point); if(!o) return;
  CLICK_TAKEN=true;
  if(o.dot) return openAt(LEAF[o.k]);
- // Кільце — картка (7.11), як і сота; «Наблизити» — кнопкою в ній.
- return openCell('КІЛЬЦЕ',ringLeaves(o.i,o.j),null,e.lngLat);
+ // Кільце картки не має (рішення Андрія 06.10): клік наближує, кільце
+ // розпадається на дрібніші, потім на адреси; вікно попереднього місця
+ // зайве там, куди летимо.
  if(POPUP) POPUP.remove();
  const q=o.j*4, bb=BB[o.i], z=map.getZoom();
  const side=$('#side'), W=map.getContainer().clientWidth;
@@ -1122,12 +1124,6 @@ map.on('click',e=>{
 });
 map.on('mousemove',e=>{ if(!RINGS_ON) return;
  map.getCanvas().style.cursor=hitRing(e.point)?'pointer':''});
-// Адреси під вузлом дерева — для картки кільця
-let CHL=null;
-function ringLeaves(i,j){
- if(!CHL) CHL=LV.map((l,k)=>{const c=Array.from({length:nOf(k)},()=>[]); l.of.forEach((p,m)=>c[p].push(m)); return c});
- const out=[]; const walk=(a,b)=>{ if(a===NL){out.push(LEAF[b]); return} for(const c of CHL[a][b]) walk(a+1,c)};
- walk(i,j); return out}
 // Перевірка з консолі (розд. 23, перевірка п. 3): для кожного видимого
 // кільця — число на ньому і сума подій його адрес за фільтром, порахована
 // окремо, прямо з computeVis, а не з дерева.

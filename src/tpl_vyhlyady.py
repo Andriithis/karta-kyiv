@@ -7,10 +7,12 @@ computeVis, картку місця (#kplace) і перемикачі панел
 власний шар tpl_gl; тут — соти, стовпчики, крапки адрес і ризик.
 """
 JS_VYHLYADY = r"""// ==== СОТИ Й СТОВПЧИКИ (35.6; макети «Соти і стовпчики», «Чотири вигляди») ====
-// Сітка — у метрах, у локальній проєкції Києва; два розміри: 330 м на огляді
-// міста, 130 м ближче. Рахується в браузері з адрес за поточним фільтром.
+// Сітка — у метрах, у локальній проєкції Києва; три розміри (рішення Андрія
+// 06.10): 330 м до z12,3, 130 м z12,4–14,5, 30 м (≈ 50 м між краями) з z14,5.
+// Соти й стовпчики лишаються сотами на всіх масштабах — у крапки адрес не
+// переходять; крапки — вигляд «Адреси» (кнопка в картці соти).
 const MX_=111320*Math.cos(50.45*Math.PI/180), MY_=111320;
-const HEXG=[{id:'L',R:330},{id:'S',R:130}];
+const HEXG=[{id:'L',R:330},{id:'S',R:130},{id:'X',R:30}];
 // колір ризику — один для всіх видів (7.10); контраст до підкладки й сот ≥ 3:1
 const RISK_C={svitla:'#d42a2a',temna:'#ff6b6b'};
 const isDark=()=>THEME==='temna';
@@ -55,7 +57,7 @@ function hexData(G,cols){
  return {type:'FeatureCollection',features:[...B.values()].filter(b=>!cols||b.n>=med).map(b=>({type:'Feature',
   geometry:{type:'Polygon',coordinates:hexPoly(b.cx,b.cy,G.R,cols?.62:1)},
   properties:{k:b.k,c:PALA[b.gi%PALA.length],a:b.a*dim,pr:b.pr,n:b.n,h:G.R*7*Math.sqrt(b.n/mx)}}))}}
-const HEX_FADE={L:[[0,1],[12.3,1],[12.8,0]],S:[[12.0,0],[12.4,1],[14,1],[14.8,0]]};
+const HEX_FADE={L:[[0,1],[12.3,1],[12.8,0]],S:[[12.0,0],[12.4,1],[14.3,1],[14.7,0]],X:[[14.3,0],[14.7,1]]};
 const fadeBy=(id,v)=>['interpolate',['linear'],['zoom'],...HEX_FADE[id].flatMap(([z,f])=>[z,f?v:0])];
 function hexReady(){
  const before=map.getLayer('k-addr-shadow')?'k-addr-shadow':undefined;
@@ -70,10 +72,10 @@ function hexReady(){
    // проблема — контур чорнила, тонший на огляді міста (Андрій 06.10)
    map.addLayer({id:'k-hexp-'+id,type:'line',source:'k-hex-'+id,filter:['==',['get','pr'],1],
     paint:{'line-width':['interpolate',['linear'],['zoom'],10,.6,12,.9,13,1.3],'line-opacity':fadeBy(id,1)}},before);
-   // Стовпчики — один колір (стопка видів шарами вводила в оману, 7.3); мала
-   // сітка «осідає» між z13,6 і z15.
+   // Стовпчики — один колір (стопка видів шарами вводила в оману, 7.3); не
+   // «осідають» (рішення Андрія 06.10): лишаються стовпчиками на всіх масштабах.
    map.addLayer({id:'k-col-'+id,type:'fill-extrusion',source:'k-col-'+id,paint:{'fill-extrusion-color':['get','c'],
-    'fill-extrusion-height':id==='S'?['interpolate',['linear'],['zoom'],13.6,['get','h'],15,0]:['get','h'],
+    'fill-extrusion-height':['get','h'],
     'fill-extrusion-opacity':fadeBy(id,.8)}},before);
   }}
  if(!map.getSource('k-hexsel')){
@@ -104,12 +106,16 @@ function drawHex(st){
 // ==== АДРЕСИ (7.5–7.6) ====
 // Крапка кольору свого найчисленнішого виду, радіус 0,8 + 0,25·√n на z10 →
 // 3 + 1,2·√n на z16; проблема — обвідка чорнила навколо крапки (7.7).
-const ADDR_R=['interpolate',['linear'],['zoom'],10,['+',.8,['*',.25,['sqrt',['get','n']]]],
- 16,['+',3,['*',1.2,['sqrt',['get','n']]]],19,['+',5,['*',1.8,['sqrt',['get','n']]]]];
+// Зсув (тінь, обвідка проблеми) — усередині кожної точки інтерполяції:
+// зум дозволений лише як вхід верхнього interpolate, і ['+', ADDR_R, 1.5]
+// MapLibre мовчки відкидав разом із шаром (знайдено 06.10).
+const addrR=(d=0)=>['interpolate',['linear'],['zoom'],10,['+',.8+d,['*',.25,['sqrt',['get','n']]]],
+ 16,['+',3+d,['*',1.2,['sqrt',['get','n']]]],19,['+',5+d,['*',1.8,['sqrt',['get','n']]]]];
+const ADDR_R=addrR(0);
 function addrProbReady(){
  if(map.getLayer('k-addr-pr')) return;
  map.addLayer({id:'k-addr-pr',type:'circle',source:'k-addr',filter:['==',['get','pr'],1],
-  paint:{'circle-radius':['+',ADDR_R,2.5],'circle-color':'rgba(0,0,0,0)','circle-stroke-width':1.2}});
+  paint:{'circle-radius':addrR(2.5),'circle-color':'rgba(0,0,0,0)','circle-stroke-width':1.2}});
 }
 // ==== РИЗИК: ОДНА ЛІНІЯ, ОДИН КОЛІР (7.10) ====
 // Рахується окремо для кожного виду й механізму (крок 4), показується одним
@@ -236,7 +242,8 @@ function renderCell(){
   if(RSEG.length&&CELL.hex){const [cx,cy,R_]=CELL.hex;
    const kr=RSEG.filter(s=>s.kinds.some(x=>typeOn(x.gi))&&s.g.some(q=>{const dx=q[1]*MX_-cx,dy=q[0]*MY_-cy; return dx*dx+dy*dy<=R_*R_})).length;
    if(kr) body+=`<div class="tt kc-risk"><i></i>Ризик: ${kr} ${pl(kr,'вулиця','вулиці','вулиць')}</div>`}
-  body+=`<button class="pbtn2" data-cz="1">Наблизити</button><button class="pbtn2" data-link="1">Посилання</button>`;
+  body+=`<button class="pbtn2" data-cz="1">Наблизити</button><button class="pbtn2" data-ca="1">Показати адреси</button>`+
+   `<button class="pbtn2" data-link="1">Посилання</button>`;
  } else {
   const key=CELL.ad.join(',');
   if(CELL_DOCS.key!==key){CELL_DOCS={key,cs:undefined}; docsForRefs(evs).then(cs=>{if(CELL_DOCS.key===key){CELL_DOCS.cs=cs; renderCell()}})}
@@ -257,7 +264,10 @@ function renderCell(){
   <div class="kp-body">${body}</div>`;
  el.hidden=false; el.classList.add('kp-cell'); document.body.classList.add('kp-open');
 }
-placeEl().addEventListener('click',e=>{ if(!CELL) return;
+// Закрили картку — посилання на неї з адреси сторінки прибираємо: інакше
+// оновлення сторінки відкривало її знову (перевірка 06.10)
+const bezPosylannia=()=>{ if(/^#(m|c)=/.test(location.hash)) history.replaceState(null,'',location.pathname+location.search)};
+placeEl().addEventListener('click',e=>{ if(e.target.closest('[data-kp="close"]')) bezPosylannia(); if(!CELL) return;
  const t=e.target;
  if(t.closest('.kp-head')&&!t.closest('[data-kp]')&&matchMedia('(max-width:700px)').matches){placeEl().classList.toggle('kp-tall'); return}
  const x=t.closest('[data-kp="close"]'); if(x){e.stopImmediatePropagation(); return closeCell()}
@@ -265,21 +275,26 @@ placeEl().addEventListener('click',e=>{ if(!CELL) return;
  const cv=t.closest('[data-cv]'); if(cv){const gi=+cv.dataset.cv; CELL.open=CELL.open===gi?-1:gi; return renderCell()}
  const cp=t.closest('[data-cp]'); if(cp){const i=+cp.dataset.cp; closeCell(); return openAt(i)}
  if(t.closest('[data-cmore]')){CELL.page++; return renderCell()}
+ // «Показати адреси» — вигляд «Адреси» на тому самому місці й масштабі
+ if(t.closest('[data-ca]')){closeCell(); return setView('addr')}
  if(t.closest('[data-link]')) return kopiyuvaty(CELL.hex?`c=${CELL.hex[2]},${(CELL.hex[1]/MY_).toFixed(5)},${(CELL.hex[0]/MX_).toFixed(5)}`:'');
  if(t.closest('[data-cz]')){let s=90,w=180,n=-90,ea=-180;
   for(const i of CELL.ad){const p=P[i]; if(p[0]<s)s=p[0]; if(p[0]>n)n=p[0]; if(p[1]<w)w=p[1]; if(p[1]>ea)ea=p[1]}
   map.fitBounds([[w,s],[ea,n]],{padding:sidePad(),maxZoom:16.5,duration:900})}
 },true);
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&CELL) closeCell()});
+document.addEventListener('keydown',e=>{ if(e.key!=='Escape') return; bezPosylannia(); if(CELL) closeCell()});
 // ==== ПОСИЛАННЯ НА МІСЦЕ (KARTA-1.0 №15; RISHENNYA 35.9) ====
 // Адреса сторінки з #m=<lat>,<lon> (адреса, проблема) чи #c=<R>,<lat>,<lon>
 // (сота); відкриття — карта на місці з карткою.
 function kopiyuvaty(h){ if(!h) return;
  const u=location.origin+location.pathname+location.search+'#'+h;
- try{navigator.clipboard.writeText(u)}catch(e){}
  history.replaceState(null,'','#'+h);
- const t=document.createElement('div'); t.id='kcopy'; t.textContent='Посилання скопійовано'; map.getContainer().appendChild(t);
- setTimeout(()=>t.remove(),1600)}
+ // Буфер обміну браузер може не дати (стара сторінка, заборона) — тоді
+ // посилання лишається в адресному рядку, і так і кажемо, а не «скопійовано».
+ const tost=s=>{const t=document.createElement('div'); t.id='kcopy'; t.textContent=s; map.getContainer().appendChild(t);
+  setTimeout(()=>t.remove(),1600)};
+ const ne=()=>tost('Посилання — в адресному рядку');
+ try{navigator.clipboard.writeText(u).then(()=>tost('Посилання скопійовано'),ne)}catch(e){ne()}}
 function zPosylannia(){
  const h=decodeURIComponent(location.hash.slice(1));
  let m=/^m=(-?[\d.]+),(-?[\d.]+)$/.exec(h);
@@ -288,10 +303,10 @@ function zPosylannia(){
   if(best>=0&&bd<=30) focusAddress(best); return}
  m=/^c=(\d+),(-?[\d.]+),(-?[\d.]+)$/.exec(h);
  if(m){const R_=+m[1], la=+m[2], lo=+m[3], cx=lo*MX_, cy=la*MY_;
-  if(R_!==330&&R_!==130) return;
+  if(!HEXG.some(G=>G.R===R_)) return;
   setView('soty');
   const ad=[]; P.forEach((p,i)=>{if(!p[3]) return; const [k,x,y]=hexAt(p[0],p[1],R_); if(Math.abs(x-cx)<1&&Math.abs(y-cy)<1) ad.push(i)});
-  if(ad.length){map.jumpTo({center:[lo,la],zoom:R_===330?12:13.4}); openCell('СОТА',ad,[cx,cy,R_],null)}}
+  if(ad.length){map.jumpTo({center:[lo,la],zoom:R_===330?12:R_===130?13.4:15.5}); openCell('СОТА',ad,[cx,cy,R_],null)}}
 }
 // кнопка «Посилання» в картці адреси й проблеми
 {const _r=renderPlace;
@@ -326,20 +341,20 @@ function hexHit(p){ if(MODE!=='soty'&&MODE!=='stovp') return null;
  const ids=[]; for(const G of HEXG) ids.push((MODE==='soty'?'k-hex-':'k-col-')+G.id);
  const f=map.queryRenderedFeatures(p,{layers:ids.filter(id=>map.getLayer(id))});
  if(!f.length) return null;
- // з двох сіток — та, що зараз видніша
- const z=map.getZoom(), id=z<12.55?'L':'S', g=f.find(x=>x.layer.id.endsWith(id))||f[0];
+ // з кількох сіток — та, що зараз видніша
+ const z=map.getZoom(), id=z<12.55?'L':z<14.5?'S':'X', g=f.find(x=>x.layer.id.endsWith(id))||f[0];
  const G=HEXG.find(x=>g.layer.id.endsWith(x.id)), b=HEXB[G.id].get(g.properties.k);
  return b?{G,b}:null}
 map.on('click',e=>{ if(CLICK_TAKEN||iconAt(e.point)) return;
  const rk=riskAt(e.point); if(rk&&!addrAt(e.point)){CLICK_TAKEN=true; return riskPopup(rk,e.lngLat)}
- const h=hexHit(e.point); if(!h||(map.getZoom()>=14.6&&addrAt(e.point))) return;
+ const h=hexHit(e.point); if(!h) return;
  CLICK_TAKEN=true; openCell('СОТА',h.b.ad,[h.b.cx,h.b.cy,h.G.R],e.lngLat)});
 map.on('mousemove',e=>{
  const rk=riskAt(e.point);
  if(rk&&!addrAt(e.point)&&!(RINGS_ON&&hitRing(e.point))){map.getCanvas().style.cursor='pointer';
   VTIP.setLngLat(e.lngLat).setHTML(riskTip(rk)).addTo(map); return}
  const h=hexHit(e.point);
- if(h&&!(map.getZoom()>=14.6&&addrAt(e.point))){map.getCanvas().style.cursor='pointer';
+ if(h){map.getCanvas().style.cursor='pointer';
   const a=new Set(h.b.ad).size;
   VTIP.setLngLat(e.lngLat).setHTML(`<b>${fmt(h.b.n)} ${pl(h.b.n,'подія','події','подій')} · ${fmt(a)} ${pl(a,'адреса','адреси','адрес')}</b>`).addTo(map); return}
  VTIP.remove()});
