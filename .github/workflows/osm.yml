@@ -1,0 +1,59 @@
+name: Знімок OSM
+
+# Знімок OpenStreetMap (рішення Андрія 06.10, RISHENNYA 35.9; KARTA-1.0 №17):
+# адреси (крок 2) і шари середовища, вулиць, будинків (крок 2b) качаються
+# раз на місяць окремо від збірки й лягають у гілку osm. «Оновлення карти»
+# бере їх звідти й більше не залежить від збоїв Overpass. Не завантажилося —
+# знімок лишається попереднім (у гілку йде лише повний).
+# 28-го — щоб за ним «Прохідність» устигла до першого понеділка місяця,
+# коли модель перенавчається.
+
+on:
+  schedule:
+    - cron: '0 1 28 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: osm-znimok
+  cancel-in-progress: false
+
+jobs:
+  znimok:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Адреси OSM (крок 2)
+        run: |
+          rm -f data/osm_kyiv_city.json
+          python -c "import sys; sys.path.insert(0,'src'); import step2_geocode as G; sys.exit(0 if G.fetch() else 1)"
+      - name: Шари OSM (крок 2b) — заново, з будинками й роботою
+        run: |
+          rm -f data/osm_risks_raw.json
+          python src/step2b_risks.py
+      - name: Покласти в гілку osm
+        run: |
+          set -e
+          mkdir -p /tmp/osm
+          gzip -9 -c data/osm_kyiv_city.json > /tmp/osm/osm_kyiv_city.json.gz
+          gzip -9 -c data/osm_risks_raw.json > /tmp/osm/osm_risks_raw.json.gz
+          date -u +'%Y-%m-%d' > /tmp/osm/data.txt
+          ls -la /tmp/osm
+          git config user.name  "karta-bot"
+          git config user.email "actions@github.com"
+          git fetch origin osm || true
+          if git rev-parse --verify origin/osm >/dev/null 2>&1; then
+            git checkout -B osm origin/osm
+          else
+            git checkout --orphan osm && git rm -rfq . || true
+          fi
+          rm -rf osm && mkdir osm && cp /tmp/osm/* osm/
+          git add -f osm
+          git commit -m "знімок OSM $(cat osm/data.txt)" || echo "змін немає"
+          git push origin osm

@@ -1,392 +1,453 @@
 # -*- coding: utf-8 -*-
-"""Крок 2c. Модель пішохідного потоку.
+"""Крок 2c. Прохідність — модельований потік людей (RISHENNYA 34.1, 35.2).
 
-Замість випадкової вибірки маршрутів — повний перебір: кожен житловий будинок
-прокладає шлях до найближчих цілей свого типу. Потоки рахуються окремо
-для шкіл, транспорту й торгівлі, бо вони діють у різний час і по-різному.
+Один потік замість трьох (до шкіл, до транспорту, до магазинів). Від кожного
+житлового будинку люди йдуть до цілей шести мет — робота, торгівля, школи й
+садки, здоров'я, парки, інше (кафе, послуги) — з частками поїздок METY.
+Мешканці будинку — населення шестикутника Kontur, поділене пропорційно
+площі поверхів. Ціль обирається за відстанню мережею й вагою (розмір):
+до 3 цілей мети в межах ходьби, імовірність ∝ вага × exp(−d / 400 м).
+Роботи чи школи в межах ходьби немає — людина йде до зупинки чи метро.
+Зворотний потік — ті, хто приїхав: від зупинок і метро до роботи, стільки
+ж людей, скільки поїхало транспортом на роботу по місту.
 
-Основа: Davies & Bishop (2014), betweenness як предиктор ризику.
+Вихід — data/network.json: [геометрія, назва, potik, id відрізка] для КОЖНОГО
+відрізка між перехрестями (vidrizky); відрізок без маршрутів — 0, а не
+відсутній. potik — «≈ осіб на добу» в моделі: туди й назад.
+
+Основа: Davies & Bishop (2014), betweenness як потік; Andresen (2006, 2011)
+— ризик ділиться на людей, що там є, а не лише на мешканців.
 """
-import os, sys, json, math, time, heapq, collections
+import os, sys, json, math, time, collections
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
-RAW  = os.path.join(DATA, 'osm_risks_raw.json')
-OUT  = os.path.join(DATA, 'network.json')
+RAW = os.path.join(DATA, 'osm_risks_raw.json')
+OUT = os.path.join(DATA, 'network.json')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import vidrizky as VR
 
-SNAP   = 5
-MAX_M  = int(os.environ.get('MAXWALK', '1200'))   # межа пішої ходьби
-NEAR_N = 2                                        # скільки найближчих цілей на будинок
-# Цілі потоків — категорії з osm_risks_raw.json (крок 2b).
-# ВИПРАВЛЕНО 2026-08: категорія 'transit' містить лише метро, вокзали й
-# автостанції, тому кінцеві тролейбусів і звичайні зупинки давали НУЛЬ потоку
-# (перевірено на вул. Кадетський Гай: потік до транспорту = 0 при наявній
-# кінцевій). Так само 'shop24' — це магазини біля дому й фастфуд, без
-# супермаркетів і ТЦ, тож великі об'єкти торгівлі не притягували маршрутів.
-FLOWS = {
-    'school':  ('school',),                       # школи й садки
-    'transit': ('transit', 'busstop'),            # метро, вокзали + зупинки наземного транспорту
-    'shop':    ('alcohol', 'shop24', 'market'),   # магазини біля дому, супермаркети, ТЦ, ринки
+MAX_M = int(os.environ.get('MAXWALK', '1200'))   # межа пішої ходьби
+TAU = 400.0            # м: як швидко падає охота йти далі
+K_CIL = 3              # до скількох цілей мети розходяться люди одного будинку
+TUDY_NAZAD = 2         # маршрут туди й назад — дві проходки відрізком
+
+# ---- МЕТИ Й ЧАСТКИ ПОЇЗДОК (одне місце в коді; джерела — METODYKA, «Прохідність») ----
+# Частки — початкові (Андрій 06.10): відкритого обстеження мобільності Києва
+# з розбивкою за метою не знайдено; порядок величин — з європейських
+# обстежень (робота й навчання ≈ 40%, покупки ≈ 20%, дозвілля й послуги ≈ 30%).
+# (ключі цілей, частка поїздок, як важить ціль)
+METY = {
+    'робота':   (('robota',), .30, 'площа'),
+    'торгівля': (('market', 'b1_super', 'b1_mall', 'shop24'), .20, 'тип'),
+    'школи':    (('school', 'kindergarten'), .12, 'тип'),
+    'здоров’я': (('b1_pharmacy', 'b1_hospital', 'clinic'), .08, 'тип'),
+    'парки':    (('park_vkhid',), .10, 'тип'),
+    'інше':     (('b1_cafe', 'b1_fastfood', 'posluhy'), .20, 'тип'),
 }
+VAGA_TYPU = {'b1_mall': 8, 'market': 6, 'b1_super': 4, 'shop24': 1, 'b1_hospital': 5, 'clinic': 3,
+             'b1_pharmacy': 1, 'school': 4, 'kindergarten': 2, 'b1_cafe': 1, 'b1_fastfood': 1,
+             'posluhy': 1, 'park_vkhid': 1}
+# мети, для яких людина без цілі в межах ходьби їде транспортом
+TRANSPORTOM = ('робота', 'школи')
+
+# ---- БУДИНКИ ----
+ZHYTLO = ('apartments', 'residential', 'house', 'dormitory', 'detached', 'semidetached_house', 'terrace')
+POVERHY_TYPU = {'house': 1.5, 'detached': 1.5, 'semidetached_house': 1.5, 'terrace': 2,
+                'apartments': 5, 'residential': 5, 'dormitory': 5, 'yes': 3}
+CHASTKA_PLOSHCHI = 0.7     # під житло — 70% рамки будинку
+
 
 def mdeg(lat): return 111320.0, 111320.0 * math.cos(math.radians(lat))
+
+
 def dist_m(a, b):
     my, mx = mdeg((a[0] + b[0]) / 2)
-    return math.hypot((a[0]-b[0]) * my, (a[1]-b[1]) * mx)
-def key(lat, lon): return (round(lat, SNAP), round(lon, SNAP))
+    return math.hypot((a[0] - b[0]) * my, (a[1] - b[1]) * mx)
 
-def build_graph(ways):
-    adj = collections.defaultdict(list); seg = {}
-    for w in ways:
-        g = w.get('geometry')
-        if not g or len(g) < 2: continue
-        t = w.get('tags', {}); nm = t.get('name', ''); wid = w.get('id')
-        pts = [key(p['lat'], p['lon']) for p in g]
-        for u, v in zip(pts, pts[1:]):
-            if u == v: continue
-            d = dist_m(u, v)
-            if d <= 0: continue
-            adj[u].append((v, d)); adj[v].append((u, d))
-            seg[(u, v)] = seg[(v, u)] = (wid, nm)
-    return adj, seg
+
+def key(lat, lon): return VR.key(lat, lon)
+
+
+def centr(el):
+    la = el.get('lat') or (el.get('center') or {}).get('lat')
+    lo = el.get('lon') or (el.get('center') or {}).get('lon')
+    if la and lo: return (la, lo)
+    g = el.get('geometry')
+    if g: return (sum(p['lat'] for p in g) / len(g), sum(p['lon'] for p in g) / len(g))
+    return None
+
+
+def ploshcha(el):
+    """м² рамки елемента (out bb); немає рамки — 0"""
+    b = el.get('bounds')
+    if not b: return 0.0
+    my, mx = mdeg((b['minlat'] + b['maxlat']) / 2)
+    return abs(b['maxlat'] - b['minlat']) * my * abs(b['maxlon'] - b['minlon']) * mx
+
+
+def poverhy(t):
+    for k in ('building:levels',):
+        try:
+            v = float(str(t.get(k, '')).replace(',', '.').split(';')[0])
+            if v > 0: return v
+        except ValueError:
+            pass
+    try:
+        h = float(str(t.get('height', '')).replace(',', '.').replace('m', '').strip())
+        if h > 0: return max(1.0, h / 3)
+    except ValueError:
+        pass
+    return POVERHY_TYPU.get(t.get('building'), 3)
+
 
 class Grid:
     def __init__(s, pts, cell=0.0015):
         s.c = cell; s.g = collections.defaultdict(list)
-        for p in pts: s.g[(int(p[0]/cell), int(p[1]/cell))].append(p)
-    def nearest(s, la, lo, rad=200):
+        for i, p in enumerate(pts): s.g[(int(p[0] / cell), int(p[1] / cell))].append((p, i))
+
+    def nearest(s, la, lo, rad):
         my, mx = mdeg(la)
-        n = int(max(rad/my, rad/mx)/s.c) + 1
-        ci, cj = int(la/s.c), int(lo/s.c)
+        n = int(max(rad / my, rad / mx) / s.c) + 1
+        ci, cj = int(la / s.c), int(lo / s.c)
         best, bd = None, 1e18
-        for i in range(ci-n, ci+n+1):
-            for j in range(cj-n, cj+n+1):
-                for p in s.g.get((i, j), ()):
-                    d = math.hypot((p[0]-la)*my, (p[1]-lo)*mx)
-                    if d < bd: bd, best = d, p
+        for i in range(ci - n, ci + n + 1):
+            for j in range(cj - n, cj + n + 1):
+                for p, k in s.g.get((i, j), ()):
+                    d = math.hypot((p[0] - la) * my, (p[1] - lo) * mx)
+                    if d < bd: bd, best = d, k
         return best if bd <= rad else None
-    def within(s, la, lo, rad):
-        my, mx = mdeg(la)
-        n = int(max(rad/my, rad/mx)/s.c) + 1
-        ci, cj = int(la/s.c), int(lo/s.c); out = []
-        for i in range(ci-n, ci+n+1):
-            for j in range(cj-n, cj+n+1):
-                for p in s.g.get((i, j), ()):
-                    d = math.hypot((p[0]-la)*my, (p[1]-lo)*mx)
-                    if d <= rad: out.append((d, p))
-        out.sort(); return out
 
-def dijkstra_multi(adj, src, targets, limit):
-    """шлях від src до НАЙБЛИЖЧОЇ з targets (за мережею, не по прямій)"""
-    tset = set(targets)
-    if not tset: return None
-    dist = {src: 0.0}; prev = {}
-    pq = [(0.0, src)]
-    while pq:
-        d, u = heapq.heappop(pq)
-        if d > dist.get(u, 1e18): continue
-        if u in tset:
-            path, cur = [], u
-            while cur != src:
-                p = prev[cur]; path.append((p, cur)); cur = p
-            return path
-        if d > limit: break
-        for v, w in adj[u]:
-            nd = d + w
-            if nd < dist.get(v, 1e18):
-                dist[v] = nd; prev[v] = u
-                heapq.heappush(pq, (nd, v))
-    return None
 
-def centers(els):
-    out = []
-    for el in els:
-        la = el.get('lat') or (el.get('center') or {}).get('lat')
-        lo = el.get('lon') or (el.get('center') or {}).get('lon')
-        if la and lo: out.append((la, lo))
+def v_poligoni(la, lo, ring):
+    c = False
+    for (a1, o1), (a2, o2) in zip(ring, ring[1:] + ring[:1]):
+        if (o1 > lo) != (o2 > lo) and la < (a2 - a1) * (lo - o1) / (o2 - o1) + a1: c = not c
+    return c
+
+
+def zhytlova_zona(raw):
+    """функція (lat, lon) -> чи в landuse=residential"""
+    polys = []
+    for el in raw.get('zhytlo_zona') or []:
+        g = el.get('geometry') or []
+        if len(g) >= 4:
+            ring = [(p['lat'], p['lon']) for p in g]
+            polys.append((min(p[0] for p in ring), max(p[0] for p in ring),
+                          min(p[1] for p in ring), max(p[1] for p in ring), ring))
+    C = 0.01
+    idx = collections.defaultdict(list)
+    for k, (a, b, c, d, _r) in enumerate(polys):
+        for i in range(int(a / C), int(b / C) + 1):
+            for j in range(int(c / C), int(d / C) + 1):
+                idx[(i, j)].append(k)
+
+    def f(la, lo):
+        for k in idx.get((int(la / C), int(lo / C)), ()):
+            a, b, c, d, r = polys[k]
+            if a <= la <= b and c <= lo <= d and v_poligoni(la, lo, r): return True
+        return False
+    return f, len(polys)
+
+
+def budynky(raw, log=print):
+    """[(lat, lon, площа поверхів)] житлових будинків; building=yes — лише в
+    житловій забудові або від 3 поверхів, інакше це сараї й гаражі."""
+    zona, n_z = zhytlova_zona(raw)
+    out, st = [], collections.Counter()
+    for el in raw.get('houses') or []:
+        t = el.get('tags') or {}
+        c = centr(el)
+        if not c: continue
+        b = t.get('building')
+        pv = poverhy(t)
+        if b == 'yes':
+            yavni = 'building:levels' in t and pv >= 3
+            if not (yavni or (n_z and zona(*c))):
+                st['yes — не житло'] += 1; continue
+            st['yes — житло'] += 1
+        elif b in ZHYTLO:
+            st[b] += 1
+        else:
+            continue
+        S = max(ploshcha(el), 40.0) * CHASTKA_PLOSHCHI * pv
+        out.append((c[0], c[1], S))
+    log('   будинки: ' + ', '.join(f'{k} {v:,}' for k, v in st.most_common()))
     return out
 
+
+def tsili(raw):
+    """мета -> [(lat, lon, вага)]; плюс транспорт [(lat, lon)]"""
+    def els(k):
+        if k in ('school', 'kindergarten'):
+            return [e for e in raw.get('b1_school') or [] if (e.get('tags') or {}).get('amenity') == k]
+        if k == 'clinic':
+            return [e for e in raw.get('b1_hospital') or [] if (e.get('tags') or {}).get('amenity') == 'clinic']
+        if k == 'b1_hospital':
+            return [e for e in raw.get('b1_hospital') or [] if (e.get('tags') or {}).get('amenity') == 'hospital']
+        if k == 'market':
+            return raw.get('b1_market') or []
+        if k == 'shop24':
+            return [e for e in raw.get('shop24') or [] if (e.get('tags') or {}).get('shop') == 'convenience']
+        if k == 'park_vkhid':
+            return raw.get('park') or []
+        return raw.get(k) or []
+    out = {}
+    for m, (keys, _sh, vaga) in METY.items():
+        acc = []
+        for k in keys:
+            for e in els(k):
+                c = centr(e)
+                if not c: continue
+                w = max(ploshcha(e), 200.0) if vaga == 'площа' else VAGA_TYPU.get(k, 1)
+                acc.append((c[0], c[1], w))
+        out[m] = acc
+    trans = [c for k in ('b1_metro', 'b1_stops') for e in raw.get(k) or [] if (c := centr(e))]
+    return out, trans
+
+
+def naselennia(houses, log=print):
+    """мешканці кожного будинку: населення шестикутника ∝ площа поверхів"""
+    pp = os.path.join(DATA, 'population.json')
+    if not os.path.exists(pp):
+        log('   population.json немає — кожен будинок важить свою площу поверхів / 25 м²')
+        return [S / 25.0 for _la, _lo, S in houses]
+    P = json.load(open(pp, encoding='utf-8'))['items']
+    C = 0.0045
+    pg = collections.defaultdict(list)
+    for k, (la, lo, n) in enumerate(P): pg[(int(la / C), int(lo / C))].append((la, lo, k))
+    hex_of, suma = [], collections.Counter()
+    for la, lo, S in houses:
+        best, bd = None, 1e18
+        ci, cj = int(la / C), int(lo / C)
+        for di in (-1, 0, 1):
+            for dj in (-1, 0, 1):
+                for a, b, k in pg.get((ci + di, cj + dj), ()):
+                    d = dist_m((la, lo), (a, b))
+                    if d < bd: bd, best = d, k
+        best = best if bd <= 600 else None
+        hex_of.append(best)
+        if best is not None: suma[best] += S
+    out = [(P[k][2] * S / suma[k]) if k is not None and suma[k] else 0.0
+           for (la, lo, S), k in zip(houses, hex_of)]
+    log(f'   мешканців розподілено: {sum(out):,.0f} (у шестикутниках Kontur {sum(p[2] for p in P):,.0f})')
+    return out
+
+
 def main():
+    import numpy as np
+    from scipy.sparse import csr_matrix
+    from scipy.sparse.csgraph import dijkstra, connected_components
     if not os.path.exists(RAW):
-        print('немає data/osm_risks_raw.json — спершу крок 2b (src/step2b_risks.py)'); sys.exit(1)
+        print('немає data/osm_risks_raw.json — спершу крок 2b'); sys.exit(1)
+    t0 = time.time()
     raw = json.load(open(RAW, encoding='utf-8'))
-    import vidrizky as VR
-    roads, foot = VR.vulytsi(raw), raw.get('foot', [])
-    houses = centers(raw.get('houses', []))
-    print(f'дороги {len(roads):,}   пішохідні {len(foot):,}   будинки {len(houses):,}')
+    roads, foot = VR.vulytsi(raw), raw.get('foot') or []
+    houses = budynky(raw)
+    print(f'дороги {len(roads):,}   пішохідні {len(foot):,}   житлові будинки {len(houses):,}')
     if not houses or not foot:
-        # Без будинків маршрутів немає зовсім; без доріжок потоки йшли б лише
-        # проїжджою частиною. network.json лишається з минулого запуску, а
-        # крок 4 бере з нього потік лінії OSM, на якій лежить відрізок.
-        print('УВАГА: у кеші OSM немає ' + ' і '.join(n for n, v in (('будинків (houses)', houses),
-                                                                    ('пішохідних доріжок (foot)', foot)) if not v)
-              + ' — потоки не перераховуються; повне перезавантаження OSM — лише галочкою')
+        # Без будинків маршрутів немає; без доріжок потоки йшли б лише
+        # проїжджою частиною. network.json лишається з минулого запуску.
+        print('УВАГА: у знімку OSM немає ' + ' і '.join(n for n, v in (('будинків (houses)', houses),
+                                                                     ('пішохідних доріжок (foot)', foot)) if not v)
+              + ' — прохідність не перераховується')
         sys.exit(1)
-    print(f'межа ходьби: {MAX_M} м')
 
-    # --- ВАГА БУДИНКІВ ЗА НАСЕЛЕННЯМ ---
-    popw = None
-    ppath = os.path.join(DATA, 'population.json')
-    if os.path.exists(ppath):
-        P = json.load(open(ppath, encoding='utf-8'))['items']
-        pcell = 0.0045                       # ~500 м, під розмір шестикутника Kontur
-        pg = collections.defaultdict(list)
-        for la, lo, n in P:
-            pg[(int(la/pcell), int(lo/pcell))].append((la, lo, n))
-        hcnt = collections.Counter()
-        hkey = {}
-        for idx, h in enumerate(houses):
-            ci, cj = int(h[0]/pcell), int(h[1]/pcell)
-            best, bd = None, 1e18
-            for di in (-1, 0, 1):
-                for dj in (-1, 0, 1):
-                    for la, lo, n in pg.get((ci+di, cj+dj), ()):
-                        d = dist_m(h, (la, lo))
-                        if d < bd: bd, best = d, (round(la,5), round(lo,5), n)
-            if best and bd <= 600:
-                hkey[idx] = best; hcnt[best] += 1
-        popw = {}
-        for idx, k in hkey.items():
-            popw[idx] = max(1.0, k[2] / max(hcnt[k], 1))   # мешканців на будинок
-        if popw:
-            vals = sorted(popw.values())
-            print(f'   населення підключено: {len(popw):,} будинків, '
-                  f'медіана {vals[len(vals)//2]:.0f} осіб на будинок')
-    else:
-        print('   population.json відсутній — усі будинки важать однаково')
+    # ---- граф ----
+    nid, coord = {}, []
+    def node(k):
+        if k not in nid: nid[k] = len(coord); coord.append(k)
+        return nid[k]
+    A, B, W = [], [], []
+    for w in roads + foot:
+        g = w.get('geometry') or []
+        ks = [key(p['lat'], p['lon']) for p in g]
+        for u, v in zip(ks, ks[1:]):
+            if u == v: continue
+            d = dist_m(u, v)
+            if d <= 0: continue
+            a, b = node(u), node(v)
+            A += [a, b]; B += [b, a]; W += [d, d]
+    N = len(coord)
+    G = csr_matrix((W, (A, B)), shape=(N, N))
+    nc, lab = connected_components(G, directed=False)
+    big = np.bincount(lab).argmax()
+    main_n = np.where(lab == big)[0]
+    print(f'1) граф: вузлів {N:,}, ребер {len(W) // 2:,}; найбільша компонента {len(main_n):,} '
+          f'({100 * len(main_n) / N:.0f}%)')
+    ngrid = Grid([coord[i] for i in main_n])
+    snap = lambda la, lo, r: (lambda k: None if k is None else int(main_n[k]))(ngrid.nearest(la, lo, r))
 
-    print('1) граф пішохідної мережі...')
-    adj, seg = build_graph(roads + foot)
-    print(f'   вузлів {len(adj):,}   ребер {len(seg)//2:,}')
-    # --- ДІАГНОСТИКА ЗВ'ЯЗНОСТІ ---
-    seen = set(); comps = []
-    for st in adj:
-        if st in seen: continue
-        stack = [st]; comp = 0; seen.add(st)
-        while stack:
-            u = stack.pop(); comp += 1
-            for v, _ in adj[u]:
-                if v not in seen:
-                    seen.add(v); stack.append(v)
-        comps.append(comp)
-    comps.sort(reverse=True)
-    big = comps[0] if comps else 0
-    print(f'   компонент зв\'язності: {len(comps):,}, найбільша {big:,} вузлів '
-          f'({100*big/max(len(adj),1):.0f}% мережі)')
-    # прив'язуємось лише до вузлів найбільшої компоненти
-    seen3 = set(); mainnodes = None
-    for st in adj:
-        if st in seen3: continue
-        stack = [st]; grp = [st]; seen3.add(st)
-        while stack:
-            u = stack.pop()
-            for v, _ in adj[u]:
-                if v not in seen3:
-                    seen3.add(v); stack.append(v); grp.append(v)
-        if len(grp) == big: mainnodes = set(grp)
-    ngrid = Grid(list(mainnodes) if mainnodes else list(adj))
+    # ---- джерела: мешканці на вузлах ----
+    people = naselennia(houses)
+    src = collections.Counter()
+    for (la, lo, _S), n in zip(houses, people):
+        if n <= 0: continue
+        k = snap(la, lo, 300)
+        if k is not None: src[k] += n
+    print(f'2) джерел (вузлів з мешканцями): {len(src):,}; мешканців на мережі {sum(src.values()):,.0f}')
 
-    if big / max(len(adj), 1) < 0.7:
-        print('   !!! УВАГА: мережа сильно розірвана — імовірно, неповні дані foot/roads.')
-        print('   !!! Перезапустіть крок 2b, видаливши data/osm_risks_raw.json')
-    # до якої компоненти належить перевірювана вулиця
-    if len(sys.argv) > 1 and sys.argv[1].strip():
-        q0 = sys.argv[1].strip().lower()
-        mainset = None
-        for st in adj:
-            pass
-        # позначаємо вузли найбільшої компоненти
-        seen2 = set()
-        for st in adj:
-            if st in seen2: continue
-            stack = [st]; group = [st]; seen2.add(st)
-            while stack:
-                u = stack.pop()
-                for v, _ in adj[u]:
-                    if v not in seen2:
-                        seen2.add(v); stack.append(v); group.append(v)
-            if len(group) == big: mainset = set(group); break
-        inmain = out = 0
-        for wq in roads:
-            nm = (wq.get('tags', {}) or {}).get('name', '')
-            if q0 in nm.lower():
-                for pnt in wq.get('geometry', []):
-                    k = key(pnt['lat'], pnt['lon'])
-                    if mainset and k in mainset: inmain += 1
-                    else: out += 1
-        if inmain or out:
-            print(f'   "{sys.argv[1]}": вузлів у головній мережі {inmain}, поза нею {out}')
-            if out and not inmain:
-                print('   !!! ця вулиця ВІДРІЗАНА від мережі — маршрути через неї неможливі')
+    # ---- цілі ----
+    T, trans = tsili(raw)
+    tn = {}
+    for m, lst in T.items():
+        nodes, ws = [], []
+        for la, lo, w in lst:
+            k = snap(la, lo, 400)
+            if k is not None: nodes.append(k); ws.append(w)
+        tn[m] = (np.array(nodes, dtype=np.int64), np.array(ws, dtype=float))
+        print(f'   мета «{m}»: цілей {len(lst):,}, у мережі {len(nodes):,}')
+    trn = np.array(sorted({k for la, lo in trans if (k := snap(la, lo, 300)) is not None}), dtype=np.int64)
+    print(f'   зупинок і входів метро в мережі: {len(trn):,}')
 
-    # прив'язка будинків до мережі — один раз
-    print('2) прив\'язую будинки до мережі...')
-    hnodes = []
-    for i, h in enumerate(houses):
-        if i and i % 4000 == 0: print(f'   {i:,} / {len(houses):,}', flush=True)
-        n = ngrid.nearest(*h, rad=300)
-        if n: hnodes.append((h, n, (popw or {}).get(i, 1.0)))
-    print(f'   прив\'язано {len(hnodes):,}')
+    load = collections.defaultdict(float)     # (u, v), u < v -> людей
 
-    total = collections.defaultdict(float)
-    per_flow = {}
-    for fname, keys in FLOWS.items():
-        tg = []
-        for k in keys: tg += centers(raw.get(k, []))
-        if not tg:
-            print(f'   потік {fname}: цілей немає, пропускаю'); continue
-        tgrid = Grid(tg)
-        tnodes = {}
-        for t in tg:
-            n = ngrid.nearest(*t, rad=400)
-            if n: tnodes[t] = n
-        print(f'3) потік "{fname}": цілей {len(tg):,}, з них у мережі {len(tnodes):,}')
+    def walk(pred_row, s, t, L):
+        v = t
+        while v != s and v >= 0:
+            u = pred_row[v]
+            if u < 0: break
+            load[(u, v) if u < v else (v, u)] += L
+            v = u
 
-        load = collections.defaultdict(float); ok = 0; t0 = time.time()
-        no_t = no_p = 0
-        for i, (h, hn, wgt) in enumerate(hnodes):
-            if i and i % 2000 == 0:
-                print(f'   {i:,} / {len(hnodes):,}   маршрутів {ok:,}   {time.time()-t0:.0f} c', flush=True)
-            near = tgrid.within(*h, MAX_M)[:NEAR_N]
-            if not near:
-                nb = tgrid.nearest(*h, rad=MAX_M)
-                near = [(0, nb)] if nb else []
-            if not near: no_t += 1; continue
-            tn = [tnodes[p] for d, p in near if p in tnodes]
-            if not tn: no_t += 1; continue
-            path = dijkstra_multi(adj, hn, tn, MAX_M * 1.5)
-            if not path: no_p += 1; continue
-            ok += 1
-            for e in path: load[e] += wgt
-        print(f'   маршрутів прокладено: {ok:,}   без цілі поблизу: {no_t:,}   шлях не знайдено: {no_p:,}')
-        per_flow[fname] = load
-        for e, c in load.items(): total[e] += c
+    def rozpodil(d, w):
+        """до K_CIL найближчих цілей у межах ходьби -> (індекси, частки)"""
+        ok = np.where(np.isfinite(d) & (d <= MAX_M))[0]
+        if not len(ok): return ok, None
+        if len(ok) > K_CIL:
+            ok = ok[np.argpartition(d[ok], K_CIL)[:K_CIL]]
+        p = w[ok] * np.exp(-d[ok] / TAU)
+        return ok, p / p.sum()
 
-    if not total:
-        print('жодного маршруту — перевірте дані'); sys.exit(1)
+    # ---- маршрути з дому ----
+    S_ = np.array(list(src.keys()), dtype=np.int64)
+    R_ = np.array([src[k] for k in S_], dtype=float)
+    BATCH = 64
+    transportom = 0.0
+    st = collections.Counter()
+    print('3) маршрути з дому…', flush=True)
+    for b0 in range(0, len(S_), BATCH):
+        idx = S_[b0:b0 + BATCH]
+        D, Pr = dijkstra(G, directed=False, indices=idx, limit=MAX_M * 1.25, return_predecessors=True)
+        for r, s in enumerate(idx):
+            R = R_[b0 + r]
+            for m, (keys, share, _v) in METY.items():
+                nodes, ws = tn[m]
+                if not len(nodes): continue
+                ok, p = rozpodil(D[r, nodes], ws)
+                if p is not None:
+                    st[m + ': пішки'] += 1
+                    for j, pj in zip(ok, p): walk(Pr[r], s, nodes[j], R * share * pj)
+                elif m in TRANSPORTOM and len(trn):
+                    dt = D[r, trn]
+                    j = int(np.argmin(dt))
+                    if np.isfinite(dt[j]) and dt[j] <= MAX_M:
+                        walk(Pr[r], s, trn[j], R * share)
+                        if m == 'робота': transportom += R * share
+                        st[m + ': до зупинки'] += 1
+                    else:
+                        st[m + ': недосяжно'] += 1
+                else:
+                    st[m + ': недосяжно'] += 1
+        if (b0 // BATCH) % 50 == 0:
+            print(f'   {b0 + len(idx):,} / {len(S_):,} · {time.time() - t0:.0f} c', flush=True)
+    print('   ' + ', '.join(f'{k} {v:,}' for k, v in sorted(st.items())))
 
-    print('4) зводжу по відрізках між перехрестями...')
-    # Навантаження відрізка = СЕРЕДНЄ по його власних ребрах, зважене на довжину.
-    # Пішохідна доріжка враховується, якщо йде впритул уздовж дороги (коридор),
-    # але кожен відрізок збирає лише свій слід — без запозичення в сусідів.
-    # Одиниця — відрізок між перехрестями (ZAVDANNYA-30, 1.1), та сама, що в
-    # моделі ризику: потік лінії OSM через три квартали розмазував би
-    # великий потік одного кварталу на всі три.
-    import vidrizky as VR
+    # ---- зворотний потік: ті, хто приїхав на роботу ----
+    nodes, ws = tn['робота']
+    if transportom > 0 and len(nodes) and len(trn):
+        best = np.full((len(nodes), K_CIL), np.inf); bs = np.full((len(nodes), K_CIL), -1, dtype=np.int64)
+        for b0 in range(0, len(trn), BATCH):
+            idx = trn[b0:b0 + BATCH]
+            D = dijkstra(G, directed=False, indices=idx, limit=MAX_M * 1.25)[:, nodes]   # зупинки × цілі
+            for r in range(len(idx)):
+                row = np.concatenate([best, D[r][:, None]], axis=1)
+                srow = np.concatenate([bs, np.full((len(nodes), 1), b0 + r)], axis=1)
+                o = np.argsort(row, axis=1)[:, :K_CIL]
+                best = np.take_along_axis(row, o, 1); bs = np.take_along_axis(srow, o, 1)
+        dosyazh = np.isfinite(best[:, 0]) & (best[:, 0] <= MAX_M)
+        A_ = np.where(dosyazh, ws, 0.0)
+        pryizd = transportom * A_ / A_.sum() if A_.sum() else A_
+        # маршрути від зупинок, згруповані за зупинкою
+        po_zup = collections.defaultdict(list)
+        for j in np.where(dosyazh)[0]:
+            d = best[j]; ok = np.isfinite(d) & (d <= MAX_M)
+            p = np.exp(-d[ok] / TAU); p /= p.sum()
+            for k, pk in zip(bs[j][ok], p): po_zup[int(k)].append((int(nodes[j]), pryizd[j] * pk))
+        zk = sorted(po_zup)
+        for b0 in range(0, len(zk), BATCH):
+            idx = trn[zk[b0:b0 + BATCH]]
+            _D, Pr = dijkstra(G, directed=False, indices=idx, limit=MAX_M * 1.25, return_predecessors=True)
+            for r, k in enumerate(zk[b0:b0 + BATCH]):
+                for t, L in po_zup[k]: walk(Pr[r], int(trn[k]), t, L)
+        print(f'4) зворотний потік: {transportom:,.0f} осіб приїхали на роботу до {int(dosyazh.sum()):,} цілей '
+              f'від {len(zk):,} зупинок')
+
+    # ---- зведення по відрізках між перехрестями ----
+    # Навантаження відрізка = середнє по його ребрах, зважене на довжину;
+    # доріжка впритул уздовж дороги (≤ 35 м) — частина коридору вулиці.
     SEG = VR.build(roads)
     seg_of = VR.rebra(SEG)
-    road_nm = {sid: s['name'] for sid, s in SEG.items()}
-
-    # 1) слід кожного ребра прив'язуємо до найближчого відрізка ДОРОГИ (не далі 35 м)
     CELL = 0.0006
     rgrid = collections.defaultdict(list)
     for sid, s in SEG.items():
-        g = s['pts']
-        for a, b in zip(g, g[1:]):
+        for a, b in zip(s['pts'], s['pts'][1:]):
             mla, mlo = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
             rgrid[(int(mla / CELL), int(mlo / CELL))].append((mla, mlo, sid))
 
     def owner(la, lo, rad=35.0):
         my, mx = mdeg(la)
         ci, cj = int(la / CELL), int(lo / CELL)
-        best, bd = None, 1e18
+        best_, bd = None, 1e18
         for di in (-1, 0, 1):
             for dj in (-1, 0, 1):
-                for pa, po, wid_ in rgrid.get((ci + di, cj + dj), ()):
+                for pa, po, s_ in rgrid.get((ci + di, cj + dj), ()):
                     d = math.hypot((pa - la) * my, (po - lo) * mx)
-                    if d < bd: bd, best = d, wid_
-        return best if bd <= rad else None
-
-    own_cache = {}
-    def by_way(load):
-        acc = collections.defaultdict(float)   # сума (навантаження × довжина)
-        ln  = collections.defaultdict(float)   # сума довжин
-        for e, c in load.items():
-            if e not in seg: continue
-            wid = seg_of.get(e)
-            if wid is None:
-                (la1, lo1), (la2, lo2) = e
-                mk = (round((la1 + la2) / 2, 5), round((lo1 + lo2) / 2, 5))
-                if mk in own_cache: wid = own_cache[mk]
-                else: wid = own_cache[mk] = owner(*mk)
-                if wid is None: continue
-            d_ = dist_m(e[0], e[1]) or 1.0
-            acc[wid] += c * d_
-            ln[wid] += d_
-        out = {}
-        for wid in acc:
-            out[wid] = [int(round(acc[wid] / max(ln[wid], 1))), road_nm.get(wid, '')]
-        return out
-
-    tot_w = by_way(total)
-    flow_w = {f: by_way(l) for f, l in per_flow.items()}
-
-    geo = {}
-    for sid, s in SEG.items():
-        g = s['pts']
-        if sid in tot_w:
-            st = max(1, len(g)//10)
-            # кінцеву точку лишаємо завжди: без неї відрізки між перехрестями
-            # на карті не сходилися б у вузлах
-            geo[sid] = [[round(p[0],5), round(p[1],5)] for p in g[::st]]
-            if geo[sid][-1] != [round(g[-1][0],5), round(g[-1][1],5)]:
-                geo[sid].append([round(g[-1][0],5), round(g[-1][1],5)])
-
+                    if d < bd: bd, best_ = d, s_
+        return best_ if bd <= rad else None
+    acc = collections.defaultdict(float); ln = collections.defaultdict(float)
+    for (u, v), c in load.items():
+        a, b = coord[u], coord[v]
+        sid = seg_of.get((a, b))
+        if sid is None:
+            sid = owner((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+            if sid is None: continue
+        d = dist_m(a, b) or 1.0
+        acc[sid] += c * d; ln[sid] += d
     items = []
-    for wid, (c, nm) in tot_w.items():
-        if wid in geo and c > 0:
-            sch = flow_w.get('school', {}).get(wid, [0, ''])[0]
-            trn = flow_w.get('transit', {}).get(wid, [0, ''])[0]
-            shp = flow_w.get('shop', {}).get(wid, [0, ''])[0]
-            # 7-й елемент — id відрізка між перехрестями («<way>:<n>»,
-            # vidrizky.build). Потрібен кроку 4, щоб брати потік ПО ВІДРІЗКУ,
-            # а не максимум по назві вулиці (див. коментар там).
-            items.append([geo[wid], nm, c, sch, trn, shp, wid])
-    # ---- ГЕОМЕТРІЯ МЕРЕЖІ: проникність, перехрестя, звивистість ----
-    # Johnson & Bowers (2014), "Examining the Relationship Between Road Structure and
-    # Burglary Risk Via Quantitative Network Analysis", J. of Quantitative Criminology
-    # 30(2). (У попередній редакції коду рік було вказано помилково — 2010.)
-    print('5) геометрія мережі...')
-    # Будова — по відрізках між перехрестями і з графа самих вулиць
-    # (ZAVDANNYA-30, 1.1): той самий vidrizky.budova, що й у кроці 4, щоб
-    # файл і модель не розходилися. Тип кінців тепер і є тип перехрестя,
-    # яким квартал починається й кінчається.
-    netgeo = VR.budova(SEG, VR.stupeni(roads))
-    json.dump(netgeo, open(os.path.join(DATA, 'netgeo.json'), 'w', encoding='utf-8'),
-              separators=(',', ':'))
-    dd = collections.Counter()
-    for v in netgeo.values():
-        dd['тупики' if v['dead'] else ('хрестоподібні' if v['cross4'] else
-            ('T-подібні' if v['cross3'] else 'прості'))] += 1
-    for k, v in dd.most_common(): print(f'   {k}: {v:,}')
-    print(f'   -> data/netgeo.json ({len(netgeo):,} відрізків)')
-
+    for sid, s in SEG.items():
+        g = s['pts']; stp = max(1, len(g) // 10)
+        geo = [[round(p[0], 5), round(p[1], 5)] for p in g[::stp]]
+        if geo[-1] != [round(g[-1][0], 5), round(g[-1][1], 5)]:
+            geo.append([round(g[-1][0], 5), round(g[-1][1], 5)])
+        potik = int(round(TUDY_NAZAD * acc[sid] / ln[sid])) if ln.get(sid) else 0
+        items.append([geo, s['name'], potik, sid])
     items.sort(key=lambda x: -x[2])
-    json.dump({'title': 'Модельована пішохідна прохідність', 'items': items},
-              open(OUT, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',',':'))
-    print(f'   відрізків {len(items):,} -> data/network.json')
+    json.dump({'title': 'Прохідність (модельований потік людей, осіб на добу)', 'versiia': 2, 'items': items},
+              open(OUT, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
+    nz = sum(1 for it in items if it[2] > 0)
+    print(f'5) відрізків {len(items):,} (з потоком {nz:,}) -> data/network.json')
 
-    def rank_of(items, idx, title):
-        agg = collections.Counter()
-        for it in items:
-            if it[1]: agg[it[1]] = max(agg[it[1]], it[idx])
-        r = [(n, c) for n, c in agg.most_common() if c > 0]
-        print(f'\n=== ТОП-20: {title} ===')
-        for i, (n, c) in enumerate(r[:20], 1): print(f'   {i:3}. {c:6}  {n}')
-        return r
+    # ---- будова мережі (Johnson & Bowers 2014) — та сама, що в кроці 4 ----
+    netgeo = VR.budova(SEG, VR.stupeni(roads))
+    json.dump(netgeo, open(os.path.join(DATA, 'netgeo.json'), 'w', encoding='utf-8'), separators=(',', ':'))
+    print(f'   -> data/netgeo.json ({len(netgeo):,} відрізків) · {time.time() - t0:.0f} c')
 
-    rank_all = rank_of(items, 2, 'загальна прохідність')
-    rank_sch = rank_of(items, 3, 'ПОТІК ДО ШКІЛ І САДКІВ')
+    # ---- перевірка очима (ZAVDANNYA-32, 4.4): потік і процентиль ----
+    vals = sorted(it[2] for it in items)
+    def pct(v):
+        import bisect
+        return 100 * bisect.bisect_left(vals, v) / len(vals)
+    PEREVIRKA = os.environ.get('PEREVIRKA', 'Хрещатик;Велика Васильківська;Лісовий;Кадетський Гай;Героїв Дніпра;'
+                               'Дорогожицька;Андріївський узвіз;Набережне шосе;Подільський міст').split(';')
+    print('\n=== ПЕРЕВІРКА (найвищий відрізок вулиці) ===')
+    for q in PEREVIRKA:
+        hit = [it for it in items if q.lower() in (it[1] or '').lower()]
+        if not hit: print(f'   {q}: немає в мережі'); continue
+        top = max(hit, key=lambda x: x[2]); med = sorted(h[2] for h in hit)[len(hit) // 2]
+        print(f'   {q}: макс {top[2]:,} (вище за {pct(top[2]):.0f}% відрізків), медіана {med:,} '
+              f'({pct(med):.0f}%), відрізків {len(hit)}')
 
-    if len(sys.argv) > 1 and sys.argv[1].strip():
-        q = sys.argv[1].strip().lower()
-        print(f'\n=== ПЕРЕВІРКА: "{sys.argv[1]}" ===')
-        for label, r in (('загальна', rank_all), ('до шкіл', rank_sch)):
-            hit = [(i, n, c) for i, (n, c) in enumerate(r, 1) if q in n.lower()]
-            if not hit:
-                print(f'   {label}: не знайдено')
-            for i, n, c in hit:
-                print(f'   {label}: місце {i} з {len(r)} (верхні {100*i/len(r):.1f}%)  навантаження {c}  — {n}')
 
 if __name__ == '__main__':
     main()

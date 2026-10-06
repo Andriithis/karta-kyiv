@@ -226,3 +226,17 @@ def vulytsia(adr):
     if ' / ' in a:
         return [x.strip() for x in a.split(' / ', 1)]
     return [a] if a else []
+
+
+def potik(items):
+    """network.json -> {id відрізка: прохідність}. Новий формат (06.10,
+    ZAVDANNYA-32, 4.3): [геометрія, назва, potik, id]; старий (до 06.10):
+    [геометрія, назва, загальний, школи, транспорт, торгівля, id] — з нього
+    береться загальний потік, доки крок 2c не перерахував файл."""
+    out = {}
+    for it in items or []:
+        if len(it) == 4:
+            out[it[3]] = it[2]
+        elif len(it) > 6 and it[6] is not None:
+            out[it[6]] = it[2]
+    return out

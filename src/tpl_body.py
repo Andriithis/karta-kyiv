@@ -34,7 +34,7 @@ BODY = r"""<body data-t="svitla"><div id="wrap"><div id="map"></div>
  </div>
  <div class="grp" id="fctx">
   <button class="sw" data-ctx="pop" aria-pressed="false"><span>Населення</span><span class="tog"></span></button>
-  <button class="sw" data-ctx="flows" aria-pressed="false"><span>Модельовані потоки людей</span><span class="tog"></span></button>
+  <button class="sw" data-ctx="flows" aria-pressed="false"><span>Прохідність</span><span class="tog"></span></button>
   <button class="sw" data-ctx="facts" aria-pressed="false"><span>Об'єкти довкола</span><span class="tog"></span></button>
  </div>
  <div class="grp">

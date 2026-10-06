@@ -11,10 +11,6 @@ on:
       dump_years:
         description: 'Перечитати дамп минулих років (напр. «2023 2024 2025») — після нових статей у labels'
         default: ''
-      refresh_risks:
-        description: 'Перезавантажити шар ризиків з OSM'
-        type: boolean
-        default: false
       retrain_risk:
         description: 'Перенавчити модель ризику (крок 4) — довго, вручну раз на кілька місяців'
         type: boolean
@@ -48,15 +44,19 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Кеш адресної бази OSM
-        uses: actions/cache@v4
-        with:
-          path: |
-            data/osm_kyiv_city.json
-            data/osm_risks_raw.json
-            data/network.json
-          key: osm-${{ github.run_id }}
-          restore-keys: osm-
+      # Знімок OSM — з гілки osm (workflow «Знімок OSM», щомісяця; RISHENNYA
+      # 35.9): збірка більше не качає OSM сама й не залежить від збоїв
+      # Overpass. Знімка ще немає — крок 2 і 2b докачають, як раніше.
+      - name: Знімок OSM з гілки osm
+        run: |
+          if git fetch --depth=1 origin osm && git checkout FETCH_HEAD -- osm; then
+            git reset -q
+            gunzip -c osm/osm_kyiv_city.json.gz > data/osm_kyiv_city.json
+            gunzip -c osm/osm_risks_raw.json.gz > data/osm_risks_raw.json
+            echo "знімок OSM від $(cat osm/data.txt)"
+          else
+            echo "::warning::знімка OSM немає — запустіть «Знімок OSM»"
+          fi
 
       - name: Крок 0 — свіжий дамп ЄДРСР
         run: |
@@ -83,20 +83,14 @@ jobs:
       - name: Крок 2 — геокодування
         run: python src/step2_geocode.py
 
-      - name: Крок 2b — шар ризиків
+      - name: Крок 2b — установи зі знімка OSM
         run: |
-          if [ "${{ github.event.inputs.refresh_risks }}" = "true" ]; then
-            rm -f data/osm_risks_raw.json
-          fi
-          # Без «|| echo»: 29.09 крок падав за секунду, а запуск ішов далі без
-          # магістралей. Обов'язкових категорій немає — запуск зупиняється
+          # Без «|| echo»: обов'язкових категорій немає — запуск зупиняється
           # (ZAVDANNYA-31, 1.3); необов'язкові крок пропускає сам, з рядком у журналі.
           python src/step2b_risks.py
 
-      - name: Крок 2c — мережевий аналіз
-        env:
-          ROUTES: '6000'
-        run: python src/step2c_network.py || echo "мережевий аналіз пропущено"
+      # Крок 2c (прохідність) — окремим щомісячним workflow «Прохідність»
+      # (RISHENNYA 35.9): збірка бере готовий data/network.json з main.
 
       - name: Крок 2d — межі районів
         run: python src/step2d_borders.py || echo "межі районів пропущено (файл уже є або OSM недоступний)"

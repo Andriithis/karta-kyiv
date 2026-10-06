@@ -1,0 +1,50 @@
+name: Прохідність
+
+# Модельований потік людей (крок 2c; RISHENNYA 35.2, 35.9): раз на місяць,
+# одразу після «Знімка OSM», окремо від збірки — розрахунок довгий, а
+# «Оновлення карти» бере готовий data/network.json з main.
+
+on:
+  workflow_run:
+    workflows: ['Знімок OSM']
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# та сама група, що в «Оновленні карти»: обидва комітять у data/
+concurrency:
+  group: karta-update
+  cancel-in-progress: false
+
+jobs:
+  prohidnist:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Знімок OSM з гілки osm
+        run: |
+          git fetch --depth=1 origin osm
+          git checkout FETCH_HEAD -- osm && git reset -q
+          gunzip -c osm/osm_risks_raw.json.gz > data/osm_risks_raw.json
+          echo "знімок OSM від $(cat osm/data.txt)"
+      - name: Крок 2c — прохідність
+        run: |
+          pip install --quiet numpy scipy
+          python src/step2c_network.py
+      - name: Зберегти network.json
+        run: |
+          git config user.name  "karta-bot"
+          git config user.email "actions@github.com"
+          git add -f data/network.json data/netgeo.json
+          if git diff --quiet --cached; then echo "змін немає"; else
+            git commit -m "прохідність $(date +%Y-%m-%d)"
+            git pull --rebase --autostash origin main || true
+            git push
+          fi
