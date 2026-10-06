@@ -696,6 +696,12 @@ def problemy(D):
         else:
             b.append('<div class="empty">Посібника POP Center для цієї пари «механізм × середовище» немає — '
                      'приблизним не заповнюємо.</div>')
+        nt = rec.get('natovp') or {}
+        if nt:
+            # 34.1: кількість людей у проблемі — скільки подій дав би натовп
+            b.append(f'<h3>Натовп</h3><p>{q["n"]} {pl(q["n"], "подія", "події", "подій")} за 2 роки при '
+                     f'{dec(nt["ochikuvano"])} очікуваних від прохідності й населення вулиці — '
+                     f'<b>{esc(nt["stan"])}</b>.</p>')
         g = q.get('golos') or {}
         if g.get('stan'):
             s = GOLOS.get(g['stan'], g['stan'])

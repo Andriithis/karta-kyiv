@@ -237,6 +237,85 @@ def load_1551(log):
                 spt=Pts([x[3] for x in sk]), vpt=Pts([x[1] for x in vse]))
 
 
+# ---- «НАТОВП» (RISHENNYA 34.1; ZAVDANNYA-31, 5.4) ----
+# Скільки подій механізму дає саме кількість людей: Пуассонова регресія по
+# ВСІХ відрізках міста — події за 2 роки ~ log(1 + прохідність) + log(1 +
+# населення в 300 м), довжина відрізка — експозиція. Очікуване для місця —
+# μ його відрізка. Подій більше, ніж дає натовп, — якщо P(X ≥ n | μ) < 0,05.
+# Нікого не відсіюємо — лише кажемо (відсіювати чи ні — після чисел у звіті).
+P_NATOVP = 0.05
+
+
+class Natovp:
+    def __init__(s, ev, log=print):
+        import numpy as np
+        s.ok = False
+        SEG, pv = vidrizky_misto()
+        if not pv:
+            log('   натовп: відрізків немає — не рахується'); return
+        sids = sorted(SEG); ix = {k: i for i, k in enumerate(sids)}
+        npth = os.path.join(DATA, 'network.json')
+        pot = VR.potik(json.load(open(npth, encoding='utf-8')).get('items', [])) if os.path.exists(npth) else {}
+        if not pot:
+            log('   натовп: прохідності немає (network.json) — не рахується'); return
+        mid = [SEG[k]['pts'][len(SEG[k]['pts']) // 2] for k in sids]
+        import step2c_network as S2C
+        rawp = os.path.join(DATA, 'osm_risks_raw.json')
+        hs = S2C.budynky(json.load(open(rawp, encoding='utf-8')), log=lambda *a: None) if os.path.exists(rawp) else []
+        pop = np.zeros(len(sids))
+        if hs:
+            ppl = S2C.naselennia(hs, log=lambda *a: None)
+            g = Pts([(h[0], h[1]) for h in hs])
+            pop = np.array([sum(ppl[k] for k in g.near(m[0], m[1], 300)) for m in mid])
+        L = np.maximum(np.array([SEG[k]['len'] for k in sids]), 20.0)
+        s.X = np.column_stack([np.ones(len(sids)), np.log1p([pot.get(k, 0) for k in sids]), np.log1p(pop)])
+        s.off = np.log(L / L.mean())
+        cnt = collections.defaultdict(lambda: np.zeros(len(sids)))
+        s.seg_of = {}
+        # ті самі 2 роки, що й у воротах Р3
+        lo = (dt.date.fromisoformat(max(e['date'] for e in ev)) - dt.timedelta(days=730)).isoformat()
+        for e in ev:
+            if e['date'] < lo: continue
+            k = e['p']
+            if k not in s.seg_of:
+                b = pv.blyzki(k[0], k[1], SNAP_M)
+                s.seg_of[k] = ix[min(b, key=b.get)] if b else None
+            if s.seg_of[k] is not None: cnt[e['sim']][s.seg_of[k]] += 1
+        s.cnt, s.pv, s.ix, s.np = cnt, pv, ix, np
+        s.beta = {}
+        s.ok = True
+        log(f'   натовп: {len(sids):,} відрізків, прохідність на {sum(1 for k in sids if pot.get(k)):,}, '
+            f'населення з {len(hs):,} будинків')
+
+    def _fit(s, sim):
+        np = s.np
+        if sim in s.beta: return s.beta[sim]
+        y = s.cnt.get(sim)
+        if y is None or y.sum() < 30: s.beta[sim] = None; return None
+        b = np.zeros(3); b[0] = np.log(y.sum() / np.exp(s.off).sum())
+        for _ in range(50):           # IRLS Пуассона: три параметри, без бібліотек
+            mu = np.exp(np.clip(s.X @ b + s.off, -30, 30))
+            W = mu; z = s.X @ b + (y - mu) / np.maximum(mu, 1e-9)
+            A = s.X.T @ (s.X * W[:, None]) + 1e-6 * np.eye(3)
+            nb = np.linalg.solve(A, s.X.T @ (W * z))
+            if np.abs(nb - b).max() < 1e-7: b = nb; break
+            b = nb
+        s.beta[sim] = b
+        return b
+
+    def __call__(s, sim, pts, n):
+        """(очікувано за 2 роки, 'стільки, скільки дає натовп' | 'більше, ніж
+        дає натовп') або None"""
+        if not s.ok: return None
+        b = s._fit(sim)
+        if b is None: return None
+        ii = {s.seg_of.get(tuple(p)) for p in pts} - {None}
+        if not ii: return None
+        mu = float(sum(s.np.exp(s.X[i] @ b + s.off[i]) for i in ii))
+        p = pois_sf(n, mu)
+        return round(mu, 1), ('більше, ніж дає натовп' if p < P_NATOVP else 'стільки, скільки дає натовп')
+
+
 def skargy_hrupy(log=print):
     """[(місяць 'РРРР-ММ', група за змістом, (lat, lon))] — скарги 1551 груп
     zbir_1551.GRUPY_1551 з точкою (ZAVDANNYA-32, 5.2). Старі файли без
@@ -716,6 +795,7 @@ def run(V=None, log=print, FACT=None):
     if G: dolia_raionu(G, dmap)
 
     BM = BezMeshk(log)
+    NT = Natovp(ev, log)
 
     # ---- рівень «точка» ----
     place = mistsia(ev)
@@ -756,6 +836,8 @@ def run(V=None, log=print, FACT=None):
             rec['proaktyvnykh'] = round(1 - s['zayavnykh'], 2)
             rec['golos'] = golos_misce(G, th, pts, dmap, bez_meshk=BM(pts, rec['adresy']))
             rec['raion'] = dmap(tuple(rep))
+            nt = NT(sim, pts, len(u))
+            if nt: rec['natovp'] = dict(ochikuvano=nt[0], stan=nt[1])
         return rec, u
 
     def zapys(key, evs, riven, pts):
