@@ -18,9 +18,12 @@
     відкладеному періоді (події 06.2026 і пізніше), якого відбір не бачив;
   * де подій замало, зв'язок не перевіряється — так і пишемо.
 
-Прив'язка скарги — як подія (рішення Андрія 30.09): адреса за реєстром КМДА,
-відрізок своєї вулиці в 120 м, інакше найближчий. «30 м від лінії», як у
-голосу мешканців, захоплювало лише ~17% скарг: будинки стоять глибше.
+З 06.10 (RISHENNYA 35.3; ZAVDANNYA-32, 5.4): групи — за ЗМІСТОМ скарги
+(zbir_1551.GRUPY_1551), а не за розділом; ознака — скарги групи в 300 м на
+1 000 мешканців у 300 м (менше 50 — 0), як у моделі ризику; прохідність і
+населення — поправка без штрафу в кожній моделі. Попередня версія брала
+розділи («Опалення», «Ліфт») без поділу на мешканців — і «опалення →
+наркотики» було густотою житла, а не закономірністю.
 
 Запуск: py -3 src/doslid_1551.py  (пише ZVIT-1551-ZAKONOMIRNOSTI.md)
 """
@@ -57,38 +60,31 @@ def main():
     n = len(sids); idx = {s: i for i, s in enumerate(sids)}
     PV = VR.Pryviazka(SEG)
 
-    # ---- скарги 1551 на відрізках ----
-    kmda, skey, nh = PR.geokoder()
-    def geo(st, h):
-        if not st or not h: return None
-        main_ = st.split('(')[0]
-        return kmda.get((skey(main_), nh(h)))
-    C = collections.defaultdict(lambda: np.zeros(n))
-    nz = collections.Counter()
-    for f in sorted(glob.glob(os.path.join(DATA, '1551', 'lichylnyky-*.tsv.gz'))):
-        mon = os.path.basename(f)[11:18]
-        if mon not in VIKNO: continue
-        with gzip.open(f, 'rt', encoding='utf-8', newline='') as fh:
-            for r in csv.DictReader(fh, delimiter='\t'):
-                k = int(r.get('n') or 0)
-                p = geo(r.get('vulytsya'), r.get('budynok'))
-                if p is None: nz['без точки'] += k; continue
-                # як подія: відрізок своєї вулиці в SNAP_M, інакше найближчий
-                vul = (r.get('vulytsya') or '').split('(')[0].strip()
-                s, svoya = PV.znaity(p[0], p[1], E.SNAP_M, [vul])
-                if s is None: nz[f'далі {E.SNAP_M} м від вулиць'] += k; continue
-                C[r['kind']][idx[s]] += k
-                nz['своя вулиця' if svoya else 'найближчий відрізок'] += k
-    tot = {k: v.sum() for k, v in C.items()}
-    top = [k for k, v in sorted(tot.items(), key=lambda x: -x[1]) if v >= MIN_GRUPA][:N_GRUP - 1]
-    grupy = {k: C[k] for k in top}
-    inshi = sum((C[k] for k in C if k not in top), np.zeros(n))
-    if inshi.sum() >= MIN_GRUPA: grupy['інші дрібні категорії'] = inshi
-    gn = list(grupy)
-    G = np.column_stack([np.log1p(grupy[g]) for g in gn])
+    # ---- скарги 1551 за змістом у 300 м на 1 000 мешканців ----
+    import zbir_1551 as Z
+    from sklearn.neighbors import BallTree
+    SK = [x for x in PR.skargy_hrupy(log) if x[0] in VIKNO]
+    pop = F['pop300']
+    gn = [g for g in Z.GRUPY_1551 if sum(1 for x in SK if x[1] == g) >= 30]
+    nz = collections.Counter(x[1] for x in SK)
+    grupy = {g: np.zeros(n) for g in gn}
+    if SK:
+        tr = BallTree(np.radians(np.array([x[2] for x in SK])), metric='haversine')
+        gi = np.array([gn.index(x[1]) if x[1] in gn else -1 for x in SK])
+        for i, ix in enumerate(tr.query_radius(np.radians(mid), E.R_POP / 6371000.0)):
+            for g in gi[ix]:
+                if g >= 0: grupy[gn[g]][i] += 1
+    for g in gn:
+        grupy[g] = np.where(pop >= E.MIN_LUDEJ, 1000 * grupy[g] / np.maximum(pop, 1), 0.0)
+    G = np.column_stack([np.log1p(grupy[g]) for g in gn]) if gn else np.zeros((n, 0))
     G = (G - G.mean(0)) / np.where(G.std(0) > 0, G.std(0), 1)
-    log(f'1551 {VIKNO[0]} — {VIKNO[-1]}: ' + ', '.join(f'{k} {v:,}' for k, v in nz.items())
+    log(f'1551 {VIKNO[0]} — {VIKNO[-1]} за змістом: ' + ', '.join(f'{k} {v:,}' for k, v in nz.items())
         + f'; груп {len(gn)}')
+    # люди — поправка в кожній моделі (5.1), не кандидати
+    JL = [cname.index(x) for x in E.LUDY if x in cname]
+    CAND = [j for j in range(X.shape[1]) if j not in JL and cname[j] not in E.NE_KANDYDAT]
+    XL, XC = X[:, JL], X[:, CAND]
+    ctc = [ctyp[j] for j in CAND]
 
     # ---- судові події на відрізках ----
     ev, _drop = E.podii(log)
@@ -125,27 +121,28 @@ def main():
             rez[key] = dict(nazva=nm, vyd=vyd, zamalo=True, A=int(yA.sum()), B=int(yB.sum()))
             continue
         H = np.log1p(yh); H = (H - H.mean()) / (H.std() or 1)
-        # базова модель: історія + середовище
-        s0 = rtm.stijkist(X, yA, expo, ctyp, H=H, folds=fold, log=log)
-        f0, _ = rtm.nb_fit(np.column_stack([H, X[:, s0['cols']]]), yA, expo)
-        p0 = rtm.nb_predict(f0, np.column_stack([H, X[:, s0['cols']]]), expo)
+        HL = np.column_stack([H, XL])
+        # базова модель: історія + люди (без штрафу) + середовище
+        s0 = rtm.stijkist(XC, yA, expo, ctc, H=HL, folds=fold, log=log)
+        f0, _ = rtm.nb_fit(np.column_stack([HL, XC[:, s0['cols']]]), yA, expo)
+        p0 = rtm.nb_predict(f0, np.column_stack([HL, XC[:, s0['cols']]]), expo)
         pai0, _h = rtm.pai_dovzhyna(p0 / slen, yB, slen)
         # групи 1551 — кандидати поряд із середовищем
-        XG = np.column_stack([X, G])
-        s1 = rtm.stijkist(XG, yA, expo, list(ctyp) + [None] * len(gn), H=H, folds=fold, log=log)
-        k0 = X.shape[1]
+        XG = np.column_stack([XC, G])
+        s1 = rtm.stijkist(XG, yA, expo, ctc + [None] * len(gn), H=HL, folds=fold, log=log)
+        k0 = XC.shape[1]
         gsel = [j - k0 for j in s1['cols'] if j >= k0]
         cols1 = [j for j in s1['cols'] if j < k0]
         pai1 = pai0
         if gsel:
-            A1 = np.column_stack([H, X[:, cols1], G[:, gsel]])
+            A1 = np.column_stack([HL, XC[:, cols1], G[:, gsel]])
             f1, _ = rtm.nb_fit(A1, yA, expo)
             p1 = rtm.nb_predict(f1, A1, expo)
             pai1, _h = rtm.pai_dovzhyna(p1 / slen, yB, slen)
         rows = []
         for g, name in enumerate(gn):
-            # кратність кожної групи — окремо, поверх історії й стійкого середовища
-            A = np.column_stack([H, X[:, s0['cols']], G[:, g]])
+            # кратність кожної групи — окремо, поверх історії, людей і стійкого середовища
+            A = np.column_stack([HL, XC[:, s0['cols']], G[:, g]])
             f, _ = rtm.nb_fit(A, yA, expo)
             b = float(f.params[-1]); ci = f.conf_int()[-1]
             fr = s1['chastka'].get(k0 + g, 0.0)
@@ -168,11 +165,15 @@ def zvit(rez, gn, nz, TSIL_B, grupy):
         w.append(f'> **Попередній звіт — перевірка коду**: {len(rez)} вид(и), {rtm.N_STAB} прогонів стійкості. '
                  'Повний — з перенавчанням моделі в Actions (галочка «Перенавчити модель ризику»).\n')
     w.append('## Як рахувалося\n')
-    w.append(f'- Скарги 1551 за {VIKNO[0]} — {VIKNO[-1]} (лічильники «адреса × категорія × місяць»), адреса — за '
-             f'реєстром КМДА, відрізок — як для подій: своєї вулиці в {E.SNAP_M} м, інакше найближчий: '
-             + ', '.join(f'{k} {int(v):,}'.replace(',', ' ') for k, v in nz.items()) + '.')
-    w.append(f'- Групи: {len(gn)} — найбільші категорії окремо (кожна ≥{MIN_GRUPA} скарг у вікні), решта разом. '
-             'Змінна — `log(1 + скарг за 6 місяців)` на відрізку, стандартизована.')
+    w.append(f'- Скарги 1551 за {VIKNO[0]} — {VIKNO[-1]} з точкою (адреса — за реєстром КМДА), **групи за змістом** '
+             '(`zbir_1551.GRUPY_1551`): ' + ', '.join(f'{k} {int(v):,}'.replace(',', ' ') for k, v in nz.items()) + '.')
+    w.append(f'- Змінна — `log(1 + скарг групи за 6 місяців у {E.R_POP} м на 1 000 мешканців у {E.R_POP} м)`, '
+             f'стандартизована; де мешканців менше {E.MIN_LUDEJ} — 0 («не вимірюється»).')
+    w.append('- **Поправка на людей**: прохідність і населення в 300 м — у кожній моделі без штрафу й поза відбором '
+             '(RISHENNYA 35.1).')
+    w.append('- **Попередній висновок «опалення, електропостачання, ліфт → наркотики» (звіт 29.09) — артефакт густоти '
+             'житла**: тоді скарги групувалися за розділом і не ділилися на мешканців, а населення не було '
+             'обов\'язковою поправкою. Чим більше квартир, тим більше скарг на ліфт — і тим більше будь-яких подій.')
     w.append(f'- Ціль — судові події (клас B, точне місце) з датою події {TSIL_A[0]} — {TSIL_A[-1]} для відбору й '
              f'коефіцієнтів і {TSIL_B[0] if TSIL_B else "—"} — {TSIL_B[-1] if TSIL_B else "—"} — відкладений період.')
     w.append('- У моделі вже є історія подій (12 місяців до 02.2026) і середовище — ті самі кандидати, що в кроці 4; '
