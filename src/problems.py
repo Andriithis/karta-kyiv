@@ -237,6 +237,34 @@ def load_1551(log):
                 spt=Pts([x[3] for x in sk]), vpt=Pts([x[1] for x in vse]))
 
 
+def skargy_hrupy(log=print):
+    """[(місяць 'РРРР-ММ', група за змістом, (lat, lon))] — скарги 1551 груп
+    zbir_1551.GRUPY_1551 з точкою (ZAVDANNYA-32, 5.2). Старі файли без
+    стовпця grupa — група за змістом тут-таки."""
+    import zbir_1551 as Z
+    fv = sorted(glob.glob(os.path.join(D1551, 'vidbir-*.tsv.gz')))
+    if not fv:
+        log('   1551 за змістом: даних немає (data/1551)')
+        return []
+    idx, skey, nh = geokoder()
+    out, st = [], collections.Counter()
+    for f in fv:
+        with gzip.open(f, 'rt', encoding='utf-8', newline='') as fh:
+            for r in csv.DictReader(fh, delimiter='\t'):
+                g = r.get('grupa') or Z.grupa(r.get('kind'), r.get('content'))
+                if not g: continue
+                s_, h = r.get('vulytsya'), r.get('budynok')
+                p = None
+                if s_ and h and idx:
+                    main_ = str(s_).split('(')[0]
+                    p = idx.get((skey(main_), nh(str(h))))
+                st[(g, bool(p))] += 1
+                if p: out.append((r['data'][:7], g, p))
+    log('   1551 за змістом (з точкою / усього): ' + ', '.join(
+        f'{g} {st[(g, True)]:,}/{st[(g, True)] + st[(g, False)]:,}' for g in Z.GRUPY_1551))
+    return out
+
+
 def golos_misce(G, th, pts, dmap, rad=R_MISCE, bez_meshk=None):
     """Голос мешканців для місця (одна чи кілька точок): скарги того ж виду
     за 12 місяців у rad м проти очікуваного — частка виду серед усіх звернень

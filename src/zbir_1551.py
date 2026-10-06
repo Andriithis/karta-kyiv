@@ -60,8 +60,67 @@ KAT = {
     'Облаштування підземного/надземного пішохідного переходу': 'KONTEKST_PISHOHID',
     # Наркотики — лічимо окремо, щоб бачити, чи з'явиться сигнал
     'Продаж та вживання наркотичних речовин у громадських місцях': '3_DRUGS',
+    # Групи за змістом для ризику (ZAVDANNYA-32, 5.2): переходи, стан доріг
+    'Облаштування наземного пішохідного переходу': '6_TRAFFIC',
+    "Технічний стан об'єктів дорожньо-транспортної інфраструктури": 'KONTEKST_PISHOHID',
+    'Графік роботи освітлення вуличних ліхтарів': 'KONTEKST_SVITLO',
 }
-POLYA = ['id', 'data', 'vyd', 'kind', 'content', 'vulytsya', 'budynok', 'sposib', 'rezultat']
+# Розділи (kind), які відбираються цілком: МАФи — торгівля на вулиці
+KAT_KIND = {'Функціонування МАФ': '2_ALCOHOL_TRADE',
+            'Утримання МАФ та прилеглої до нього території': '2_ALCOHOL_TRADE'}
+
+# ---- ГРУПИ ЗА ЗМІСТОМ (RISHENNYA 35.3; ZAVDANNYA-32, 5.2) ----
+# Не за розділом: «Опалення, Ліфт → наркотики» в дослідженні 29.09 було
+# густотою житла, а не закономірністю. Група — те, про що скаржаться на
+# вулиці; «Взаємовідносини з сусідами» не беремо: це житло, не публічний
+# простір. Одне місце для карти, моделі й дослідження.
+GRUPY_1551 = {
+    'шум_заклади': ['Незручності для проживання мешканців від роботи закладів торгівлі та ресторанного господарства',
+                    'Незручності від промислових та побутових шумів', 'Порушення правил тиші (після 22:00)'],
+    'безпритульні': ['Порушення громадського порядку безпритульними людьми'],
+    'порядок_інше': ['Виявлення; запобігання та розслідування протиправних дій',
+                     'Куріння тютюнових виробів у заборонених місцях',
+                     'Розпивання пива; алкогольних; слабоалкогольних напоїв у заборонених законом місцях'],
+    'торгівля_МАФ': ['Несанкціонована торгівля', 'kind:Функціонування МАФ',
+                     'kind:Утримання МАФ та прилеглої до нього території'],
+    'освітлення': ['Відсутність освітлення на опорних стовпах', 'Незадовільний стан опори для освітлення',
+                   'Відсутність опори освітлення (не передбачено проєктом забудови)',
+                   'Графік роботи освітлення вуличних ліхтарів'],
+    'тротуари_дорога': ['Технічний стан проїжджих частин вулиць та тротуарів',
+                        "Технічний стан об'єктів дорожньо-транспортної інфраструктури"],
+    'паркування': ['Зберігання транспортних засобів; порушення правил паркування'],
+    'переходи_світлофори': ['Облаштування наземного пішохідного переходу',
+                            'Облаштування підземного/надземного пішохідного переходу',
+                            'Встановлення та робота світлофора', 'Нанесення дорожньої розмітки'],
+    'обмежувачі': ['Встановлення штучних обмежувачів руху для проїзду авто',
+                   'Встановлення та експлуатація пристроїв примусового зниження швидкості'],
+}
+# «Проти демонтажу МАФ» — скарга на демонтаж, а не на торгівлю
+NE_HRUPA = {'Проти демонтажу МАФ'}
+
+
+def _n(s):
+    return ' '.join((s or '').replace('`', "'").replace('’', "'").split()).lower()
+
+
+_ZMIST = {_n(c): g for g, cs in GRUPY_1551.items() for c in cs if not c.startswith('kind:')}
+_ROZDIL = {_n(c[5:]): g for g, cs in GRUPY_1551.items() for c in cs if c.startswith('kind:')}
+_KAT = {_n(k): v for k, v in KAT.items()}
+
+
+def grupa(kind, content):
+    """група за змістом або '' (не в жодній)"""
+    if _n(content) in {_n(x) for x in NE_HRUPA}: return ''
+    return _ZMIST.get(_n(content)) or _ROZDIL.get(_n(kind)) or ''
+
+
+def vyd_of(kind, content):
+    return _KAT.get(_n(content)) or KAT_KIND.get(' '.join((kind or '').split()))
+
+
+# Версія відбору: інша — усі місяці перекачуються (стовпець grupa, нові змісти)
+VERSIIA = 2
+POLYA = ['id', 'data', 'vyd', 'kind', 'content', 'vulytsya', 'budynok', 'sposib', 'rezultat', 'grupa']
 
 
 def clean(v):
@@ -114,13 +173,14 @@ def one(ym, zvit):
         for r in rows:
             st, bd, kind = clean(r.get('addressThoroughfare')), clean(r.get('addressLocatorDesignator')), clean(r.get('kind'))
             lich[(st, bd, kind)] += 1
-            v = KAT.get(clean(r.get('content')))
+            v = vyd_of(kind, clean(r.get('content')))
             if not v:
                 continue
             vyd[v] += 1
             z_adr += bool(st and bd)
             w.writerow([r.get('Id', ''), clean(r.get('receivedDateTime'))[:16], v, kind, clean(r.get('content')),
-                        st, bd, clean(r.get('accrualMethod')), clean(r.get('result'))])
+                        st, bd, clean(r.get('accrualMethod')), clean(r.get('result')),
+                        grupa(kind, clean(r.get('content')))])
     with gzip.open(os.path.join(OUT, f'lichylnyky-{ym}.tsv.gz'), 'wt', encoding='utf-8', newline='') as fh:
         w = csv.writer(fh, delimiter='\t'); w.writerow(['vulytsya', 'budynok', 'kind', 'n'])
         for (st, bd, kind), n in sorted(lich.items()):
@@ -139,8 +199,11 @@ def main():
     zvit = json.load(open(zp, encoding='utf-8')) if os.path.exists(zp) else {'місяці': {}}
     zvit['помилки'] = {}
     svizhi = set(months_default()[-2:])
+    nova = zvit.get('versiia') != VERSIIA
+    if nova: print(f'відбір змінився (версія {VERSIIA}) — перекачую всі місяці')
     for ym in months:
-        if ym not in svizhi and os.path.exists(os.path.join(OUT, f'vidbir-{ym}.tsv.gz')) and ym in zvit['місяці']:
+        if (not nova and ym not in svizhi and os.path.exists(os.path.join(OUT, f'vidbir-{ym}.tsv.gz'))
+                and ym in zvit['місяці']):
             continue
         try:
             one(ym, zvit)
@@ -149,6 +212,8 @@ def main():
             print(f'{ym}: ПОМИЛКА {e}', flush=True)
     zvit['оновлено'] = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M')
     zvit['категорії'] = KAT
+    zvit['versiia'] = VERSIIA
+    zvit['групи'] = GRUPY_1551
     json.dump(zvit, open(zp, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     print('готово: data/1551/zvit.json')
 

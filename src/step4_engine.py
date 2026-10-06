@@ -84,8 +84,7 @@ SOURCES = {
     'гуртожитки': 'Bernasco, Block 2011',
     'гаражі': 'київська гіпотеза; перевіряє модель',
     # ознаки, що лишаються без змін (NAUKA, там само)
-    'прохідність': 'Davies, Bishop 2013', 'потік_школи': 'Davies, Bishop 2013',
-    'потік_транспорт': 'Davies, Bishop 2013', 'потік_торгівля': 'Davies, Bishop 2013',
+    'прохідність': 'Davies, Bishop 2013',
     'населення_500м': 'населення як знаменник подій (NAUKA, розд. 2)',
     'клас_дороги': 'будова вулиці (NAUKA, розд. 2)', 'смуг': 'будова вулиці (NAUKA, розд. 2)',
     'проникність': 'будова вулиці (NAUKA, розд. 2)', 'хрестоподібні': 'будова вулиці (NAUKA, розд. 2)',
@@ -101,6 +100,27 @@ NE_CHYNNYK = {'лікарні'}
 # виявляє сама, тож шар показує й те, де вона частіше працює. Рахуються,
 # але позначаються. Частку для «частково» рахуємо з даних.
 PROAKT_VYD = {'АЛК', 'НАР'}
+# ---- ЛЮДИ ЗАВЖДИ В МОДЕЛІ (RISHENNYA 34.1, 35.1; ZAVDANNYA-32, 5.1) ----
+# Прохідність і населення в 300 м — поправка на кількість людей, а не
+# кандидати: без штрафу elastic net і поза відбором стійкості, як історія.
+# Інакше аптеки, школи й кафе «на 400–500 м» заміняли собою натовп.
+LUDY = ('прохідність', 'населення_300м')
+# населення в 500 м був кандидатом; тепер населення — поправка, і друга
+# його мірка в кандидатах лише дублювала б її
+NE_KANDYDAT = {'населення_500м'}
+R_POP = 300
+# ---- 1551 У РИЗИКУ (RISHENNYA 35.3; ZAVDANNYA-32, 5.3–5.4) ----
+# Для видів, про які 1551 говорить, — друга мірка «скарги мешканців»
+# відповідних груп за змістом; ранг на карті — середнє процентилів обох.
+GRUPY_MIRKY = {'ГП': ('шум_заклади', 'безпритульні', 'порядок_інше'),
+               'АЛК': ('торгівля_МАФ',),
+               'ДТП': ('переходи_світлофори', 'обмежувачі', 'тротуари_дорога', 'паркування')}
+# 1551 є лише з 08.2025: навчання «ознаки 08.2025–01.2026 -> ціль 02–05.2026»,
+# перевірка — ознаки на 4 місяці пізніше -> ціль 06–09.2026 (як у doslid_1551)
+VIKNO_1551 = (('2025-08', '2026-01'), ('2026-02', '2026-05'), ('2025-12', '2026-05'), ('2026-06', '2026-09'))
+MIN_LUDEJ = 50            # менше мешканців у 300 м — скарги «не вимірюються» (0)
+# Події з самою вулицею (35.1 г; 5.5): у ризик лише коротких вулиць
+KOROTKA = (2, 400.0)      # не більше 2 відрізків і 400 м разом
 PROAKT_CHAST = {'ГП', 'ДОР'}
 
 
@@ -167,7 +187,8 @@ def podii(log):
         if th not in L.ORDER: continue
         tk = TKD.get(r[0]) or {}
         if tk.get('klass') != 'B': drop[(th, 'не клас B')] += 1; continue
-        if r[9] not in TOCHNE: drop[(th, 'не точне місце')] += 1; continue
+        vul = r[9] == 'street'
+        if r[9] not in TOCHNE and not vul: drop[(th, 'не точне місце')] += 1; continue
         d = (S3.ev_date(tk, r[3]) or r[3] or '')[:10]
         if len(d) < 7: drop[(th, 'без дати')] += 1; continue
         f = tk.get('fab') or fab.get(r[0], '')
@@ -179,10 +200,49 @@ def podii(log):
             mekh = M.dtp_chastyna(f)
             n_dtp[mekh] += 1
         out.append(dict(th=th, sim=sim, mekh=mekh, d=d, m=d[:7], la=r[7], lo=r[8], pro=pro,
-                        street=r[5] or '', fab=f))
+                        street=r[5] or '', fab=f, vul=vul))
     log(f'   подій на карті: {len(V["rows"]):,}; клас B на точному місці: {len(out):,}; '
         f'ДТП з майном: ' + ', '.join(f'{M.simname(k)} {v:,}' for k, v in n_dtp.items()))
     return out, drop
+
+
+def oznaky_tochok(raw, T, SEG, byid, log=print):
+    """Змінні точок (ZAVDANNYA-32, 6): ті самі типи середовища в тих самих
+    радіусах, що в ліній, прохідність (найбільша серед відрізків у 30 м),
+    населення в 300 м і тип точки. -> (X, назви, типи, радіуси, форми)"""
+    import numpy as np
+    from sklearn.neighbors import BallTree
+    import step2b_risks as S2B, vidrizky as VR, rtm_tochky as RT
+    R_E = 6371000.0
+    P = np.array([[t['la'], t['lo']] for t in T])
+    cols, cname, ctyp, cform, crad = [], [], [], [], []
+    for key, (ua, _q) in S2B.B1.items():
+        if ua in NE_CHYNNYK: continue
+        Q = el_pts(raw.get(key))
+        if not Q: continue
+        tq = BallTree(np.radians(np.array(Q)), metric='haversine')
+        for r in RADII:
+            c = tq.query_radius(np.radians(P), r / R_E, count_only=True).astype(float)
+            if c.max() == 0: continue
+            cols += [(c > 0).astype(float), c]; cname += [f'{ua}_є_{r}м', f'{ua}_{r}м']
+            ctyp += [ua, ua]; cform += ['є', 'скільки']; crad += [r, r]
+    def cont(nm, v):
+        v = np.asarray(v, dtype=float); sd = v.std()
+        if sd == 0: return
+        cols.append((v - v.mean()) / sd); cname.append(nm); ctyp.append(None); cform.append('величина'); crad.append(None)
+    PV = VR.Pryviazka(SEG)
+    cont('прохідність', np.log1p([max([byid.get(sid, 0) for sid in PV.blyzki(t['la'], t['lo'], 30)] or [0]) for t in T]))
+    import step2c_network as S2C
+    hs = S2C.budynky(raw, log=lambda *a: None)
+    if hs:
+        ppl = np.array(S2C.naselennia(hs, log=lambda *a: None))
+        th_ = BallTree(np.radians(np.array([[h[0], h[1]] for h in hs])), metric='haversine')
+        cont('населення_300м', np.log1p([ppl[i].sum() for i in th_.query_radius(np.radians(P), R_POP / R_E)]))
+    for ty in RT.TYPY:
+        v = np.array([1.0 if t['typ'] == ty else 0.0 for t in T])
+        if 0 < v.sum() < len(v):
+            cols.append(v); cname.append('тип: ' + ty); ctyp.append(None); cform.append('тип'); crad.append(None)
+    return np.column_stack(cols), cname, ctyp, cform, crad
 
 
 def oznaky(raw, log=print):
@@ -246,24 +306,21 @@ def oznaky(raw, log=print):
         cols.append((v - v.mean()) / sd); cname.append(name)
         ctyp.append(None); cform.append('величина'); crad.append(None)
 
-    # пішохідні потоки лишаються: без них метро забирає собі все (розд. 7.1)
+    # Прохідність — одна (RISHENNYA 34.1, 35.2): без неї метро забирає собі
+    # все (розд. 7.1), а аптеки й кафе заміняють собою натовп (ANALIZ 5.2).
     npth = os.path.join(DATA, 'network.json')
     if os.path.exists(npth):
-        byid = {}
-        for it in json.load(open(npth, encoding='utf-8')).get('items', []):
-            if len(it) > 6 and it[6] is not None:
-                byid[it[6]] = (it[2], it[3], it[4], it[5])
+        byid = VR.potik(json.load(open(npth, encoding='utf-8')).get('items', []))
         # network.json старого формату (до 30.09) рахував потік на лінію OSM
         # (id — число). Доки крок 2c не перерахував його на відрізки, відрізок
         # бере потік своєї лінії: це та сама середня по лінії, що й була.
         if byid and not any(isinstance(k, str) for k in byid):
             log('   network.json — по лініях OSM (старий формат): відрізок бере потік своєї лінії')
             byid = {s: byid[SEG[s]['way']] for s in sids if SEG[s]['way'] in byid}
-        for j, ua in ((0, 'прохідність'), (1, 'потік_школи'),
-                      (2, 'потік_транспорт'), (3, 'потік_торгівля')):
-            rv = [byid.get(s, (0, 0, 0, 0))[j] for s in sids]
-            cont(ua, np.log1p(rv), rv)
+        rv = [byid.get(s, 0) for s in sids]
+        cont('прохідність', np.log1p(rv), rv)
     pp = os.path.join(DATA, 'population.json')
+    pop300 = np.zeros(len(sids))
     if os.path.exists(pp):
         Pp = json.load(open(pp, encoding='utf-8'))['items']
         tpp = BallTree(np.radians(np.array([[x[0], x[1]] for x in Pp])), metric='haversine')
@@ -271,6 +328,21 @@ def oznaky(raw, log=print):
         ind = tpp.query_radius(np.radians(mid), 500 / R_E)
         rv = [w_[i].sum() for i in ind]
         cont('населення_500м', np.log1p(rv), rv)
+        # Населення в 300 м — з мешканців будинків (шестикутник Kontur, поділений
+        # за площею поверхів, як у прохідності, step2c): центри шестикутників
+        # стоять через ~500 м, і в 300 м від відрізка їх часто немає зовсім.
+        import step2c_network as S2C
+        hs = S2C.budynky(raw, log=lambda *a: None)
+        if hs:
+            ppl = np.array(S2C.naselennia(hs, log=lambda *a: None))
+            th_ = BallTree(np.radians(np.array([[h[0], h[1]] for h in hs])), metric='haversine')
+            pop300 = np.array([ppl[i].sum() for i in th_.query_radius(np.radians(mid), R_POP / R_E)])
+            log(f'   населення в 300 м — з {len(hs):,} будинків')
+        else:
+            w3 = tpp.query_radius(np.radians(mid), R_POP / R_E)
+            pop300 = np.array([w_[i].sum() for i in w3])
+            log('   будинків OSM немає — населення в 300 м з центрів шестикутників Kontur')
+        cont('населення_300м', np.log1p(pop300), pop300)
     HW = {'residential': 1, 'living_street': 1, 'unclassified': 2,
           'tertiary': 3, 'secondary': 4, 'primary': 5, 'trunk': 6, 'motorway': 6}
     # з'їзд (_link) — того ж класу, що й дорога, до якої він веде
@@ -293,7 +365,7 @@ def oznaky(raw, log=print):
     # оцінка множиться назад на довжину.
     expo = np.maximum(slen, 20.0); expo = expo / expo.mean()
 
-    return dict(SEG=SEG, segs=segs, RD=RD, names=names, sids=sids, mid=mid, slen=slen, blocks_m=blocks_m, n_ways=n_ways, X=X, cname=cname, ctyp=ctyp, cform=cform, crad=crad, COUNT=COUNT, RAWV=RAWV, expo=expo, byid=byid, VR=VR)
+    return dict(SEG=SEG, segs=segs, RD=RD, names=names, sids=sids, mid=mid, slen=slen, blocks_m=blocks_m, n_ways=n_ways, X=X, cname=cname, ctyp=ctyp, cform=cform, crad=crad, COUNT=COUNT, RAWV=RAWV, expo=expo, byid=byid, VR=VR, pop300=pop300)
 
 
 def main():
@@ -353,6 +425,27 @@ def main():
     # ---- 3. події -> відрізки ----
     log('2) події...')
     ev, drop = podii(log)
+    # ---- точки (ZAVDANNYA-32, 6): кандидати й належність подій ----
+    import rtm_tochky as RT
+    _last = max(e['d'] for e in ev)
+    _ly, _lm = int(_last[:4]), int(_last[5:7])
+    _r2 = {f'{(t // 12):04d}-{t % 12 + 1:02d}' for t in range(_ly * 12 + _lm - 24, _ly * 12 + _lm)}
+    adresy = {(round(e['la'], 5), round(e['lo'], 5)) for e in ev if not e.get('vul') and e['m'] in _r2}
+    TOCHKY = os.environ.get('TOCHKY', '1') != '0'
+    TP, nal = [], [None] * len(ev)
+    if TOCHKY:
+        TP = RT.kandydaty(raw, VR.vulytsi(raw), sorted(adresy), VR)
+        S_ = RT.Sitka([(t['la'], t['lo']) for t in TP])
+        ist = [0] * len(TP)
+        for e in ev:
+            if e.get('vul') or e['m'] not in _r2: continue
+            for d, k in S_.blyzki(e['la'], e['lo'], RT.R_TOCHKA):
+                if d <= (RT.R_PEREKH if TP[k]['typ'] == 'перехрестя' else RT.R_TOCHKA): ist[k] += 1
+        nal = RT.nalezhnist(ev, TP, ist)
+        log(f'   точок-кандидатів {len(TP):,} (' + ', '.join(f'{k} {v:,}' for k, v in collections.Counter(
+            t['typ'] for t in TP).most_common()) + f'); подій, що належать точкам: {sum(1 for x in nal if x is not None):,}')
+    NP_ = len(TP)
+    YP = collections.defaultdict(lambda: np.zeros(NP_))   # (ключ, місяць) -> події точок
     # Прив'язка — до відрізка СВОЄЇ вулиці в SNAP_M, до найближчої точки
     # лінії (завдання 29, п. 6.2); немає такого — найближчий відрізок. Для
     # звіту рахуємо, скільки подій стало на іншу лінію OSM, ніж давала стара
@@ -378,9 +471,42 @@ def main():
     SNAPST = collections.Counter()
     ev_seg = []                                          # (відрізок, подія) — для пішохідного ризику
     cache = {}
-    for e in ev:
+    # Коротка вулиця (≤ 2 відрізки, ≤ 400 м, назва однозначна в 3 км від
+    # центру вулиці геокодера) — подія без номера йде на її відрізки порівну
+    # (5.5). Довга — ні: місця на ній не вигадуємо. На карту точкою — ні.
+    sl_all = {sid: VR.slova(SEG[sid]['name']) for sid in sids}
+    po_slovu = collections.defaultdict(list)
+    for sid, w_ in sl_all.items():
+        for x in w_: po_slovu[x].append(sid)
+    def korotka(e):
+        ws = VR.slova(e['street'])
+        if not ws: return None
+        c_ = set.intersection(*[set(po_slovu.get(x, ())) for x in ws]) if ws else set()
+        c_ = [sid for sid in c_ if VR.ta_sama(ws, sl_all[sid])
+              and VR.dovzhyna([(e['la'], e['lo']), SEG[sid]['pts'][len(SEG[sid]['pts']) // 2]]) <= 3000]
+        if not c_ or len(c_) > KOROTKA[0] or sum(SEG[x]['len'] for x in c_) > KOROTKA[1]: return None
+        return c_
+    n_vul = collections.Counter()
+    for ie, e in enumerate(ev):
         th = e['th']
+        if nal[ie] is not None:
+            # подія належить точці — у ціль ліній не йде (подвійного рахунку немає)
+            ks_ = [th] + ([e['mekh']] if e['mekh'] else [])
+            for k in ks_:
+                n_all[k] += 1; n_pro[k] += e['pro']; YP[(k, e['m'])][nal[ie]] += 1
+            SNAPST['належить точці'] += 1
+            continue
         ks = [th] + ([e['mekh']] if e['mekh'] else [])
+        if e.get('vul'):
+            ck = ('vul', e['street'], round(e['la'], 3), round(e['lo'], 3))
+            if ck not in cache: cache[ck] = korotka(e)
+            c_ = cache[ck]
+            if not c_: SNAPST['лише вулиця, не коротка'] += 1; continue
+            SNAPST['лише вулиця, коротка'] += 1
+            for k in ks:
+                n_all[k] += 1; n_pro[k] += e['pro']; n_snap[k] += 1; n_vul[k] += 1
+                for sid in c_: Y[(k, e['m'])][idx[sid]] += 1 / len(c_)
+            continue
         for k in ks: n_all[k] += 1; n_pro[k] += e['pro']
         ck = (round(e['la'], 5), round(e['lo'], 5), e['street'])
         if ck not in cache:
@@ -436,6 +562,30 @@ def main():
     lons = mid[:, 1]
     west = lons <= np.median(lons); east = ~west
 
+    # люди — поправка (5.1), решта — кандидати
+    JL = [cname.index(x) for x in LUDY if x in cname]
+    CAND = [j for j in range(X.shape[1]) if j not in JL and cname[j] not in NE_KANDYDAT]
+    XL = X[:, JL]
+    log(f'   поправка на людей: {", ".join(cname[j] for j in JL) or "НЕМАЄ (network.json, population.json)"}; '
+        f'кандидатів {len(CAND)}')
+    def vidbir(y, H, rows=None, runs=None, Xe=None, te=None):
+        """відбір стійкості серед кандидатів CAND (і Xe — додаткових, напр.
+        1551); H — нештрафовані стовпці. cols — індекси в X, далі ('e', k)."""
+        r_ = slice(None) if rows is None else rows
+        Xc = X[r_][:, CAND] if Xe is None else np.column_stack([X[r_][:, CAND], Xe[r_]])
+        tc = [ctyp[j] for j in CAND] + ([None] * Xe.shape[1] if Xe is not None else [])
+        s_ = rtm.stijkist(Xc, y, expo[r_], tc, H=H, folds=fold[r_], runs=runs, log=log)
+        mp = lambda c: CAND[c] if c < len(CAND) else ('e', c - len(CAND))
+        return dict(cols=[mp(c) for c in s_['cols']], chastka={mp(c): v for c, v in s_['chastka'].items()},
+                    typy=s_['typy'], lam=s_['lam'])
+    def stovp(cols, Xe=None, rows=None):
+        r_ = slice(None) if rows is None else rows
+        return np.column_stack([X[r_][:, c] if not isinstance(c, tuple) else Xe[r_][:, c[1]]
+                                for c in cols]) if cols else np.zeros((len(expo[r_]), 0))
+    def A_(H, cols, Xe=None, rows=None):
+        r_ = slice(None) if rows is None else rows
+        return np.column_stack([H, XL[r_], stovp(cols, Xe, rows)])
+
     def hst(v, mu=None, sd=None):
         h = np.log1p(v)
         if mu is None: mu, sd = h.mean(), (h.std() or 1.0)
@@ -453,6 +603,12 @@ def main():
         ci = fit.conf_int()
         for k, j in enumerate(cols, start=1 + k0):
             b = float(fit.params[k])
+            if isinstance(j, tuple):
+                out.append(dict(змінна=EN[j[1]], тип=EN[j[1]], форма='на 1000 мешканців', r=R_POP,
+                                кварталів=None, коеф=round(b, 4), RR=sexp(b), RR_від=sexp(ci[k][0]),
+                                RR_до=sexp(ci[k][1]), частка_прогонів=round(chast.get(j, 0), 2),
+                                джерело='1551 за змістом (RISHENNYA 35.3)'))
+                continue
             base = ctyp[j] or cname[j]
             out.append(dict(змінна=cname[j], тип=base, форма=cform[j], r=crad[j],
                             кварталів=round(crad[j] / blocks_m, 1) if crad[j] else None,
@@ -468,6 +624,7 @@ def main():
         самому колі, щоб на місці її можна було перерахувати."""
         rows = []
         for k_, j in enumerate(cols, start=1 + k0):
+            if isinstance(j, tuple): continue
             b = float(fit.params[k_])
             c = b * (X[i, j] - X[:, j].mean())
             if c <= 0: continue
@@ -484,7 +641,7 @@ def main():
         """6.3: потоки й будова вулиці — завжди кандидати; кого відбір не
         взяв, — з ким він сильно пов'язаний серед обраних (кореляція)"""
         out = []
-        for nm_ in ('прохідність', 'потік_школи', 'потік_транспорт', 'потік_торгівля', 'клас_дороги', 'смуг'):
+        for nm_ in ('прохідність', 'клас_дороги', 'смуг'):
             if nm_ not in cname: continue
             j = cname.index(nm_)
             if j in cols: continue
@@ -496,7 +653,7 @@ def main():
                             r=round(best[1], 2) if best else None))
         return out
 
-    def row(i, rk, n2, facts, grid=False):
+    def row(i, rk, n2, facts, grid=False, pct=None, mu=None):
         s = sids[i]
         g = [[round(q[0], 5), round(q[1], 5)] for q in segs[s][::max(1, len(segs[s]) // 8)]]
         if g[-1] != [round(segs[s][-1][0], 5), round(segs[s][-1][1], 5)]:
@@ -505,10 +662,68 @@ def main():
         if not grid:
             # 5-й — стійкі чинники тут; 6-й — «тихий» (подій за 2 роки немає)
             r += [facts, 1 if n2[i] == 0 else 0]
+            # 7-й — місце серед УСІХ відрізків міста (верхні N%), 8-й — прогноз
+            # подій за 12 місяців (ZAVDANNYA-32, 7.10): карта бере їх, а не
+            # місце в короткому переліку показаних
+            r += [None if pct is None else round(float(pct[i]), 2), None if mu is None else round(float(mu[i]), 2)]
         return r
+
+    # ---- скарги 1551 за змістом на відрізках (5.2) ----
+    import problems as PRB
+    import zbir_1551 as Z
+    SK = PRB.skargy_hrupy(log)
+    EN = list(Z.GRUPY_1551)               # порядок груп = стовпці ознак 1551
+    pop300 = F['pop300']
+    SKG = {}
+    if SK:
+        sk_mon = np.array([x[0] for x in SK]); sk_g = np.array([EN.index(x[1]) for x in SK])
+        sk_tree = BallTree(np.radians(np.array([x[2] for x in SK])), metric='haversine')
+        sk_ind = sk_tree.query_radius(np.radians(mid), R_POP / 6371000.0)
+        def skargy(m0, m1, gr=None):
+            """відрізки × групи: скарг у 300 м за місяці [m0, m1]"""
+            ok = (sk_mon >= m0) & (sk_mon <= m1)
+            out = np.zeros((n, len(EN)))
+            for i, ix in enumerate(sk_ind):
+                ix = ix[ok[ix]]
+                if len(ix): out[i] = np.bincount(sk_g[ix], minlength=len(EN))
+            return out
+        def na_1000(Cn):
+            """скарги на 1 000 мешканців у 300 м; менше MIN_LUDEJ — 0 («не вимірюється»)"""
+            v = np.where(pop300[:, None] >= MIN_LUDEJ, 1000 * Cn / np.maximum(pop300[:, None], 1), 0.0)
+            return v
+        def zstd(V, ref):
+            lr = np.log1p(ref); sd_ = lr.std(0); sd_[sd_ == 0] = 1
+            return (np.log1p(V) - lr.mean(0)) / sd_
+        (a1, b1), (a2, b2), (a3, b3), (a4, b4) = VIKNO_1551
+        S_tr, S_t1 = skargy(a1, b1), skargy(a2, b2)        # ознаки навчання, ціль навчання
+        S_te, S_t2 = skargy(a3, b3), skargy(a4, b4)        # ознаки перевірки, ціль перевірки
+        G_tr = zstd(na_1000(S_tr), na_1000(S_tr)); G_te = zstd(na_1000(S_te), na_1000(S_tr))
+        last_m = max(sk_mon)
+        lm6 = mshift(int(last_m[:4]), int(last_m[5:7]), -5)
+        S_map = skargy(lm6, last_m)
+        G_map = zstd(na_1000(S_map), na_1000(S_tr))
+        SKG = dict(tr=S_tr, t1=S_t1, te=S_te, t2=S_t2, map=S_map)
+        log(f'   1551: вікно ознак навчання {a1}—{b1}, ціль {a2}—{b2}; перевірка {a3}—{b3} -> {a4}—{b4}; '
+            f'карта — {lm6}—{last_m}')
+    def mirka(key):
+        th_ = key if key in GRUPY_MIRKY else M.simtheme(key)
+        return [EN.index(g) for g in GRUPY_MIRKY.get(th_, ())]
 
     report, layers, radiusy, kinds = {}, {}, {}, {}
     rk_by = {}
+    tochky_out = {}
+    XP = None
+    if NP_:
+        XP, cnameP, ctypP, _cf, _cr = oznaky_tochok(raw, TP, SEG, byid, log)
+        JLP = [cnameP.index(x) for x in LUDY if x in cnameP]
+        XPL = XP[:, JLP] if JLP else np.zeros((NP_, 0))
+        CANDP = [j for j in range(XP.shape[1]) if j not in JLP]
+        foldP = np.zeros(NP_, dtype=int)
+        if os.path.exists(bp):
+            for i, t in enumerate(TP):
+                for di, d in enumerate(dn):
+                    if MP.in_ring(t['la'], t['lo'], B[d]): foldP[i] = di % 5 + 1; break
+        log(f'   змінних точок: {XP.shape[1]}')
     for key, vyd in KEYS:
         th = key if vyd == 'тема' else M.simtheme(key)
         nm = L.THEMES.get(key, key) if vyd == 'тема' else M.simname(key)
@@ -533,14 +748,21 @@ def main():
         n2 = cnt(key, ROKY2)
         log(f'   навчання: історія 2024 ({int(y24.sum())}) -> 2025 ({int(y25.sum())}); '
             f'перевірка: 2025 -> 2026 ({int(y26.sum())})')
-        # разом: історія + середовище
-        sT = rtm.stijkist(X, y25, expo, ctyp, H=Htr, folds=fold, log=log)
-        fT, famT = rtm.nb_fit(np.column_stack([Htr, X[:, sT['cols']]]), y25, expo)
-        pT = rtm.nb_predict(fT, np.column_stack([Hte, X[:, sT['cols']]]), expo)
-        # лише середовище — для порівняння у звіті
-        sE = rtm.stijkist(X, y25, expo, ctyp, H=None, folds=fold, log=log)
-        fE, _fe = rtm.nb_fit(X[:, sE['cols']], y25, expo)
-        pE = rtm.nb_predict(fE, X[:, sE['cols']], expo)
+        # разом: історія + люди (без штрафу) + середовище (відбір стійкості)
+        HL = np.column_stack([Htr, XL])
+        sT = vidbir(y25, HL)
+        fT, famT = rtm.nb_fit(A_(Htr, sT['cols']), y25, expo)
+        pT = rtm.nb_predict(fT, A_(Hte, sT['cols']), expo)
+        K0 = 1 + XL.shape[1]
+        # ДО поправки на людей — як до 06.10, для звіту (5.1): люди — кандидати
+        s0 = rtm.stijkist(X, y25, expo, ctyp, H=Htr, folds=fold, runs=max(20, rtm.N_STAB // 5), log=log)
+        f0, _f0 = rtm.nb_fit(np.column_stack([Htr, X[:, s0['cols']]]), y25, expo)
+        p0 = rtm.nb_predict(f0, np.column_stack([Hte, X[:, s0['cols']]]), expo)
+        PAI_0, _h0 = pai(p0 / slen, y26)
+        # лише середовище (з поправкою на людей) — для порівняння у звіті
+        sE = vidbir(y25, XL if XL.shape[1] else None)
+        fE, _fe = rtm.nb_fit(np.column_stack([XL, stovp(sE['cols'])]), y25, expo)
+        pE = rtm.nb_predict(fE, np.column_stack([XL, stovp(sE['cols'])]), expo)
         # щільність — оцінка ÷ довжина: ранг, колір, відбір і PAI (3.4)
         dT, dE, dH = pT / slen, pE / slen, y25 / slen
         PAI_T, hT = pai(dT, y26); PAI_E, hE = pai(dE, y26); PAI_H, hH = pai(dH, y26)
@@ -551,22 +773,75 @@ def main():
         PAI_G = hG = None
         if y25[west].sum() > 60 and y26[east].sum() > 30:
             log('   перенесення захід -> схід:')
-            sG = rtm.stijkist(X[west], y25[west], expo[west], ctyp, H=Htr[west], folds=fold[west],
-                              runs=max(20, rtm.N_STAB // 2), log=log)
-            fG, _fg = rtm.nb_fit(np.column_stack([Htr[west], X[west][:, sG['cols']]]), y25[west], expo[west])
-            pG = rtm.nb_predict(fG, np.column_stack([Hte[east], X[east][:, sG['cols']]]), expo[east])
+            sG = vidbir(y25[west], np.column_stack([Htr[west], XL[west]]), rows=west, runs=max(20, rtm.N_STAB // 2))
+            fG, _fg = rtm.nb_fit(A_(Htr[west], sG['cols'], rows=west), y25[west], expo[west])
+            pG = rtm.nb_predict(fG, A_(Hte[east], sG['cols'], rows=east), expo[east])
             PAI_G, hG = rtm.pai_dovzhyna(pG / slen[east], y26[east], slen[east])
         # стійкість між роками (6.3): та сама модель, навчена на 2025 -> 2026
         H25, mu5, sd5 = hst(y25)
-        sB = rtm.stijkist(X, y26, expo, ctyp, H=H25, folds=fold, runs=max(20, rtm.N_STAB // 2), log=log)
-        fB, _fb = rtm.nb_fit(np.column_stack([H25, X[:, sB['cols']]]), y26, expo)
+        sB = vidbir(y26, np.column_stack([H25, XL]), runs=max(20, rtm.N_STAB // 2))
+        fB, _fb = rtm.nb_fit(A_(H25, sB['cols']), y26, expo)
         HmapB, _m, _s = hst(cnt(key, MAPW), mu5, sd5)
-        pmB = rtm.nb_predict(fB, np.column_stack([HmapB, X[:, sB['cols']]]), expo)
-        # карта: ті самі коефіцієнти, історія — останні 12 повних місяців
-        pm = rtm.nb_predict(fT, np.column_stack([Hmap, X[:, sT['cols']]]), expo)
+        pmB = rtm.nb_predict(fB, A_(HmapB, sB['cols']), expo)
+        # карта: ті самі коефіцієнти, історія — останні 12 повних місяців;
+        # pm — прогноз подій на наступні 12 місяців для кожного відрізка (7.10)
+        pm = rtm.nb_predict(fT, A_(Hmap, sT['cols']), expo)
         dm = pm / slen
-        facs = factors(fT, sT['cols'], sT)
-        facsE = factors(fE, sE['cols'], sE, k0=0)
+        facs = factors(fT, sT['cols'], sT, k0=K0)
+        facsE = factors(fE, sE['cols'], sE, k0=XL.shape[1])
+        facs0 = factors(f0, s0['cols'], s0)
+        ludy = {cname[j]: sexp(float(fT.params[2 + k])) for k, j in enumerate(JL)}
+
+        # ---- дві мірки — суд і скарги (35.3) ----
+        dvi = None
+        gm = mirka(key) if SKG else []
+        if gm:
+            def per(v):
+                o = np.argsort(np.argsort(v)); return o / max(len(v) - 1, 1)
+            a1, b1 = VIKNO_1551[0]; a2, b2 = VIKNO_1551[1]; a3, b3 = VIKNO_1551[2]; a4, b4 = VIKNO_1551[3]
+            mon = lambda a, b: [m for m in sorted({e['m'] for e in ev}) if a <= m <= b]
+            yA_tr, yA_t1 = cnt(key, mon(a1, b1)), cnt(key, mon(a2, b2))
+            yA_te, yA_t2 = cnt(key, mon(a3, b3)), cnt(key, mon(a4, b4))
+            yB_tr, yB_t1 = SKG['tr'][:, gm].sum(1), SKG['t1'][:, gm].sum(1)
+            yB_te, yB_t2 = SKG['te'][:, gm].sum(1), SKG['t2'][:, gm].sum(1)
+            if yA_t1.sum() >= 30 and yB_t1.sum() >= 30:
+                log('   дві мірки (суд і скарги 1551):')
+                hA, muA, sdA = hst(yA_tr); hA2, _a, _b = hst(yA_te, muA, sdA)
+                hB, muB, sdB = hst(yB_tr); hB2, _a, _b = hst(yB_te, muB, sdB)
+                runs2 = max(20, rtm.N_STAB // 2)
+                # модель А: суд; 1551 за змістом — кандидати поряд із середовищем (5.4)
+                sA = vidbir(yA_t1, np.column_stack([hA, XL]), runs=runs2, Xe=G_tr)
+                fA, _ = rtm.nb_fit(A_(hA, sA['cols'], G_tr), yA_t1, expo)
+                pA2 = rtm.nb_predict(fA, A_(hA2, sA['cols'], G_te), expo)
+                # модель Б: скарги мешканців тих самих груп, ті самі змінні
+                sBb = vidbir(yB_t1, np.column_stack([hB, XL]), runs=runs2, Xe=G_tr)
+                fBb, _ = rtm.nb_fit(A_(hB, sBb['cols'], G_tr), yB_t1, expo)
+                pB2 = rtm.nb_predict(fBb, A_(hB2, sBb['cols'], G_te), expo)
+                razom = (per(pA2 / slen) + per(pB2 / slen)) / 2
+                PA_sud, _ = pai(pA2 / slen, yA_t2); PA_sk, _ = pai(pA2 / slen, yB_t2)
+                PR_sud, _ = pai(razom, yA_t2); PR_sk, _ = pai(razom, yB_t2)
+                bere = PR_sud >= 0.95 * PA_sud and PR_sk > PA_sk
+                vyb1551 = [EN[c[1]] for c in sA['cols'] if isinstance(c, tuple)]
+                dvi = dict(PAI_суд_лише_А=round(PA_sud, 2), PAI_скарги_лише_А=round(PA_sk, 2),
+                           PAI_суд_разом=round(PR_sud, 2), PAI_скарги_разом=round(PR_sk, 2),
+                           на_карті=bere, групи=[EN[g] for g in gm], у_моделі_А_1551=vyb1551,
+                           причина='' if bere else (
+                               f'PAI на судових подіях упав більше ніж на 5% ({PA_sud:.2f} -> {PR_sud:.2f})'
+                               if PR_sud < 0.95 * PA_sud else
+                               f'PAI на скаргах не зріс ({PA_sk:.2f} -> {PR_sk:.2f})'),
+                           чинники_А=factors(fA, sA['cols'], sA, k0=K0),
+                           чинники_Б=factors(fBb, sBb['cols'], sBb, k0=K0))
+                log(f'      PAI суд: А {PA_sud:.2f}, разом {PR_sud:.2f}; PAI скарги: А {PA_sk:.2f}, разом {PR_sk:.2f}'
+                    f' -> ' + ('ранг — середнє двох мірок' if bere else 'лише судові події: ' + dvi['причина'])
+                    + (f'; 1551 у моделі А: {", ".join(vyb1551)}' if vyb1551 else ''))
+                if bere:
+                    # карта: процентиль прогнозу А (головна модель) і Б на
+                    # останніх 6 місяцях скарг
+                    hBm, _a, _b = hst(SKG['map'][:, gm].sum(1), muB, sdB)
+                    pBm = rtm.nb_predict(fBb, A_(hBm, sBb['cols'], G_map), expo)
+                    dm = (per(dm) + per(pBm / slen)) / 2
+            else:
+                dvi = dict(на_карті=False, причина=f'замало: суд {int(yA_t1.sum())}, скарг {int(yB_t1.sum())} у вікні 1551')
         ok = PAI_T >= MIN_PAI
         why = '' if ok else f'PAI на довжину {PAI_T:.1f} < {MIN_PAI:g}'
         if vyd == 'тема': radiusy[nm] = {d['тип']: d['r'] for d in facs if d['r']}
@@ -605,7 +880,11 @@ def main():
                  стійкість=dict(чинники_2025=sorted(ts(facsB)), спільних_чинників=len(ts(facs) & ts(facsB)),
                                 чинників_2024=len(ts(facs)), спільних_вулиць=len(set(shown.tolist()) & shownB),
                                 вулиць=int(n_show)),
-                 вилучено=vylucheno(sT['cols']),
+                 вилучено=vylucheno([c for c in sT['cols'] if not isinstance(c, tuple)]),
+                 # 5.1: до й після поправки на людей; кратність людей
+                 PAI_до_поправки=round(PAI_0, 2), чинники_до_поправки=facs0, люди=ludy,
+                 події_лише_вулиця=int(n_vul[key]),
+                 дві_мірки=dvi,
                  # поля, які читають карта й документи (map_layers, step6)
                  фактори=[[d['змінна'], d['коеф']] for d in facs],
                  кратність={(f"{d['тип']}_{d['r']}м" if d['r'] else d['змінна']): d['RR'] for d in facs},
@@ -615,11 +894,55 @@ def main():
         rk_by[key] = set(shown.tolist())
         if ok:
             rk = dm / (dm.max() or 1)
+            # місце серед усіх відрізків міста, верхні N% (7.10)
+            orr = np.argsort(-dm, kind='stable'); pct_c = np.empty(n); pct_c[orr] = 100 * (np.arange(n) + 1) / n
             layers[key] = dict(kind='theme' if vyd == 'тема' else 'mech', theme=th, name=nm,
                                title='Схожі умови: ' + nm, slug=M.anchor(key), window=e['вікно'],
                                proakt=mark, hit=round(hT, 3), pai=round(PAI_T, 2), n2=1,
-                               items=[row(i, rk, n2, street_facts(fT, sT['cols'], i)) for i in shown],
+                               dvi_mirky=bool(dvi and dvi.get('на_карті')),
+                               items=[row(i, rk, n2, street_facts(fT, sT['cols'], i, k0=K0), pct=pct_c, mu=pm)
+                                      for i in shown],
                                grid=[row(i, rk, n2, None, True) for i in om[:TOPGRID]])
+        # ---- точки (6) ----
+        if NP_ and XP is not None:
+            def cntp(months):
+                v = np.zeros(NP_)
+                for m in months:
+                    a = YP.get((key, m))
+                    if a is not None: v += a
+                return v
+            p24, p25, p26 = cntp(rik(2024)), cntp(rik(2025)), cntp(rik(2026))
+            if p25.sum() >= 50 and p26.sum() >= 20:
+                hP, muP, sdP = hst(p24); hP2, _a, _b = hst(p25, muP, sdP); hPm, _a, _b = hst(cntp(MAPW), muP, sdP)
+                one = np.ones(NP_)
+                AP = lambda H, cols: np.column_stack([H, XPL, XP[:, cols]] if cols else [H, XPL])
+                sP = rtm.stijkist(XP[:, CANDP], p25, one, [ctypP[j] for j in CANDP], H=np.column_stack([hP, XPL]),
+                                  folds=foldP, runs=max(20, rtm.N_STAB // 2), log=log)
+                colsP = [CANDP[c] for c in sP['cols']]
+                fP, _ = rtm.nb_fit(AP(hP, colsP), p25, one)
+                PAI_P = RT.pai(rtm.nb_predict(fP, AP(hP2, colsP), one), p26)
+                PAI_PH = RT.pai(p25, p26)
+                pmP = rtm.nb_predict(fP, AP(hPm, colsP), one)
+                e['точки'] = dict(PAI=round(PAI_P, 2), PAI_історія=round(PAI_PH, 2), подій_навчання=int(p25.sum()),
+                                  на_карті=PAI_P >= RT.MIN_PAI,
+                                  чинники=[cnameP[j] for j in colsP])
+                log(f'   точки: PAI на верхніх 5% точок {PAI_P:.2f} (історія {PAI_PH:.2f}); '
+                    + ('на карті' if PAI_P >= RT.MIN_PAI else 'СХОВАНО'))
+                if PAI_P >= RT.MIN_PAI:
+                    oP = np.argsort(-pmP, kind='stable'); pctP = np.empty(NP_); pctP[oP] = 100 * (np.arange(NP_) + 1) / NP_
+                    n2P = cntp(ROKY2)
+                    kP = min(300, max(20, NP_ // 100))
+                    def facP(i):
+                        rows = []
+                        for k_, j in enumerate(colsP, start=1 + 1 + XPL.shape[1]):
+                            c = float(fP.params[k_]) * (XP[i, j] - XP[:, j].mean())
+                            if c > 0 and ctypP[j]: rows.append((c, cnameP[j]))
+                        return [r for _c, r in sorted(rows, reverse=True)[:3]]
+                    tochky_out[key] = dict(theme=th, name=nm, pai=round(PAI_P, 2), items=[
+                        [round(TP[i]['la'], 5), round(TP[i]['lo'], 5), TP[i]['typ'], int(n2P[i]),
+                         round(float(pctP[i]), 2), round(float(pmP[i]), 2), facP(i)] for i in oP[:kP]])
+            else:
+                e['точки'] = dict(на_карті=False, причина=f'замало подій на точках: {int(p25.sum())} у 2025')
         log(f'   PAI на довжину: разом {PAI_T:.2f}, історія {PAI_H:.2f}, середовище {PAI_E:.2f}, '
             f'захід->схід {PAI_G if PAI_G is None else round(PAI_G, 2)}; як рахувалося — разом {star["разом"]}; '
             f'чинників {len(facs)}; спільних з навчанням на 2025: {e["стійкість"]["спільних_чинників"]} чинників, '
@@ -630,8 +953,8 @@ def main():
     # ---- «Що поруч»: один радіус на тип, той самий відбір по всіх подіях ----
     log('\n=== «Що поруч»: усі шість видів разом ===')
     ya = sum(cnt(th, rik(2025)) for th in six)
-    sa = rtm.stijkist(X, ya, expo, ctyp, H=None, folds=fold, runs=max(20, rtm.N_STAB // 2), log=log)
-    fa, _f = rtm.nb_fit(X[:, sa['cols']], ya, expo)
+    sa = vidbir(ya, XL if XL.shape[1] else None, runs=max(20, rtm.N_STAB // 2))
+    fa, _f = rtm.nb_fit(np.column_stack([XL, stovp(sa['cols'])]), ya, expo)
     shcho = {ua: 0 for ua, _q in S2B.B1.values()}      # лікарні — 0: у 50 м
     for j in sa['cols']:
         if ctyp[j]: shcho[ctyp[j]] = crad[j]
@@ -649,12 +972,12 @@ def main():
                           'остаточна — негативна біноміальна з довжиною як експозицією',
                    шари={k: dict(PAI=v['PAI_разом'], чинники=[d['змінна'] for d in v['чинники']])
                          for k, v in report.items() if 'PAI_разом' in v})
-    json.dump({'layers': layers, 'danger': danger, 'versiia': versiia},
+    json.dump({'layers': layers, 'tochky': tochky_out, 'danger': danger, 'versiia': versiia},
               open(RISK, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
     rep = dict(report); rep['_версія'] = versiia
     json.dump(rep, open(OUT, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     write_report(report, kinds, OLD, OLDR, layers, blocks_m, shcho, n, X.shape[1],
-                 factors(fa, sa['cols'], sa, k0=0), versiia, danger)
+                 factors(fa, sa['cols'], sa, k0=XL.shape[1]), versiia, danger)
     log(f'\n=== ГОТОВО за {(time.time() - t0) / 60:.0f} хв === шарів на карті: {len(layers)}; '
         f'ZVIT-KROK7.md, data/radiusy.json')
 
@@ -686,7 +1009,8 @@ def method_text(e, mark):
 # немає, тож безпеку пішоходів напряму не виміряти; беремо відрізки з
 # найбільшим модельованим потоком, де вже були ДТП з ознаками конфлікту.
 KONFLIKT = re.compile(r"припаркован|паркуван|об['’]?їзд|боков\w*\s+інтервал|задн\w*\s+ход|пішох[іо]д", re.I)
-POTOKY = (('загальна прохідність', 0), ('до шкіл і садків', 1), ('до транспорту', 2), ('до магазинів', 3))
+# Один перелік — за прохідністю (RISHENNYA 34.1; ZAVDANNYA-31, 5.5)
+POTOKY = (('прохідність', 0),)
 
 
 def pishokhidnyi(ev_seg, sids, names, segs, byid, ROKY3, log):
@@ -703,7 +1027,7 @@ def pishokhidnyi(ev_seg, sids, names, segs, byid, ROKY3, log):
         elif KONFLIKT.search(e['fab'] or ''): kf[i] += 1
     out = {}
     for nm_, j in POTOKY:
-        v = [(byid.get(s, (0, 0, 0, 0))[j], i) for i, s in enumerate(sids)]
+        v = [(byid.get(s, 0), i) for i, s in enumerate(sids)]
         vals = sorted(x for x, _i in v if x > 0)
         if not vals: continue
         por = vals[int(len(vals) * 0.95)]

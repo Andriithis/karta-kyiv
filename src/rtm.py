@@ -285,8 +285,9 @@ def stijkist(X, y, expo, typ, H=None, folds=None, runs=None, seed=30, log=print)
     import time as _t
     t0 = _t.time()
     runs = runs or N_STAB
+    # H — один стовпчик (історія) чи кілька (історія й люди, ZAVDANNYA-32, 5.1)
     A = X if H is None else np.column_stack([H, X])
-    k0 = 0 if H is None else 1
+    k0 = 0 if H is None else (H.shape[1] if np.ndim(H) == 2 else 1)
     mean, sd = A.mean(0), A.std(0)
     sd[sd == 0] = 1
     Z = (A - mean) / sd
