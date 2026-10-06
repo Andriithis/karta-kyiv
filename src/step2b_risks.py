@@ -115,11 +115,31 @@ B1 = {
 }
 for _k, (_ua, _q) in B1.items():
     LIGHT[_k] = _q + 'out tags center;'
+# ---- ЦІЛІ ПРОХІДНОСТІ (RISHENNYA 35.2; ZAVDANNYA-32, 4.2) ----
+# Послуги («інше» разом із кафе й фастфудом): пошта, банки, перукарні,
+# хімчистки — туди ходять пішки з дому.
+LIGHT['posluhy'] = ('(nwr["amenity"~"^(post_office|bank)$"](area.k);'
+                    'nwr["shop"~"^(hairdresser|beauty|laundry|dry_cleaning|tailor|shoe_repair|copyshop|optician)$"](area.k););'
+                    'out tags center;')
 HEAVY = {
  'roads':  'way["highway"~"^(residential|tertiary|secondary|unclassified|living_street)$"]',
  'foot':   'way["highway"~"^(footway|path|pedestrian)$"]',
- 'houses': 'way["building"~"^(apartments|residential|house|dormitory)$"]',
+ # Будинки з поверхами й розміром (35.2): мешканці шестикутника Kontur
+ # діляться за площею поверхів, а не порівну. building=yes — більшість
+ # київських багатоповерхівок; сараї й гаражі серед них відсіює step2c
+ # (житлова забудова або ≥ 3 поверхи).
+ 'houses': 'way["building"~"^(apartments|residential|house|dormitory|yes|detached|semidetached_house|terrace)$"]',
+ # Житлова забудова — для відбору building=yes
+ 'zhytlo_zona': 'way["landuse"="residential"]',
+ # Робота (35.2): офіси, торгівля, виробництво, університети й лікарні як
+ # роботодавці; вага цілі — площа (out bb)
+ 'robota': 'nwr["office"];way["building"~"^(office|commercial|industrial|retail|warehouse)$"];'
+           'way["landuse"~"^(commercial|industrial|retail)$"];nwr["amenity"~"^(university|college|hospital)$"]',
 }
+# Як вивантажувати важкий шар: геометрія для мереж і меж, центр і рамка для
+# будинків і роботи (площа з рамки)
+OUTMODE = {'roads': 'out tags geom;', 'foot': 'out tags geom;', 'dorogy_velyki': 'out tags geom;',
+           'zhytlo_zona': 'out geom;', 'houses': 'out tags center bb;', 'robota': 'out tags center bb;'}
 # Магістралі (рішення Андрія 30.09; ZAVDANNYA-31, ч. 1): у шарі roads їх
 # немає. Одним запитом на все місто сервер відповідав 504, тож — плитками, як
 # важкі шари, але докачуються самі, без повного перезавантаження.
@@ -211,25 +231,44 @@ def center(el):
     if b: return (b['minlat'] + b['maxlat']) / 2, (b['minlon'] + b['maxlon']) / 2
     return None
 
+def stysnuty(k, el):
+    """Будинки й робота — лише потрібне: центр, рамка, поверхи, тип. Повний
+    елемент OSM з усіма тегами роздував кеш у кілька разів (будинків — сотні
+    тисяч), а кеш живе в гілці osm."""
+    if k not in ('houses', 'robota'):
+        return el
+    t = el.get('tags') or {}
+    keep = {x: t[x] for x in ('building', 'building:levels', 'height', 'office', 'landuse', 'amenity', 'name')
+            if x in t}
+    out = {'type': el.get('type'), 'id': el.get('id'), 'tags': keep}
+    c = el.get('center') or ({'lat': el['lat'], 'lon': el['lon']} if 'lat' in el else None)
+    if c: out['center'] = {'lat': round(c['lat'], 6), 'lon': round(c['lon'], 6)}
+    b = el.get('bounds')
+    if b: out['bounds'] = {x: round(b[x], 6) for x in ('minlat', 'minlon', 'maxlat', 'maxlon')}
+    return out
+
+
 def heavy(k):
     """важкий шар (чи магістралі) плитками; None — якщо хоч одна плитка не
     завантажилась"""
     sel = HEAVY.get(k) or PLYTKY[k]
+    # кілька запитів через «;» — кожен з (area.k)(рамка)
+    parts = [p for p in sel.split(';') if p]
     s_, w_, n_, e_ = BBOX
     dla, dlo = (n_ - s_) / TILES, (e_ - w_) / TILES
     acc, seen = [], set()
-    outmode = 'out tags geom;' if k in ('roads', 'foot', 'dorogy_velyki') else 'out center;'
+    outmode = OUTMODE.get(k, 'out center;')
     for i in range(TILES):
         for j in range(TILES):
             bb = f'{s_+i*dla:.4f},{w_+j*dlo:.4f},{s_+(i+1)*dla:.4f},{w_+(j+1)*dlo:.4f}'
-            els = fetch(k, f'({sel}(area.k)({bb}););{outmode}',
+            els = fetch(k, '(' + ''.join(f'{p}(area.k)({bb});' for p in parts) + f');{outmode}',
                         f'{i*TILES+j+1}/{TILES*TILES}', allow_empty=True, retry_empty=True)
             if els is None:
                 print(f'   !!! {k} {i*TILES+j+1}/{TILES*TILES} не завантажено')
                 return None
             for el in els:
-                if el.get('id') not in seen:
-                    seen.add(el.get('id')); acc.append(el)
+                if (el.get('type'), el.get('id')) not in seen:
+                    seen.add((el.get('type'), el.get('id'))); acc.append(stysnuty(k, el))
             time.sleep(5)
     print(f'   {k}: разом {len(acc):,}')
     return acc
@@ -264,9 +303,19 @@ def main():
         # 30.09): їх перезавантажує лише галочка «Перезавантажити шар ризиків
         # з OSM». Немає будинків — голос мешканців не рахує ознаку «жодного
         # житла в 50 м»; немає доріжок — крок 2c не рахує потоків.
+        # --dokachaty houses,foot — докачати названі важкі шари в наявний кеш
+        # (щомісячний знімок OSM і локальна перевірка прохідності)
+        dok = next((a.split('=', 1)[1] for a in sys.argv if a.startswith('--dokachaty=')), '')
+        for k in [x for x in dok.split(',') if x in HEAVY]:
+            print(f'докачую {k} плитками')
+            acc = heavy(k)
+            if acc is None:
+                print(f'   !!! {k} не завантажено — кеш без змін'); continue
+            raw[k] = acc
+            json.dump(raw, open(RAW, 'w', encoding='utf-8'), ensure_ascii=False)
         hmiss = [k for k in HEAVY if not raw.get(k)]
         if hmiss:
-            print('у кеші немає важких шарів: ' + ', '.join(hmiss) + ' — лише повне перезавантаження')
+            print('у кеші немає важких шарів: ' + ', '.join(hmiss) + ' — повне перезавантаження чи --dokachaty')
         for k in PLYTKY:
             if not raw.get(k):
                 print(f'докачую {k} плитками')
