@@ -12,6 +12,11 @@ on:
   schedule:
     - cron: '0 1 28 * *'
   workflow_dispatch:
+  # як «Аналіз 1551»: зміна самого workflow чи кроку 2b — новий знімок
+  # (перший знімок 06.10 — так, з дозволу Андрія)
+  push:
+    branches: [main]
+    paths: ['.github/workflows/osm.yml', 'src/step2b_risks.py']
 
 permissions:
   contents: write
