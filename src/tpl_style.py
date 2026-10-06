@@ -186,6 +186,12 @@ html .tsw button{min-height:32px;display:inline-flex;align-items:center}
  animation:kload 1.1s ease-in-out infinite}
 @keyframes kload{from{left:-30%}to{left:100%}}
 @media (prefers-reduced-motion:reduce){#kload::after{animation:none;left:0;width:100%;opacity:.25}}
+/* Заставка до першого кадру (ZAVDANNYA-31, 8.1) — під панеллю, над картою. */
+#ksplash{position:absolute;inset:0;z-index:4;display:flex;flex-direction:column;align-items:center;justify-content:center;
+ gap:6px;background:var(--ground);color:var(--ink);transition:opacity .35s;pointer-events:none}
+#ksplash b{font:600 18px var(--sans)}
+#ksplash span{font-size:13px;color:var(--dim)}
+#ksplash.off{opacity:0}
 .bd td.lpmorec{text-align:left;width:auto;padding-left:0;font-family:var(--sans)}
 .lpmore{background:none;border:0;padding:4px 0;min-height:28px;font:inherit;font-size:11.5px;color:var(--dim);
  cursor:pointer;text-decoration:underline}

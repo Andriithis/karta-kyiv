@@ -230,8 +230,14 @@ setBase(THEME);
 // старті вони секунду-дві висіли на порожньому тлі, і карта здавалася
 // зламаною. До першого повного кадру (load) — тонка смужка завантаження.
 let BASE_READY=false;
+// Заставка (ZAVDANNYA-31, 8.1): до першого кадру — назва й «завантажується…»,
+// а не порожні межі районів, які читалися як зламана карта.
 {const bar=document.createElement('div'); bar.id='kload'; map.getContainer().appendChild(bar);
- const ready=()=>{ if(BASE_READY) return; BASE_READY=true; bar.remove(); addrPaint(); map.triggerRepaint()};
+ const spl=document.createElement('div'); spl.id='ksplash';
+ spl.innerHTML='<b>Карта правопорушень Києва</b><span>завантажується…</span>';
+ map.getContainer().appendChild(spl);
+ const ready=()=>{ if(BASE_READY) return; BASE_READY=true; bar.remove();
+  spl.classList.add('off'); setTimeout(()=>spl.remove(),400); addrPaint(); map.triggerRepaint()};
  map.once('load',ready);
  // load чекає на всі плитки першого кадру; якщо якась так і не прийде,
  // кільця не мають зникнути назавжди — не довше 6 с.
@@ -508,11 +514,19 @@ function rishHTML(d,cs){
    <div class="l3">${esc(c[5]||'опису в рішенні немає')}</div>
    ${open?`<div class="l4">${c[3]?`справа ${esc(c[3])} · `:''}${(c[4]||[]).map((h,j)=>`<a href="${docUrl(h)}" target="_blank" rel="noopener">${(c[4].length>1?'рішення '+(j+1):'відкрити рішення')} ↗</a>`).join(' · ')}</div>`:''}
   </div>`}).join('')}
+// До 5 найближчих на тип і лише типи з радіусом моделі > 0 (ZAVDANNYA-31,
+// 8.2): тип, не пов'язаний з подіями жодного виду, у «Що поруч» не йде, а
+// десять кафе одного кварталу закривали решту переліку. Поки радіусів немає
+// (до перенавчання) — усі типи в 250 м, як раніше.
+const NEAR_PER=5, RADII=(F.cats||[]).some(c=>c.r>0);
 function nearList(p){
  if(!(F.cats||[]).length) return [];
  const my=111320, mx=111320*Math.cos(p[0]*Math.PI/180), out=[];
- F.cats.forEach(c=>c.pts.forEach(q=>{const dd=Math.hypot((q[0]-p[0])*my,(q[1]-p[1])*mx);
-  if(dd<=nearR(c)) out.push({c,q,d:Math.round(dd)})}));
+ F.cats.forEach(c=>{ if(RADII&&!(c.r>0)) return;
+  const mine=[];
+  c.pts.forEach(q=>{const dd=Math.hypot((q[0]-p[0])*my,(q[1]-p[1])*mx);
+   if(dd<=nearR(c)) mine.push({c,q,d:Math.round(dd)})});
+  out.push(...mine.sort((a,b)=>a.d-b.d).slice(0,NEAR_PER))});
  return out.sort((a,b)=>a.d-b.d);
 }
 // Без пояснювальних речень (правило Андрія 29.09): що кожен тип — у своєму
@@ -567,6 +581,10 @@ function openAt(i){
  renderPlace(); placeKeepVisible(i);
 }
 function closePlace(){ if(!PLACE) return; PLACE=null; clearNear(); renderPlace()}
+// Місце пішло за край екрана — картка про нього вже ні до чого й лише
+// закриває карту (ZAVDANNYA-31, 8.4).
+map.on('moveend',()=>{ if(!PLACE) return; const p=P[PLACE.i];
+ if(p&&!map.getBounds().contains([p[1],p[0]])) closePlace()});
 // Місце не має лишитися під карткою: карту зсуваємо так, щоб точка лягла
 // на вільну частину між карткою й навігатором (на телефоні — над карткою),
 // без наближення.
@@ -1241,8 +1259,11 @@ function distReady(){
   paint:{'fill-opacity':['case',['boolean',['feature-state','hover'],false],.13,.05]}},before);
  // Пунктир 7/5 px, як у Leaflet: у MapLibre довжини рисок — у товщинах лінії.
  map.addLayer({id:'k-dist-line',type:'line',source:'k-dist',
-  paint:{'line-width':1.8,'line-dasharray':[7/1.8,5/1.8],
-   'line-opacity':['case',['boolean',['feature-state','hover'],false],.95,.85]}},before);
+  // з z14 межа тоншає й блідне (ZAVDANNYA-31, 8.3): на рівні кварталу вона
+  // перекривала вулиці й адреси
+  paint:{'line-width':['interpolate',['linear'],['zoom'],13,1.8,14.5,.9],'line-dasharray':[7/1.8,5/1.8],
+   'line-opacity':['interpolate',['linear'],['zoom'],13,['case',['boolean',['feature-state','hover'],false],.95,.85],
+    14.5,['case',['boolean',['feature-state','hover'],false],.6,.4]]}},before);
  map.addLayer({id:'k-dist-sel',type:'line',source:'k-dist',filter:['==',['get','i'],-1],
   paint:{'line-width':1.8,'line-opacity':1}},before);
 }

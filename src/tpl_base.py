@@ -21,9 +21,10 @@ const pl=(n,one,few,many)=>{const a=n%10,b=n%100;
 // дальтонізмі — світліший лягає на світлу підкладку, темніший на решту.
 // Восьмий колір у кінці — запас для домашнього насильства: у M.groups воно не
 // входить, але без запасу %8 віддавало б йому колір громадського порядку.
+// Сьомий — «Порушення на дорозі» (34.3), той самий бузковий, що на GL-карті.
 const PAL={
- svitla:['#eb6834','#1baf7a','#4a3aa7','#e34948','#2a78d6','#008300','#e87ba4','#7a6f63'],
- temna: ['#d95926','#199e70','#9085e9','#e66767','#3987e5','#008300','#d55181','#8d94a2']};
+ svitla:['#eb6834','#1baf7a','#4a3aa7','#e34948','#2a78d6','#008300','#8a7e9c','#7a6f63'],
+ temna: ['#d95926','#199e70','#9085e9','#e66767','#3987e5','#008300','#d890ba','#8d94a2']};
 // Ключ CARTO. Безкоштовний, без картки, до 5 млн тайлів на місяць — для
 // Академії це нескінченність. Він клієнтський і однаково лежить у коді
 // сторінки, тому ховати його немає від кого. Параметр називається саме
@@ -49,7 +50,10 @@ const TILES={
 const THNAMES=[['svitla','Світла'],['temna','Темна']];
 let THEME=null;
 try{THEME=localStorage.getItem('karta-tema')}catch(e){}
-if(!PAL[THEME]){THEME='svitla';try{localStorage.setItem('karta-tema',THEME)}catch(e){}}
+// Перший запуск — тема системи (ZAVDANNYA-31, 8.5), далі — збережена.
+if(!PAL[THEME]){
+ let dark=false; try{dark=matchMedia('(prefers-color-scheme: dark)').matches}catch(e){}
+ THEME=dark?'temna':'svitla'; try{localStorage.setItem('karta-tema',THEME)}catch(e){}}
 document.body.dataset.t=THEME;
 let PALA=PAL[THEME];
 // Маски, межі й гало малює JS, а кольори теми живуть у CSS. Щоб вони не
