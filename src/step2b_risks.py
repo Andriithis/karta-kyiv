@@ -191,10 +191,12 @@ def fetch(name, body, label='', allow_empty=False, retry_empty=False):
         except Exception as e:
             print(f'збій {type(e).__name__}: {str(e)[:70]}')
             time.sleep(15)
-    if retry_empty and zeros:
+    if retry_empty and zeros >= 3:
         # Решта спроб — 504, а кожна успішна відповідь казала 0: плитка
         # порожня (кут рамки за межами Києва). Без цього важкий шар будинків
-        # не докачувався ніколи — сервери чергували 0 і 504.
+        # не докачувався ніколи — сервери чергували 0 і 504. Але не менше
+        # трьох нулів: 06.10 перевантажений Overpass віддав 0 на плитку
+        # півдня центру, де доріжок тисячі (ZVIT-32).
         print(f'   {name}{label}: {zeros} відповідей «0», решта — збої; плитка порожня')
         return []
     print(f'   !!! {name}{label} НЕ ЗАВАНТАЖЕНО')
@@ -340,6 +342,13 @@ def main():
         if pusti:
             print('   !!! немає жодної вулиці в районах: ' + ', '.join(pusti) + ' — кеш не зберігаю')
             sys.exit(1)
+        # будинки й доріжки — так само: дірява плитка дала б район без людей
+        for k in ('houses', 'foot'):
+            pusti = raiony_bez([{'geometry': el.get('geometry') or ([{'lat': el['center']['lat'], 'lon': el['center']['lon']}]
+                                if el.get('center') else [])} for el in raw.get(k, [])])
+            if pusti:
+                print(f'   !!! {k}: порожні райони ' + ', '.join(pusti) + ' — кеш не зберігаю')
+                sys.exit(1)
         json.dump(raw, open(RAW, 'w', encoding='utf-8'), ensure_ascii=False)
 
     nema = [k for k in OBOV if not raw.get(k)]
