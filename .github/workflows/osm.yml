@@ -4,7 +4,8 @@ name: Знімок OSM
 # адреси (крок 2) і шари середовища, вулиць, будинків (крок 2b) качаються
 # раз на місяць окремо від збірки й лягають у гілку osm. «Оновлення карти»
 # бере їх звідти й більше не залежить від збоїв Overpass. Не завантажилося —
-# знімок лишається попереднім (у гілку йде лише повний).
+# знімок лишається попереднім (у гілку osm йде лише повний), а докачане
+# чекає наступного запуску в гілці osm-chastkovyi (не довше 7 днів).
 # 28-го — щоб за ним «Прохідність» устигла до першого понеділка місяця,
 # коли модель перенавчається.
 
@@ -23,20 +24,65 @@ concurrency:
 jobs:
   znimok:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    # Адреси до 40 хв + шари до 220 хв + запас, щоб устигнути зберегти часткове
+    timeout-minutes: 280
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      # Обірваний запуск лишає докачане в гілці osm-chastkovyi; наступний
+      # бере його й качає лише відсутні шари й плитки. Старше 7 днів — заново:
+      # знімок має бути одного часу, а не зшитий з різних тижнів.
+      - name: Часткове з попереднього запуску (не старше 7 днів)
+        run: |
+          date -u +'%Y-%m-%d' > data/_osm_pochatok.txt
+          if git fetch -q origin osm-chastkovyi; then
+            poch=$(git show FETCH_HEAD:osm/pochatok.txt || echo 1970-01-01)
+            dni=$(( ( $(date -u +%s) - $(date -u -d "$poch" +%s) ) / 86400 ))
+            if [ "$dni" -le 7 ]; then
+              echo "часткове від $poch ($dni дн.) — докачую"
+              echo "$poch" > data/_osm_pochatok.txt
+              for f in osm_risks_raw osm_kyiv_city; do
+                if git cat-file -e FETCH_HEAD:osm/$f.json.gz; then
+                  git show FETCH_HEAD:osm/$f.json.gz | gunzip > data/$f.json || rm -f data/$f.json
+                fi
+              done
+            else
+              echo "часткове від $poch ($dni дн.) — застаре, починаю заново"
+            fi
+          else
+            echo "часткового немає — починаю заново"
+          fi
       - name: Адреси OSM (крок 2)
+        timeout-minutes: 40
         run: |
-          rm -f data/osm_kyiv_city.json
           python -c "import sys; sys.path.insert(0,'src'); import step2_geocode as G; sys.exit(0 if G.fetch() else 1)"
-      - name: Шари OSM (крок 2b) — заново, з будинками й роботою
+      - name: Шари OSM (крок 2b) — докачати відсутнє, з будинками й роботою
+        # менше за ліміт джоби: має лишитися час зберегти часткове
+        timeout-minutes: 220
+        run: python src/step2b_risks.py --znimok
+      - name: Зберегти часткове в osm-chastkovyi
+        if: failure() || cancelled()
         run: |
-          rm -f data/osm_risks_raw.json
-          python src/step2b_risks.py
+          set -e
+          mkdir -p /tmp/osm
+          for f in osm_risks_raw osm_kyiv_city; do
+            if [ -s data/$f.json ]; then gzip -9 -c data/$f.json > /tmp/osm/$f.json.gz; fi
+          done
+          cp data/_osm_pochatok.txt /tmp/osm/pochatok.txt
+          ls -la /tmp/osm
+          if [ ! -e /tmp/osm/osm_risks_raw.json.gz ] && [ ! -e /tmp/osm/osm_kyiv_city.json.gz ]; then
+            echo "зберігати нічого"; exit 0
+          fi
+          git config user.name  "karta-bot"
+          git config user.email "actions@github.com"
+          git checkout -q --orphan chastkovyi
+          git rm -rfq . || true
+          rm -rf osm && mkdir osm && cp /tmp/osm/* osm/
+          git add -f osm
+          git commit -qm "часткове OSM від $(cat osm/pochatok.txt)"
+          git push -f origin HEAD:osm-chastkovyi
       - name: Покласти в гілку osm
         run: |
           set -e
@@ -57,3 +103,5 @@ jobs:
           git add -f osm
           git commit -m "знімок OSM $(cat osm/data.txt)" || echo "змін немає"
           git push origin osm
+          # повний знімок є — часткове більше не потрібне
+          git push origin --delete osm-chastkovyi || true

@@ -253,9 +253,18 @@ def stysnuty(k, el):
     return out
 
 
-def heavy(k):
+def zberehty(raw):
+    """Запис через тимчасовий файл: «Знімок OSM» обриває крок за тайм-аутом,
+    і недописаний JSON зіпсував би все докачане раніше."""
+    tmp = RAW + '.tmp'
+    json.dump(raw, open(tmp, 'w', encoding='utf-8'), ensure_ascii=False)
+    os.replace(tmp, RAW)
+
+
+def heavy(k, raw=None):
     """важкий шар (чи магістралі) плитками; None — якщо хоч одна плитка не
-    завантажилась"""
+    завантажилась. З raw — кожна плитка одразу лягає в raw['_plytky'] і на
+    диск: одна погана плитка не змушує качати весь шар заново (знімок OSM)."""
     sel = HEAVY.get(k) or PLYTKY[k]
     # кілька запитів через «;» — кожен з (area.k)(рамка)
     parts = [p for p in sel.split(';') if p]
@@ -263,25 +272,82 @@ def heavy(k):
     dla, dlo = (n_ - s_) / TILES, (e_ - w_) / TILES
     acc, seen = [], set()
     outmode = OUTMODE.get(k, 'out center;')
+    kesh = raw.setdefault('_plytky', {}).setdefault(k, {}) if raw is not None else {}
     for i in range(TILES):
         for j in range(TILES):
-            bb = f'{s_+i*dla:.4f},{w_+j*dlo:.4f},{s_+(i+1)*dla:.4f},{w_+(j+1)*dlo:.4f}'
-            els = fetch(k, '(' + ''.join(f'{p}(area.k)({bb});' for p in parts) + f');{outmode}',
-                        f'{i*TILES+j+1}/{TILES*TILES}', allow_empty=True, retry_empty=True)
-            if els is None:
-                print(f'   !!! {k} {i*TILES+j+1}/{TILES*TILES} не завантажено')
-                return None
+            t = str(i * TILES + j)
+            if t in kesh:
+                els = kesh[t]
+                print(f'   {k:8}{int(t)+1}/{TILES*TILES:<6} з кешу {len(els):,}')
+            else:
+                bb = f'{s_+i*dla:.4f},{w_+j*dlo:.4f},{s_+(i+1)*dla:.4f},{w_+(j+1)*dlo:.4f}'
+                els = fetch(k, '(' + ''.join(f'{p}(area.k)({bb});' for p in parts) + f');{outmode}',
+                            f'{i*TILES+j+1}/{TILES*TILES}', allow_empty=True, retry_empty=True)
+                if els is None:
+                    print(f'   !!! {k} {i*TILES+j+1}/{TILES*TILES} не завантажено')
+                    return None
+                els = [stysnuty(k, el) for el in els]
+                if raw is not None:
+                    kesh[t] = els; zberehty(raw)
+                time.sleep(5)
             for el in els:
                 if (el.get('type'), el.get('id')) not in seen:
-                    seen.add((el.get('type'), el.get('id'))); acc.append(stysnuty(k, el))
-            time.sleep(5)
+                    seen.add((el.get('type'), el.get('id'))); acc.append(el)
+    if raw is not None:
+        raw['_plytky'].pop(k, None)
+        if not raw['_plytky']: raw.pop('_plytky')
     print(f'   {k}: разом {len(acc):,}')
     return acc
 
 
+def znimok(raw):
+    """Щомісячний «Знімок OSM» (osm.yml): докачати лише те, чого в кеші
+    немає, — шарами й плитками. Кеш може прийти з гілки osm-chastkovyi
+    (попередній обірваний запуск, не старше 7 днів) або бути порожнім.
+    Кожен шар і плитка одразу на диск: крок обривається за тайм-аутом, а
+    workflow кладе поточний файл назад у osm-chastkovyi."""
+    # Легкі категорії, яких сервер не віддав, — порожні, як і раніше, але
+    # запам'ятовуються, щоб наступний запуск спробував ще раз
+    ne = set(raw.pop('_ne_vdalos', []))
+    for k in LIGHT:
+        if k in raw and k not in ne: continue
+        r_ = fetch(k, LIGHT[k])
+        if r_ is None:
+            raw[k] = raw.get(k) or []; ne.add(k)
+        else:
+            raw[k] = r_; ne.discard(k)
+        raw['_ne_vdalos'] = sorted(ne)
+        zberehty(raw)
+        time.sleep(5)
+    for k in list(HEAVY) + list(PLYTKY):
+        if k in raw: continue          # шар лягає в raw лише цілим
+        print(f'{k} плитками')
+        acc = heavy(k, raw)
+        if acc is None:
+            print('   зупиняюсь — докачані плитки збережено'); sys.exit(1)
+        raw[k] = acc
+        zberehty(raw)
+    # Дірява плитка дала б район без вулиць чи людей — такий шар
+    # викидається з кешу й наступного разу качається заново
+    for k in ('roads', 'houses', 'foot'):
+        els = raw.get(k, [])
+        pusti = raiony_bez(els if k == 'roads' else
+                           [{'geometry': el.get('geometry') or ([{'lat': el['center']['lat'], 'lon': el['center']['lon']}]
+                             if el.get('center') else [])} for el in els])
+        if pusti:
+            print(f'   !!! {k}: порожні райони ' + ', '.join(pusti) + ' — шар викинуто з кешу')
+            raw.pop(k); zberehty(raw); sys.exit(1)
+    if ne: print('не завантажено (лишаються порожні): ' + ', '.join(sorted(ne)))
+    raw.pop('_ne_vdalos', None)
+    zberehty(raw)
+
+
 def main():
     os.makedirs(DATA, exist_ok=True)
-    if os.path.exists(RAW):
+    if '--znimok' in sys.argv:
+        znimok(json.load(open(RAW, encoding='utf-8')) if os.path.exists(RAW) else {})
+        raw = json.load(open(RAW, encoding='utf-8'))
+    elif os.path.exists(RAW):
         raw = json.load(open(RAW, encoding='utf-8'))
         miss = [k for k in LIGHT if not raw.get(k)]
         if miss:
@@ -313,9 +379,9 @@ def main():
         dok = next((a.split('=', 1)[1] for a in sys.argv if a.startswith('--dokachaty=')), '')
         for k in [x for x in dok.split(',') if x in HEAVY]:
             print(f'докачую {k} плитками')
-            acc = heavy(k)
+            acc = heavy(k, raw)
             if acc is None:
-                print(f'   !!! {k} не завантажено — кеш без змін'); continue
+                print(f'   !!! {k} не завантажено — шар без змін, докачані плитки збережено'); continue
             raw[k] = acc
             json.dump(raw, open(RAW, 'w', encoding='utf-8'), ensure_ascii=False)
         hmiss = [k for k in HEAVY if not raw.get(k)]
@@ -324,7 +390,7 @@ def main():
         for k in PLYTKY:
             if not raw.get(k):
                 print(f'докачую {k} плитками')
-                acc = heavy(k)
+                acc = heavy(k, raw)
                 if acc:
                     raw[k] = acc
                     json.dump(raw, open(RAW, 'w', encoding='utf-8'), ensure_ascii=False)
