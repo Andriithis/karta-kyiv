@@ -36,10 +36,15 @@ def ring_k(z):
     return K_SMALL if z < Z_SMALL else 1
 
 
-def r_ring(n, prob, z=Z_SMALL):
-    """Радіус кільця — той самий, що малює браузер; ромб проблеми з обвідкою
-    чорнила вимагає трохи більше місця."""
-    return min(30, 10 + 3 * math.log2(max(n, 1))) * ring_k(z) + (4 if prob else 1.5)
+def r_ring(n, prob, z=Z_SMALL, nmax=None):
+    """Радіус кільця — той самий, що малює браузер (tpl_gl.rRing): площа ∝
+    кількості, 6 + 26·√(n / n_max) (RISHENNYA 34.4), найменше кільце з числом
+    — 11 px, до 5 подій — крапка 4,5 px (35.6). Контур проблеми — +3 px."""
+    if n <= 5:
+        r = 4.5
+    else:
+        r = max(11, (6 + 26 * math.sqrt(n / max(nmax or n, 1))) * ring_k(z))
+    return r + (4.5 if prob else 1.5)
 
 
 def zoom_mul(zl):
@@ -94,8 +99,11 @@ def build(P):
     for step in range(nz + 1):
         z = Z_TOP - step * DZ
         k = 2 ** z
+        # n_max рівня — найбільший вузол на вході рівня (до злиття): після
+        # злиття він лише більшає, тож радіуси тут не менші за браузерні
+        nmax = max((o['n'] for o in nodes), default=1)
         rad = lambda o: (r_addr(o['n'], mx, z, o['pr']) if o['one']
-                         else r_ring(o['n'], o['pr'], z))
+                         else r_ring(o['n'], o['pr'], z, nmax))
         RM = R_MERGE_SMALL if z < Z_SMALL else R_MERGE
         # 1) Усе ближче за R_MERGE — в одну групу, від найбільших вузлів.
         #    Сортування стале (при рівній вазі — за номером), щоб дві збірки

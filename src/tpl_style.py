@@ -192,6 +192,28 @@ html .tsw button{min-height:32px;display:inline-flex;align-items:center}
 #ksplash b{font:600 18px var(--sans)}
 #ksplash span{font-size:13px;color:var(--dim)}
 #ksplash.off{opacity:0}
+/* Картка соти й кільця (ZAVDANNYA-32, 7.11) — та сама #kplace */
+.kc-strip{display:flex;height:6px;border-radius:3px;overflow:hidden;margin:8px 0 2px;gap:1px}
+.kc-strip i{display:block;min-width:2px}
+.kc-vydy{display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;margin:6px 0 8px}
+.kc-vydy button{all:unset;cursor:pointer;display:flex;align-items:center;gap:6px;min-height:30px;font-size:12.5px}
+.kc-vydy button i{width:9px;height:9px;border-radius:2px;flex:none}
+.kc-vydy button b{margin-left:auto;font-weight:600}
+.kc-vydy button:focus-visible{outline:2px solid var(--ink);outline-offset:1px}
+.kc-art{grid-column:1/-1;font-size:12px;color:var(--dim);padding:0 0 4px 15px}
+.kc-art b{color:var(--ink);font-weight:600}
+.kc-risk{display:flex;align-items:center;gap:6px}
+.kc-risk i{width:14px;height:3px;border-radius:2px;background:#d42a2a}
+body[data-t="temna"] .kc-risk i{background:#ff6b6b}
+#kplace .kp-body .pbtn2{margin-top:6px}
+.k-tip .rtw{color:var(--dim)}
+#kcopy{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);z-index:7;background:var(--ink);color:var(--panel);
+ border-radius:6px;padding:7px 12px;font:13px var(--sans);pointer-events:none}
+@media (max-width:700px){
+ /* шторка: низька — назва, підсумок, смужка, вкладки; дотик до шапки — до 80% */
+ #kplace.kp-cell{max-height:34vh}
+ #kplace.kp-cell.kp-tall{max-height:80vh}
+}
 .bd td.lpmorec{text-align:left;width:auto;padding-left:0;font-family:var(--sans)}
 .lpmore{background:none;border:0;padding:4px 0;min-height:28px;font:inherit;font-size:11.5px;color:var(--dim);
  cursor:pointer;text-decoration:underline}

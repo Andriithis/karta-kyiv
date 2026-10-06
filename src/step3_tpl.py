@@ -23,6 +23,7 @@ from tpl_map import JS_MAP
 from tpl_core import JS_CORE
 from tpl_draw import JS_DRAW
 from tpl_gl import JS_GL_LOAD, JS_GL_MAP, JS_GL_DRAW
+from tpl_vyhlyady import JS_VYHLYADY
 
 # Порядок частин у скрипті важить: tpl_base підставляє дані й палітру,
 # рушій створює карту й шари, tpl_core будує панель, а останній файл малює
@@ -36,6 +37,7 @@ TPL = (HEAD + BODY + '\n<script>\n'
 # розбору сторінки, як і звичайний скрипт у кінці <body>.
 TPL_GL = (HEAD_GL + BODY + '\n<script type="module">\n'
           + JS_GL_LOAD + '\n' + JS_BASE + '\n' + JS_GL_MAP + '\n' + JS_CORE + '\n' + JS_GL_DRAW
+          + '\n' + JS_VYHLYADY
           + '\n</script></body></html>')
 
 # Слів «ризик» і «прогноз» в інтерфейсі нової карти немає (RISHENNYA, розд. 23,

@@ -254,7 +254,7 @@ window.kartaMap=map;
 // картинки (addImage не переживає setStyle) і фарбування наших шарів у
 // кольори теми.
 function onStyleReady(){STYLE_OK=true; addrReady(); ctxReady(); distReady(); nearReady(); nearPaint();
- drawRisks(); paintScope(); drawFacts()}
+ drawRisks(); paintScope(); drawFacts(); vyhReady()}
 map.on('style.load',onStyleReady);
 function setTheme(t){
  if(!OFM[t]||t===THEME) return;
@@ -349,6 +349,9 @@ const r0Of=(n,mx)=>Math.max(R0_MIN,Math.min(14,R0_MIN+9.5*Math.pow(n/Math.max(mx
 // тож 16 — і з сусідів береться найближча до курсора).
 const HIT_R=8;
 function addrAt(p){ if(RINGS_ON||!map.getLayer('k-addr')) return null;
+ // у сотах і стовпчиках крапки адрес з'являються лише з z14 (7.6) — до того
+ // клік належить соті
+ if((MODE==='soty'||MODE==='stovp')&&map.getZoom()<14.4) return null;
  const fs=map.queryRenderedFeatures([[p.x-HIT_R-14,p.y-HIT_R-14],[p.x+HIT_R+14,p.y+HIT_R+14]],{layers:['k-addr']});
  let best=null, bd=1e9; const zm=zmulAt(map.getZoom());
  for(const f of fs){const q=map.project(f.geometry.coordinates), d=Math.hypot(q.x-p.x,q.y-p.y);
@@ -371,13 +374,14 @@ function addrReady(){
   // а розмите коло дає ту саму м'яку тінь.
   map.addLayer({id:'k-addr-shadow',type:'circle',source:'k-addr',minzoom:DEEP_Z,
    layout:{'circle-sort-key':['get','k']},
-   paint:{'circle-radius':radiusBy(1.5),'circle-blur':.45,'circle-translate':[0,1]}});
+   paint:{'circle-radius':['+',ADDR_R,1.5],'circle-blur':.45,'circle-translate':[0,1]}});
   map.addLayer({id:'k-addr',type:'circle',source:'k-addr',
    // Малюється за зростанням ключа: великі адреси знизу, дрібні зверху, як у
    // Leaflet; адреси-проблеми — поверх усіх.
    layout:{'circle-sort-key':['get','k']},
-   paint:{'circle-radius':radiusBy(0),'circle-color':['get','c'],'circle-opacity':RING_A,
-    'circle-stroke-width':1.5}});
+   // радіус і обвідка — 7.5 (0,6 px кольору підкладки)
+   paint:{'circle-radius':ADDR_R,'circle-color':['get','c'],'circle-opacity':RING_A,
+    'circle-stroke-width':.6}});
  }
  // Гало й тінь — кольори теми з CSS: шари переходять у новий стиль як є,
  // а колір теми міняється тут.
@@ -388,29 +392,29 @@ function addrReady(){
  draw();
 }
 function draw(){
- // У «Проблемах» computeVis (tpl_core, MODE 'prob') лишає самі адреси з
- // проблемами — з них і ромби, і невидимі крапки під ними для кліку.
+ // «Лише проблеми» (ONLYP) — computeVis лишає самі адреси з проблемами.
  const st=computeVis(); LASTST=st;
  ringSums(st); map.triggerRepaint();
  emptyState(st);
  if(!STYLE_OK||!map.getSource('k-addr')) return;
- addrPaint();
+ addrPaint(); drawHex(st);
+ if(CELL) renderCell();
  // Картка місця йде за фільтром і періодом так само, як карта.
  if(PLACE) renderPlace();
  const vis=st.vis, mx=vis.length?vis[0][1]:1;
- map.getSource('k-addr').setData({type:'FeatureCollection',features:vis.map(([p,n,th])=>({
+ map.getSource('k-addr').setData({type:'FeatureCollection',features:vis.map(([p,n,th,_bp,_c,thM])=>({
   type:'Feature',geometry:{type:'Point',coordinates:[p[1],p[0]]},
-  properties:{i:PIDX.get(p),c:PALA[th%PALA.length],
-   // У «Проблемах» крапка невидима й служить лише мішенню для кліку під
-   // ромбом, тож вона завбільшки з ромб, а не з кількість подій.
-   r0:MODE==='prob'?8:r0Of(n,mx),
+  // колір — найчисленніший вид адреси (7.5), не вид проблеми: проблему
+  // позначає контур (7.7)
+  properties:{i:PIDX.get(p),c:PALA[(thM??th)%PALA.length],n,r0:r0Of(n,mx),
+   pr:probsOf(p).some(q=>q.thi===undefined||q.thi<0||st.GVIS.has(q.thi))?1:0,
    k:(probsOf(p).length?1e6:0)-n}}))});
  // Відрізки ліній-проблем — там, де видно ромби проблем
  const ln=[];
- if(SHOWP||MODE==='prob') vis.forEach(([p])=>probsOf(p).forEach(q=>{
+ vis.forEach(([p])=>probsOf(p).forEach(q=>{
   if(q.riven==='лінія'&&q.geom&&(q.thi===undefined||q.thi<0||st.GVIS.has(q.thi)))
    ln.push({type:'Feature',geometry:{type:'LineString',coordinates:q.geom.map(x=>[x[1],x[0]])},
-    properties:{c:PALA[(q.thi>=0?q.thi:0)%PALA.length]}})}));
+    properties:{c:INK_C}})}));
  if(map.getSource('k-probl')) map.getSource('k-probl').setData({type:'FeatureCollection',features:ln});
 }
 // ---- КАРТКА МІСЦЯ (розд. 30; MAKET-KROK10, друга редакція) ----
@@ -714,7 +718,7 @@ const TZ0=TREE.z0, TDZ=TREE.dz, LV=TREE.lv, NL=LV.length, LEAF=TREE.leaf, NG=M.g
 // Непрозорість ~86% — однакова для кілець і крапок (розд. 23, п. 3).
 // Поки ввімкнено «Схожі умови» чи потоки, кільця й крапки прозоріші (~0,45):
 // смуги лежать під ними, і повна заливка їх закривала б (доповнення 17.09).
-const RING_OP=.86, RING_DIM=.45;
+const RING_OP=.6, RING_DIM=.45;   // 0,6 — макет «Проблема — контуром» (35.6)
 let RING_A=RING_OP;
 const nOf=i=>i===NL?LEAF.length:LV[i].c.length/2;
 // Батько вузла j рівня i (i>=1) — на рівні i-1.
@@ -748,6 +752,7 @@ function ringSums(st){
  for(let i=0;i<=NL;i++){const n=nOf(i); SUM.push(new Int32Array(n*NG)); TOT.push(new Int32Array(n)); ACT.push(new Int32Array(n)); ONE.push(new Int32Array(n).fill(-1));
   NP.push(new Int32Array(n)); PT.push(new Int32Array(n).fill(-1)); PTN.push(new Int32Array(n));
   SX.push(new Float64Array(n)); SY.push(new Float64Array(n))}
+ NMAX=[];
  LEAFV=LEAF.map((pi,k)=>{const v=vm.get(P[pi]); if(!v) return null;
   TOT[NL][k]=v[1]; ACT[NL][k]=1; ONE[NL][k]=k; SX[NL][k]=P[pi][1]; SY[NL][k]=P[pi][0];
   for(const g in v[4]) SUM[NL][k*NG+(+g)]=v[4][g];
@@ -759,6 +764,7 @@ function ringSums(st){
   if(pr.length){NP[NL][k]=pr.length; PT[NL][k]=pt; PTN[NL][k]=v[1]; PROBK.push(k)}
   return {n:v[1], th:v[2], np:pr.length, pt, r0:r0Of(v[1],mx)}});
  for(let i=NL;i>=1;i--){const s=SUM[i],t=TOT[i],a=ACT[i],o=ONE[i],ps=SUM[i-1],pt=TOT[i-1],pa=ACT[i-1],po=ONE[i-1];
+  // (n_max рахується нижче, після сум)
   const np=NP[i],pq=PT[i],pn=PTN[i],pnp=NP[i-1],ppq=PT[i-1],ppn=PTN[i-1];
   const n=nOf(i);
   for(let j=0;j<n;j++){ if(!t[j]) continue; const p=parOf(i,j);
@@ -766,12 +772,16 @@ function ringSums(st){
    SX[i-1][p]+=SX[i][j]; SY[i-1][p]+=SY[i][j];
    if(np[j]){pnp[p]+=np[j]; if(pn[j]>ppn[p]){ppn[p]=pn[j]; ppq[p]=pq[j]}}
    for(let g=0;g<NG;g++) ps[p*NG+g]+=s[j*NG+g]}}
+ for(let i=0;i<=NL;i++){let m=1; const t=TOT[i]; for(let j=0;j<t.length;j++) if(t[j]>m) m=t[j]; NMAX.push(m)}
 }
 // Кільця рівнів міського огляду (до z11) — на 30% менші (розд. 30, MAKET-START
 // «Б»). Множник той самий, що в map_clusters.ring_k: дерево розраховане саме
 // під ці радіуси, інакше кільця знову налізли б одне на одне.
 const ringK=i=>TZ0+i*TDZ<11?.7:1;
-const rRing=(n,i)=>Math.min(30,10+3*Math.log2(Math.max(n,1)))*(i===undefined?1:ringK(i));
+// Площа кільця ∝ кількості (34.4): 6 + 26·√(n / n_max), n_max — найбільше
+// кільце рівня за поточним фільтром; на огляді міста ×0,7.
+let NMAX=[];
+const rRing=(n,i)=>(6+26*Math.sqrt(Math.max(n,1)/Math.max(1,(NMAX[i]||n))))*(i===undefined?1:ringK(i));
 const fmtN=v=>v>=10000?Math.round(v/1000)+'k':v>=1000?(v/1000).toFixed(1).replace('.',',')+'k':String(v);
 // Що малює вузол j рівня i: кільце в центрі вузла, крапку на місці єдиної
 // адреси з подіями або нічого (подій за фільтром немає).
@@ -823,12 +833,18 @@ function addrLayerVisible(v){
 // поки ввімкнено «Схожі умови» чи потоки — приглушені (RING_A).
 function addrPaint(){
  if(!map.getLayer('k-addr')) return;
- const on=BASE_READY&&ADDR_VIS!==false&&MODE!=='prob';
- // Зблизька (з z15) крапок мало й вони великі — трохи щільніша заливка
- // читається краще (розд. 25, А5).
- map.setPaintProperty('k-addr','circle-opacity',on?['interpolate',['linear'],['zoom'],14.5,RING_A,15.5,Math.min(1,RING_A+.08)]:0);
- map.setPaintProperty('k-addr','circle-stroke-opacity',on?1:0);
- map.setPaintProperty('k-addr-shadow','circle-opacity',on?1:0);
+ // Перехід в адреси однаковий для всіх виглядів (7.6): соти й стовпчики
+ // гаснуть з z14 до z14,8, з'являються крапки; кільця — своїм деревом.
+ const hexy=MODE==='soty'||MODE==='stovp';
+ const on=BASE_READY&&(hexy||ADDR_VIS!==false);
+ const a=RING_A;
+ const op=!on?0:hexy?['interpolate',['linear'],['zoom'],14,0,14.8,a]:MODE==='addr'?a
+  :['interpolate',['linear'],['zoom'],14.5,a,15.5,Math.min(1,a+.08)];
+ const op1=!on?0:hexy?['interpolate',['linear'],['zoom'],14,0,14.8,1]:1;
+ map.setPaintProperty('k-addr','circle-opacity',op);
+ map.setPaintProperty('k-addr','circle-stroke-opacity',op1);
+ map.setPaintProperty('k-addr-shadow','circle-opacity',op1);
+ if(map.getLayer('k-addr-pr')) map.setPaintProperty('k-addr-pr','circle-stroke-opacity',op1);
 }
 // Що видно в цьому кадрі: [[вузол з x, y], непрозорість]. Та сама логіка,
 // що й була: рівень за зумом, перетікання до наступного — лише під час зуму.
@@ -970,7 +986,8 @@ const ringLayer={id:'k-rings', type:'custom', renderingMode:'2d',
   // Ромби вигляду «Адреси» (і кілець з z15, де адреси малює шар GL):
   // сталого розміру на кожній адресі з проблемою за фільтром.
   // У режимі «Проблеми» ромби — усе, що є на карті, тож кнопка їх не гасить.
-  const addrDiamonds=(SHOWP||MODE==='prob')&&!RINGS_ON&&STYLE_OK;
+  // ромбів більше немає (35.6): проблема — контур; адреси малює шар GL
+  const addrDiamonds=false;
   if(!out.length&&!(addrDiamonds&&PROBK.length)) return;
   const cvs=map.getCanvas(), W=cvs.clientWidth, H=cvs.clientHeight, z=map.getZoom();
   let nd=0, nt=0;
@@ -991,22 +1008,21 @@ const ringLayer={id:'k-rings', type:'custom', renderingMode:'2d',
   // ---- кільця й крапки ----
   for(const [o,al] of out){ if(o.x<-60||o.y<-60||o.x>W+60||o.y>H+60) continue;
    if(o.dot){const v=LEAFV[o.k]; if(!v) continue; const r=v.r0*zmulAt(z);
-    // Адреса з проблемою в «Кільцях» — ромб за розміром подій (макет), не
-    // крапка: вона не ховається в кільце (розд. 6). Місце під нього дерево
-    // вже врахувало (map_clusters.r_addr).
-    if(v.np&&SHOWP){later.push(()=>diamond(o.x,o.y,Math.max(7,r)*1.25,al,rgb(PALA[v.pt%PALA.length]))); continue}
-    quad(o.x,o.y,r+2,r,0,1,RING_A*al,Q1,rgb(PALA[v.th%PALA.length])); continue}
-   const r=rRing(o.n,o.i), inner=r*.62, q=[1,1,1,1,1,1,1,1];
+    quad(o.x,o.y,r+2,r,0,1,RING_A*al,Q1,rgb(PALA[v.th%PALA.length]));
+    // окрема адреса з проблемою — обвідка навколо крапки замість ромба (7.4)
+    if(v.np){const rr=Math.max(5,r)+2.5; quad(o.x,o.y,rr+1.5,rr+.6,rr-.6,3,al,Q1,ink)}
+    continue}
+   // До 5 подій — крапка без числа; найменше кільце з числом — 11 px;
+   // внутрішній радіус 0,76 (35.6, макет «Проблема — контуром»).
+   const small=o.n<=5, r=small?4.5:Math.max(11,rRing(o.n,o.i)), inner=small?0:r*.76, q=[1,1,1,1,1,1,1,1];
    let acc=0; for(let g=0;g<7;g++){acc+=g<NG?o.s[g]:0; q[g]=acc/o.n}
    quad(o.x,o.y,r+2,r,inner,0,RING_A*al,q,C0);
-   texts.push([o.x,o.y+.5,fmtN(o.n),Math.max(9,Math.min(13,inner*.9)),al]);
-   if(o.np&&SHOWP){
-    // Кільце з проблемами — тонкий контур чорнила й ромб на краю (угорі
-    // праворуч); кілька проблем — один більший ромб із числом.
-    const rr=r+3, bx=o.x+rr*Math.SQRT1_2, by=o.y-rr*Math.SQRT1_2;
-    quad(o.x,o.y,rr+2,rr+1,rr-1,3,al,Q1,ink);
-    later.push(()=>diamond(bx,by,o.np>1?8.5:5.5,al,rgb(PALA[(o.pt>=0?o.pt:0)%PALA.length])));
-    if(o.np>1) ptexts.push([bx,by+.5,String(o.np),10,al])}
+   if(!small) texts.push([o.x,o.y+.5,fmtN(o.n),Math.max(9,Math.min(13,inner*.8)),al]);
+   if(o.np){
+    // проблема — лише обвідка кільця чорнилом, без ромба й числа проблем;
+    // на огляді міста тонша (0,6 / 0,9 / 1,2 px)
+    const rr=r+3, th=z<11.5?.3:z<12.5?.45:.6;
+    quad(o.x,o.y,rr+1.5,rr+th,rr-th,3,al,Q1,ink)}
   }
   if(addrDiamonds){
    const b=map.getBounds(), pad=.1*(b.getNorth()-b.getSouth());
@@ -1092,8 +1108,8 @@ map.on('click',e=>{
  const o=hitRing(e.point); if(!o) return;
  CLICK_TAKEN=true;
  if(o.dot) return openAt(LEAF[o.k]);
- // Кільце вікна не має — веде до своїх адрес; вікно попереднього місця
- // зайве там, куди летимо.
+ // Кільце — картка (7.11), як і сота; «Наблизити» — кнопкою в ній.
+ return openCell('КІЛЬЦЕ',ringLeaves(o.i,o.j),null,e.lngLat);
  if(POPUP) POPUP.remove();
  const q=o.j*4, bb=BB[o.i], z=map.getZoom();
  const side=$('#side'), W=map.getContainer().clientWidth;
@@ -1106,6 +1122,12 @@ map.on('click',e=>{
 });
 map.on('mousemove',e=>{ if(!RINGS_ON) return;
  map.getCanvas().style.cursor=hitRing(e.point)?'pointer':''});
+// Адреси під вузлом дерева — для картки кільця
+let CHL=null;
+function ringLeaves(i,j){
+ if(!CHL) CHL=LV.map((l,k)=>{const c=Array.from({length:nOf(k)},()=>[]); l.of.forEach((p,m)=>c[p].push(m)); return c});
+ const out=[]; const walk=(a,b)=>{ if(a===NL){out.push(LEAF[b]); return} for(const c of CHL[a][b]) walk(a+1,c)};
+ walk(i,j); return out}
 // Перевірка з консолі (розд. 23, перевірка п. 3): для кожного видимого
 // кільця — число на ньому і сума подій його адрес за фільтром, порахована
 // окремо, прямо з computeVis, а не з дерева.
@@ -1138,17 +1160,19 @@ const lineLL=pts=>{const c=pts.map(q=>[q[1],q[0]]), a=c[0], b=c[c.length-1];
 // перекриваються, хоч скільки видів увімкнено. Крок ~2,5 px на міському
 // огляді й більший зблизька, товщина трохи менша за крок — між смугами
 // лишається просвіт.
-const SIMK=Object.keys(RISKOF).map(Number).sort((a,b)=>a-b).filter(gi=>{
- const v=R.lines[RISKOF[gi]]; return v&&!v.nodata&&(v.items||[]).length});
+// Паралельних смуг видів більше немає (ZAVDANNYA-32, 7.10): ризик — одна
+// лінія одного кольору (tpl_vyhlyady). SIMK лишається порожнім.
+const SIMK=[];
 // Під перемикачем шару нічого не пишемо (RISHENNYA 34.5): позначка
 // проактивності й «даних замало» — лише на сторінці «Схожі умови» й у методиці.
 const SIM_STEP=[[10,2.2],[13,2.5],[15,3.5],[17,5.5],[19,8]];
 const zStep=f=>['interpolate',['linear'],['zoom'],...SIM_STEP.flatMap(([z,s])=>[z,f(s)])];
 const simOff=k=>zStep(s=>(k-(SIMK.length-1)/2)*s);
-// Потоки (tpl_map): три шари нейтрального кольору чорнила, кожен зі своїм
-// зсувом (−4 / 0 / +4 px). Колір подій їм не дістається: інакше потік до
-// транспорту читався б як ще один вид правопорушень.
-const FLOWS=[['flow_school',-6,'🎒'],['flow_transit',-2,'🚌'],['flow_shop',2,'🛒'],['flow_all',6,'🚶']].filter(f=>R.lines&&R.lines[f[0]]);
+// Прохідність (RISHENNYA 34.1, 35.2): одна лінія кольору чорнила, товщина ∝
+// √потоку. Колір подій їй не дістається: інакше потік читався б як ще один
+// вид правопорушень. Чотирьох потоків (школи, транспорт, торгівля, разом)
+// більше немає.
+const FLOWS=[['potik',0,'🚶']].filter(f=>R.lines&&R.lines[f[0]]);
 const fc=features=>({type:'FeatureCollection',features});
 const lineF=(pts,props)=>({type:'Feature',geometry:{type:'LineString',coordinates:lineLL(pts)},properties:props});
 // Значки потоків — картинками (addImage), а не текстом-емодзі в шарі
@@ -1229,8 +1253,9 @@ function drawRisks(){
  map.setFilter('k-flow-ic',['in',['get','f'],['literal',fOn]]); layerVis('k-flow-ic',fOn.length>0);
  dim=dim||fOn.length>0;
  layerVis('k-pop',rOn('pop'));
+ dim=dim||RISK_ON;
  RING_A=dim?RING_DIM:RING_OP;
- addrPaint();
+ addrPaint(); if(typeof riskDraw==='function'&&map.getSource('k-risk')){riskDraw(); if(LASTST) drawHex(LASTST)}
  map.triggerRepaint();
 }
 // ---- РАЙОНИ: МЕЖІ, МАСКА, ПІДСВІТКА ----
@@ -1503,8 +1528,7 @@ function ctxEvents(){
    return tip(e,`<b>${esc(it[1])}</b><span>${esc(simLine(v,it,q,i))}. Клікніть для деталей</span>`)}
   const fl=near(e.point,FLOWS.map(([k])=>'k-flow-'+k).filter(id=>map.getLayoutProperty(id,'visibility')==='visible'))[0];
   if(fl){const k=fl.layer.id.slice(7), v=R.lines[k], it=v.items[fl.properties.i];
-   return tip(e,`<b>${esc(it[1]||'без назви')}</b><span>${esc(v.title)} — ~${it[2].toLocaleString('uk')} осіб</span>`+
-    (v.when?`<span>${esc(v.when)}</span>`:''))}
+   return tip(e,`<b>${esc(it[1]||'без назви')}</b><span>≈ ${it[2].toLocaleString('uk')} осіб на добу (модель)</span>`)}
   const pp=map.getLayoutProperty('k-pop','visibility')==='visible'&&map.queryRenderedFeatures(e.point,{layers:['k-pop']})[0];
   if(pp) return tip(e,`<b>${pp.properties.n.toLocaleString('uk')} осіб</b>`);
   if(!RINGS_ON) map.getCanvas().style.cursor='';
@@ -1534,21 +1558,10 @@ function ctxEvents(){
 // «Проблеми» — самі ромби проблем, без подій, як колишній режим «Проблеми»
 // (MODE 'prob' спільного computeVis). Теплову прибрано 26.09. Збережена в
 // браузері «Теплова» відкривається як «Кільця».
-{const VIEWS=[['rings','Кільця'],['addr','Адреси'],['prob','Проблеми']];
- let v=null; try{v=localStorage.getItem('karta-vyhlyad')}catch(e){}
- MODE=VIEWS.some(x=>x[0]===v)?v:'rings';
- const seg=$('#fcat');
- seg.innerHTML=VIEWS.map(([k,n])=>`<button data-m="${k}" aria-pressed="${k===MODE}">${n}</button>`).join('');
- // «◆ Проблеми» — ромби поверх «Кілець» і «Адрес» (розд. 23, п. 2); вимикає
- // їх, не ховаючи самих адрес. У «Проблемах» кнопці нічого робити.
- seg.insertAdjacentHTML('afterend','<button id="fprob" class="pbtn2" aria-pressed="true" '+
-   'style="width:auto;align-self:flex-start;margin:6px 0 0;padding:4px 10px">◆ Проблеми</button>');
- $('#fprob').hidden=MODE==='prob';
- seg.onclick=e=>{const b=e.target.closest('[data-m]'); if(!b) return;
-  MODE=b.dataset.m; try{localStorage.setItem('karta-vyhlyad',MODE)}catch(err){}
-  $('#fprob').hidden=MODE==='prob';
-  seg.querySelectorAll('button').forEach(x=>swSet(x,x===b)); draw()};
- $('#fprob').onclick=e=>{SHOWP=!SHOWP; swSet(e.currentTarget,SHOWP); map.triggerRepaint()};}
+// Вкладки «Соти · Стовпчики · Кільця · Адреси» й «◆ Проблеми» — у
+// tpl_vyhlyady (RISHENNYA 35.9); тут лише кнопка.
+$('#fcat').insertAdjacentHTML('afterend','<button id="fprob" class="pbtn2" aria-pressed="false" '+
+  'style="width:auto;align-self:flex-start;margin:6px 0 0;padding:4px 10px">◆ Проблеми</button>');
 // Пошук без збігів — так і кажемо (AUDYT-3, № 7): досі підказки просто
 // зникали, і було незрозуміло, чи пошук узагалі спрацював. Обробник стоїть
 // після спільного (tpl_core suggest), тож SUG уже пораховано.

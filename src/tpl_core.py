@@ -79,7 +79,7 @@ $('#frisk').onclick=()=>{RISK_ON=!RISK_ON; swSet($('#frisk'),RISK_ON);
 // 33.2.1), тиха вулиця з високою оцінкою — у тому самому переліку.
 // ---- КОНТЕКСТ ----
 // Потоки — один перемикач на всі чотири: розділяються вони на самій карті.
-const CTX={pop:['pop'],flows:['flow_school','flow_transit','flow_shop','flow_all']};
+const CTX={pop:['pop'],flows:['potik']};
 // Поріг зуму для шарів, які з міського огляду нечитабельні. Замість напису
 // «наблизьте карту» стан показує сам перемикач: поки масштаб замалий, він
 // приглушений і не натискається. Новий шар із порогом — один рядок тут.
@@ -111,6 +111,9 @@ $ify('#docs',
 // доти була окремою кнопкою збоку й читалася як ще один фільтр поверх решти.
 const MODES=[['all','Події'],['prob','Проблеми'],['heat','Теплова']];
 let MODE='all';
+// «Лише проблеми» (RISHENNYA 35.9): окремий перемикач нової карти; у запасній
+// він не вмикається, там лишається режим «Проблеми»
+let ONLYP=false;
 const cb_=$('#fcat');
 cb_.innerHTML=MODES.map(([k,n])=>
  `<button data-m="${k}" aria-pressed="${k===MODE}">${n}</button>`).join('');
@@ -374,7 +377,7 @@ function computeVis(){
  // обраний рік — це «покажи події цього року», а не «адреса перестала бути
  // проблемою», і перелік від періоду не пересортовується.
  const GVIS=new Set();M.groups.forEach((g,gi)=>{if(g[1].some(i=>A.has(i)))GVIS.add(gi)});
- const CF=MODE==='prob'?2:-1;
+ const CF=(MODE==='prob'||ONLYP)?2:-1;
  const H=hoursSel();
  let tot=0;const vis=[];
  for(const p of P){
