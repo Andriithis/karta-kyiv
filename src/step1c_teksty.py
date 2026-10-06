@@ -19,7 +19,7 @@ data/teksty/<дата>.csv.gz — після того, як затвердять
 Запуск: py -3 src\\step1c_teksty.py          (MAX_DOCS=2000 — бюджет)
 """
 import os, re, sys, csv, gzip, glob, time, datetime, threading, queue, collections, json, lzma, hashlib
-import urllib.request
+import urllib.request, urllib.error
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import addr as A
 import labels as L
@@ -198,20 +198,46 @@ EXTRA_BOUND = re.compile(r'[А-ЯІЇЄҐа-яіїєґ»)]\.\s+(?=' + _D + r')|\
                          r'(?<=\w)\s\.\s+(?=[А-ЯІЇЄҐ])')
 
 
+# Крапка після скорочення речення не кінчає (ZAVDANNYA-32, 3.1). ≈ 8 000
+# фабул (9%) обривалися саме тут: межа після «д.н.з.», короткий хвіст за нею
+# відрізався (STUB), і лишалося «…зіткнення з автомобілем «Тойота», д.н.з».
+# Так само «грн.», «коп.», «р.», «год.», «хв.». Лише «2023р.» з роком:
+# «…до 15 листопада 2023. ОСОБА_3…» — справжня межа. «пр-т.», «б-р.» —
+# скорочення типу вулиці, крок 1b їх не знає.
+NE_KINETS = re.compile(
+    r'(?:\d{4}\s?р|\b(?:пр-т|б-р|пр|вул|просп|бульв|буд|кв|м|ст|ч|п|пп|абз|'
+    r'д\.н\.з|н\.з|д/н/з|р\.н\.з|реєстр\.|т\.ч|т\.зв|ін|грн|коп|год|хв|'
+    r'обл|р-н|смт|с|корп|прим|див|напр|тис|млн))\.$', re.I)
+
+
 def _bounds(t):
-    """Межі речень: кроку 1b плюс EXTRA_BOUND, але «04.06.2023р.» речення
-    не кінчає."""
+    """Межі речень: кроку 1b плюс EXTRA_BOUND, без меж на скороченнях
+    (NE_KINETS)."""
     b = set(F._bounds(t))
     for m in EXTRA_BOUND.finditer(t):
         b.add(m.start() + m.group(0).index('.') + 1)
-    # лише «2023р.»: «…до 15 листопада 2023. ОСОБА_3…» — справжня межа.
-    # «пр-т.», «б-р.» — скорочення типу вулиці, крок 1b їх не знає: «за
-    # адресою: м. Київ, пр-т. Степана Бандери» рвалося на «пр-т.»
-    return sorted(x for x in b if not re.search(r'\d{4}\s?р\.$|\b(?:пр-т|б-р|пр|вул|просп|бульв)\.$',
-                                                t[:x].rstrip()))
+    return sorted(x for x in b if not NE_KINETS.search(t[:x].rstrip()))
+
+
+# Шапка постанови з розрядкою — «П О С Т А Н О В А  І М Е Н Е М  У К Р А Ї Н И»
+# (ZAVDANNYA-32, 3.2): 511 фабул починалися з неї, бо маркерів опису немає
+# і початок падав на 0. Пропускаємо її й рядок «Справа № …» перед нею.
+SHAPKA = re.compile(r'(?:[А-ЯІЇЄҐ]\s){3,}[А-ЯІЇЄҐ](?:\s+(?:[А-ЯІЇЄҐ]\s){2,}[А-ЯІЇЄҐ])*')
+# Фабула, що й після цього починається зі шапки чи службового тексту, —
+# не опис події (вада «шкідлива»)
+SHAPKA_JUNK = re.compile(r'^\W*(?:Справа\s*№|Провадження\s*№|Номер\s+провадження|ПОСТАНОВА\b|'
+                         r'ІМЕНЕМ\s+УКРАЇНИ|(?:[А-ЯІЇЄҐ]\s){3,}|[\w\s]*Times\s+New\s+Roman|[^.]{0,40};\s*Tahoma)')
 
 
 def _start(text):
+    p = _start0(text)
+    m = SHAPKA.search(text, p, p + 600)
+    if m and not is_event_sentence(text[p:m.start()]):
+        p = m.end()
+    return p
+
+
+def _start0(text):
     bs = A.body_start(text)
     sec = _section(text, bs)
     if sec:
@@ -647,7 +673,7 @@ def vada(fab, found):
     wrong_part = not any(is_event_sentence(s) for s in sents) and (
         (MARTIAL.search(first) and not ACTOR.search(first)) or PRIOR_CASE.search(fab[:400]))
     if (not found or HARMFUL_END.search(fab.rstrip(' ,.;:')) or COURT_PROC.search(fab)
-            or wrong_part):
+            or wrong_part or SHAPKA_JUNK.match(fab)):
         return 'шкідлива'
     # хвіст — лише кінець фабули: «Правил дорожнього руху» всередині опису
     # ДТП — частина події, а не юридична рамка
@@ -779,7 +805,16 @@ REESTR = 'https://od.reyestr.court.gov.ua/files/'
 # кінець — косметична, дата не з речення про наказ, ухвалу, судимість.
 # v3 (24.09): у наркотичних місце замовлення не місце події; хвіст
 # «Відповідальність за вказане правопорушення передбачена ст. …».
-RULE = 'v3'
+# v4 (06.10, ZAVDANNYA-32, ч. 3): межі речень без скорочень («д.н.з», «грн»,
+# «р.»), без службових груп RTF і шапки з розрядкою, адреса в житлі для
+# вбивства й домашнього насильства. Повних текстів в архіві немає (секрету
+# DANI_TOKEN немає), тож v4 — новий прохід із завантаженням усіх документів,
+# бюджетом MAX_DOCS за ніч.
+RULE = 'v4'
+# Правила, частини яких карта бере, доки документ не пройшов чинне: без цього
+# від зміни правила до кінця нового проходу карта лишалася б без фабул і
+# класів адрес. Черга (main) рахує зробленим лише RULE.
+RULE_ZAPAS = ('v3',)
 # Сім видів: колишнє «Середовище» розійшлося в ГП і МАЙ (розд. 18), ДТП
 # окремо від порушень на дорозі (34.3).
 ORDER = ['МАЙ', 'НАР', 'НАС', 'ГП', 'АЛК', 'ДТП', 'ДОР']
@@ -819,14 +854,36 @@ class Arkhiv:
         s.buf.clear()
 
 
-def load_done():
-    """doc_id -> рядок останньої частини з поточним правилом (пізніша перемагає)."""
-    done = {}
+def review_text(doc_id):
+    """Текст рішення зі сторінки reyestr.court.gov.ua/Review/<id> (поле
+    txtdepository) — запасний шлях, коли RTF не качається чи посилання немає."""
+    import html as _h
+    rq = urllib.request.Request(f'https://reyestr.court.gov.ua/Review/{doc_id}', headers={'User-Agent': UA})
+    with urllib.request.urlopen(rq, timeout=45) as resp:
+        b = resp.read().decode('utf-8', 'replace')
+    m = re.search(r'<textarea[^>]*id="txtdepository"[^>]*>(.*?)</textarea>', b, re.S)
+    if not m:
+        return ''
+    t = _h.unescape(m.group(1))
+    t = re.sub(r'<br\s*/?>|</p>', '\n', t)
+    return _h.unescape(re.sub(r'<[^>]+>', ' ', t))
+
+
+def load_done(strict=False):
+    """doc_id -> рядок останньої частини з поточним правилом (пізніша
+    перемагає). strict=False — для карти й моделі: документ, якого чинне
+    правило ще не бачило, бере частину попереднього (RULE_ZAPAS)."""
+    done, zapas = {}, {}
     for fp in sorted(glob.glob(os.path.join(TEKSTY, '*.csv.gz'))):
         with gzip.open(fp, 'rt', encoding='utf-8', newline='') as fh:
             for r in csv.DictReader(fh, delimiter='\t'):
                 if r.get('rule') == RULE:
                     done[r['doc_id']] = r
+                elif not strict and r.get('rule') in RULE_ZAPAS:
+                    zapas[r['doc_id']] = r
+    if not strict:
+        for d, r in zapas.items():
+            done.setdefault(d, r)
     return done
 
 
@@ -861,8 +918,10 @@ def _write(fp, out):
          gzip.GzipFile(filename='', mode='wb', fileobj=raw, mtime=0) as gz:
         w = csv.writer(_Utf8(gz), delimiter='\t', lineterminator='\n')
         w.writerow(COLS)
+        # NUL у тексті рішення ламав читання частини на Python 3.10 (3.12 у
+        # Actions — ні): прибираємо з усіх полів при записі (32, 3.4)
         for d in sorted(out, key=int):
-            w.writerow([out[d].get(c, '') for c in COLS])
+            w.writerow([str(out[d].get(c, '')).replace('\x00', '') for c in COLS])
     os.replace(fp + '.tmp', fp)
 
 
@@ -890,7 +949,7 @@ def main_pererakhuvaty():
             for r in csv.DictReader(fh, delimiter='\t'):
                 if r.get('rule') != RULE:
                     old[r['doc_id']] = r
-    done = load_done()
+    done = load_done(strict=True)
     todo = {d: r for d, r in old.items() if d not in done}
     print(f'до перерахунку: {len(todo):,} (уже за правилом {RULE}: {len(done):,})')
     if not todo:
@@ -917,12 +976,17 @@ def main():
     if '--pererakhuvaty' in sys.argv:
         return main_pererakhuvaty()
     budget = int(os.environ.get('MAX_DOCS', '30000') or 0)
-    done = load_done()
+    done = load_done(strict=True)
     reps, refs = queue_docs()
     todo = [r for r in reps if r['doc_id'] not in done and r['doc_id'] in refs]
-    no_ref = sum(1 for r in reps if r['doc_id'] not in done and r['doc_id'] not in refs)
-    print(f'представників справ: {len(reps):,}; уже розібрано: {len(done):,}; '
-          f'у черзі: {len(todo):,}; без посилання на текст: {no_ref:,}')
+    bez = [r for r in reps if r['doc_id'] not in done and r['doc_id'] not in refs]
+    print(f'представників справ: {len(reps):,}; уже розібрано за {RULE}: {len(done):,}; '
+          f'у черзі: {len(todo):,}; без посилання на текст: {len(bez):,} — '
+          + ', '.join(f'{y} {n:,}' for y, n in sorted(collections.Counter(
+              (r.get('date') or '????')[:4] for r in bez).items())))
+    # Без посилання (у дампі порожнє doc_url) — після документів з посиланням:
+    # їх пробуємо сторінкою рішення на reyestr.court.gov.ua (32, 3.4)
+    todo += bez
     if budget and len(todo) > budget:
         todo = todo[:budget]
     if not todo:
@@ -935,25 +999,42 @@ def main():
     ark = Arkhiv()
     t0 = time.time()
 
+    zboi, shliakh = [], collections.Counter()
+
     def worker():
         while True:
             try: r = q.get_nowait()
             except queue.Empty: return
-            ref = refs[r['doc_id']]
+            ref = refs.get(r['doc_id'], '')
             res = text = None
-            for attempt in range(3):
+            why = 'немає посилання'
+            url = REESTR + ref[:2] + '/' + ref[2:] + '.rtf' if ref else ''
+            for attempt in range(3 if ref else 0):
                 try:
-                    rq = urllib.request.Request(REESTR + ref[:2] + '/' + ref[2:] + '.rtf',
-                                                headers={'User-Agent': UA})
+                    rq = urllib.request.Request(url, headers={'User-Agent': UA})
                     with urllib.request.urlopen(rq, timeout=45) as resp:
                         text = rtf_to_text(resp.read())
                     res = rozbir(text, r['cat'])
                     break
-                except Exception:
-                    time.sleep(1.5 * (attempt + 1))
+                except urllib.error.HTTPError as e:
+                    why = f'HTTP {e.code}'; time.sleep(1.5 * (attempt + 1))
+                except Exception as e:
+                    why = type(e).__name__; time.sleep(1.5 * (attempt + 1))
+            # Запасний шлях (32, 3.4): сторінка рішення в реєстрі — той самий
+            # текст у HTML. Для 409 документів, що не качаються, і для тих, у
+            # кого в дампі немає посилання.
+            if res is None:
+                try:
+                    text = review_text(r['doc_id'])
+                    if text:
+                        res = rozbir(text, r['cat']); ref = ref or 'review'
+                except Exception as e:
+                    why += f'; сторінка: {type(e).__name__}'
             with lock:
+                shliakh['rtf' if res is not None and ref != 'review' else 'сторінка' if res is not None else 'збій'] += 1
                 if res is None:
                     err[0] += 1          # не записуємо: наступний запуск спробує знову
+                    zboi.append((r['doc_id'], why, url))
                 else:
                     res = {k: ('1' if v is True else '0' if v is False else v) for k, v in res.items()}
                     res.update(doc_id=r['doc_id'], rule=RULE)
@@ -980,6 +1061,12 @@ def main():
         ark.flush()
     mins = (time.time() - t0) / 60
     print(f'\n=== ГОТОВО за {mins:.0f} хв: {len(out):,} розібрано, помилок {err[0]} ===')
+    print('   звідки текст: ' + ', '.join(f'{k} {v:,}' for k, v in shliakh.most_common()))
+    if zboi:
+        print('   збої за причиною: ' + ', '.join(f'{k} {v:,}' for k, v in
+                                               collections.Counter(z[1] for z in zboi).most_common()))
+        for d, why, url in zboi[:20]:
+            print(f'      {d}  {why}  {url or "—"}')
     if ark.n:
         mb = sum(os.path.getsize(p) for p in glob.glob(os.path.join(ARKHIV, '*.jsonl.xz'))) / 1048576
         print(f'   повні тексти: {ark.n:,} у vykhid/teksty — {mb:.1f} МБ')

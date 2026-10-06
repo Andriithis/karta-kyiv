@@ -46,8 +46,37 @@ SKIP     = {'8_DOMESTIC'}   # приватні адреси - на публіч�
 
 UA = 'Mozilla/5.0 (edrsr-research-academy; educational use)'
 
+# Службові групи RTF — таблиця шрифтів, кольорів, стилів, відомості про
+# документ. Їхній вміст не текст рішення, але після зняття дужок лишався в
+# ньому: 1 515 фабул починалися з «Times New Roman;Tahoma;…» (ZAVDANNYA-32,
+# 3.2). Прибираємо групу цілком, до парної дужки.
+RTF_SLUZHBOVI = re.compile(r'\{\\(?:\*\\)?(?:fonttbl|colortbl|stylesheet|info|listtable|listoverridetable|'
+                           r'rsidtbl|generator|xmlnstbl|themedata|colorschememapping|latentstyles|datastore)\b')
+
+
+def _bez_grup(s):
+    out, i = [], 0
+    for m in RTF_SLUZHBOVI.finditer(s):
+        if m.start() < i:
+            continue
+        out.append(s[i:m.start()])
+        d, j = 0, m.start()
+        while j < len(s):
+            c = s[j]
+            if c == '\\':
+                j += 2; continue
+            if c == '{': d += 1
+            elif c == '}':
+                d -= 1
+                if d == 0: break
+            j += 1
+        i = j + 1
+    out.append(s[i:])
+    return ''.join(out)
+
+
 def rtf_to_text(raw: bytes) -> str:
-    s = raw.decode('latin-1', 'ignore')
+    s = _bez_grup(raw.decode('latin-1', 'ignore'))
     s = re.sub(r'\\par\b', '\n', s)
     s = re.sub(r"\\'([0-9a-fA-F]{2})", lambda m: chr(int(m.group(1), 16)), s)
     s = re.sub(r'\\[a-zA-Z]+-?[0-9]*\s?', '', s)

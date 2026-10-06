@@ -200,6 +200,7 @@ def parse(zpath, year, write_kyiv):
     tmp = out + '.tmp'
     total = found = 0
     grp = collections.Counter()
+    bez_url = collections.Counter()      # київські документи без посилання на текст (32, 3.4)
     forms, links = {}, {}
     with zipfile.ZipFile(zpath) as z:
         save_dovidnyk(z)
@@ -227,6 +228,7 @@ def parse(zpath, year, write_kyiv):
                 code = f[jc].strip().strip('"')
                 forms[f[0]] = code
                 links[f[0]] = (f[5], PD.docref(f[9]))
+                if not f[9].strip().strip('"'): bez_url[code] += 1
                 if o:
                     d = f[6].replace('"', '')[:10]
                     o.write(f'{f[0]}\t{f[1]}\t{COURTS[f[1]]}\t{lb[0]}\t{f[4]}\t{f[5]}\t{d}\t{f[9]}\t{code}\n')
@@ -239,6 +241,9 @@ def parse(zpath, year, write_kyiv):
         for k, v in grp.most_common(): print(f'      {L.THEMES.get(k,k):28} {v:>8,}')
     else:
         print(f'   прочитано {total:,}, київських документів {found:,}')
+    if bez_url:
+        print(f'   без посилання на текст (порожнє doc_url): {sum(bez_url.values()):,} — за формою рішення '
+              + ', '.join(f'{k}: {v:,}' for k, v in bez_url.most_common()))
     fc = collections.Counter(forms.values())
     print('   форми рішень: ' + ', '.join(f'{k}: {v:,}' for k, v in fc.most_common()))
     return forms, links
