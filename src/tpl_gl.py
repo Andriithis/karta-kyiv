@@ -465,16 +465,16 @@ function placeArts(p,evs){
 function probMore(pr){
  let h='';
  const ad=pr.adresy||[];
- if(pr.status==='фіксує поліція') h+=`<div class="tt">Проблема, яку фіксує поліція: більшість подій виявила сама поліція</div>`;
+ if(pr.status==='фіксує поліція') h+=`<div class="tt">Фіксує поліція</div>`;
  if((pr.rozbyvka||[]).length) h+=`<div class="tt">${pr.rozbyvka.map(x=>`${esc(x[0])} — ${x[1]}${x[2]==='фіксує поліція'?' (фіксує поліція)':''}`).join(' · ')}</div>`;
  if(pr.riven==='лінія') h+=`<div class="tt">Лінія${pr.vidrizok?': '+esc(pr.vidrizok):''} — події на ${ad.length} адресах: ${esc(ad.join('; '))}</div>`;
  else if(pr.riven==='ділянка') h+=`<div class="tt">Ділянка вулиці — ${ad.length} ${pl(ad.length,'адреса','адреси','адрес')}: ${esc(ad.join('; '))}</div>`;
  else if(ad.length>1) h+=`<div class="tt">Одне місце, ${ad.length} ${pl(ad.length,'адреса','адреси','адрес')}: ${esc(ad.join('; '))}</div>`;
  const g=pr.golos;
  if(g&&g.stan){
-  const t=g.stan==='підтверджують'?`підтверджують — ${g.skarg} ${pl(g.skarg,'скарга','скарги','скарг')} 1551 за рік`+(g.vidnoshennia?`, у ${String(g.vidnoshennia).replace('.',',')} раза більше, ніж звичайно для району`:'')
-   :g.stan==='мовчать'?`мовчать — ${g.skarg||0} ${pl(g.skarg||0,'скарга','скарги','скарг')} 1551 за рік, не більше, ніж звичайно для району`
-   :g.stan==='не вимірюється'?(g.chomu&&g.chomu!=='вид'?`не вимірюється: ${esc(g.chomu==='житла в 50 м немає'?'поруч немає житла':g.chomu)}, мешканців, які скаржилися б, тут немає`:'не вимірюється: про цей вид 1551 мовчить'):'даних 1551 немає';
+  const t=g.stan==='підтверджують'?`підтверджують — ${g.skarg} ${pl(g.skarg,'скарга','скарги','скарг')} 1551 за рік`+(g.vidnoshennia?`, ×${String(g.vidnoshennia).replace('.',',')} до району`:'')
+   :g.stan==='мовчать'?`мовчать — ${g.skarg||0} ${pl(g.skarg||0,'скарга','скарги','скарг')} 1551 за рік`
+   :g.stan==='не вимірюється'?(g.chomu&&g.chomu!=='вид'?`не вимірюється (${esc(g.chomu==='житла в 50 м немає'?'без житла':g.chomu)})`:'не вимірюється'):'даних 1551 немає';
   h+=`<div class="tt">Голос мешканців: ${t}</div>`}
  return h}
 function oglHTML(d){
@@ -486,8 +486,8 @@ function oglHTML(d){
  }
  h+=placeArts(p,evs)+placeHist(p,evs);
  // Модель — одним рядком, без пояснень, яких немає в даних (CLAUDE.md).
- if(pr) h+=`<div class="tt kp-mod">${pr.analysis?`Вулиця — серед вулиць зі схожими умовами (${esc(lc(pr.theme))}).`
-   :'Вулиця не входить до переліку вулиць зі схожими умовами.'}</div>`;
+ if(pr) h+=`<div class="tt kp-mod">${pr.analysis?`Ризик: вулиця в переліку (${esc(lc(pr.theme))})`
+   :'Ризик: вулиці в переліку немає'}</div>`;
  return h;
 }
 function rishHTML(d,cs){
@@ -509,23 +509,13 @@ function nearList(p){
   if(dd<=nearR(c)) out.push({c,q,d:Math.round(dd)})}));
  return out.sort((a,b)=>a.d-b.d);
 }
-// Позначка проактивного виду (PLAN-KROK7, 7.2): біля «Що поруч» вона каже,
-// що частину таких подій поліція виявляє сама — тож об'єкти поруч можуть
-// говорити й про те, де вона частіше працює.
-function nearProakt(){
- const d=placeData(); let gi=d.pr?d.pr.thi:undefined;
- if(gi===undefined||gi<0){const g=new Array(M.groups.length).fill(0);
-  d.evs.forEach(r=>g[CATTH[EVR(r)[1]]]++); gi=g.indexOf(Math.max(...g))}
- const v=R.lines[RISKOF[gi]], m=v&&v.proakt;
- if(!m) return '';
- return `<div class="tt kp-pro">${esc(shortOf(gi))} — ${esc(m)}: `+(m==='проактивний вид'
-  ?'такі події поліція здебільшого виявляє сама.':'частину таких подій поліція виявляє сама.')+'</div>'}
 // Без пояснювальних речень (правило Андрія 29.09): що кожен тип — у своєму
 // радіусі, сказано в методиці; радіус видно з кола на карті й відстаней.
 function nearHTML(){
  const L=PLACE.near;
- if(!L.length) return `<div class="kp-empty">Поруч об'єктів із переліку немає.</div>`+nearProakt();
- return `<div class="tt">Які з них пояснюють скупчення — вирішує той, хто вийде на місце.</div>`+nearProakt()+`
+ if(!L.length) return `<div class="kp-empty">Поруч об'єктів із переліку немає.</div>`;
+ // позначки проактивності тут немає — лише у звітах (RISHENNYA 34.5)
+ return `
 <ol class="kp-near">${L.map((o,j)=>`<li data-near="${j+1}"${PLACE.hl===j+1?' class="hl"':''}><span class="kp-nn">${j+1}</span><span class="kp-ni">${FICON[o.c.k]||'•'}</span>${esc(o.c.n)}<span class="kp-nd">${o.d} м</span></li>`).join('')}</ol>`}
 // Справи для картки — з файлів районів тих точок, де лежать події картки:
 // у проблеми з кількох адрес їх буває кілька. cs — {точка: справи}.
@@ -1126,12 +1116,8 @@ const lineLL=pts=>{const c=pts.map(q=>[q[1],q[0]]), a=c[0], b=c[c.length-1];
 // лишається просвіт.
 const SIMK=Object.keys(RISKOF).map(Number).sort((a,b)=>a-b).filter(gi=>{
  const v=R.lines[RISKOF[gi]]; return v&&!v.nodata&&(v.items||[]).length});
-// Легенда шару (PLAN-KROK7, 4 і 7.2): які види проактивні і для яких шару
-// немає, бо даних замало, — одним рядком під перемикачем.
-{const x=$('#friskx'), rows=Object.keys(RISKOF).map(Number).sort((a,b)=>a-b).map(gi=>{
-  const v=R.lines[RISKOF[gi]];
-  return v.nodata?`${shortOf(gi)} — даних замало`:v.proakt?`${shortOf(gi)} — ${v.proakt}`:''}).filter(Boolean);
- if(x&&rows.length) x.insertAdjacentHTML('beforeend',`<div class="ksim-leg">${rows.map(esc).join(' · ')}</div>`)}
+// Під перемикачем шару нічого не пишемо (RISHENNYA 34.5): позначка
+// проактивності й «даних замало» — лише на сторінці «Схожі умови» й у методиці.
 const SIM_STEP=[[10,2.2],[13,2.5],[15,3.5],[17,5.5],[19,8]];
 const zStep=f=>['interpolate',['linear'],['zoom'],...SIM_STEP.flatMap(([z,s])=>[z,f(s)])];
 const simOff=k=>zStep(s=>(k-(SIMK.length-1)/2)*s);
@@ -1392,7 +1378,7 @@ function factRows(fx){
     : (isCount&&!med) ? ' <i>на більшості вулиць — жодного</i>'
     // «звичайно 0» читалося як «так і має бути» (розд. 25, А8)
     : ` <i>у середньому по місту ${nfmt(med)}</i>`;
-  const r=(ratio&&ratio>=1.2)?`<div class="fr">де цього більше — подій у ${raz(ratio)} більше</div>`:'';
+  const r='';   // кратність — у звіті «Схожі умови», не реченням на карті (RISHENNYA 34.5)
   return `<tr><td>${label}${r}</td><td class="fv"><b>${nfmt(val)}</b>${cmp}</td></tr>`;
  }).join('');
  return `<div class="rwhy">Що виміряно на цьому відрізку</div><table class="fx">${rows}</table>`;
@@ -1413,7 +1399,7 @@ function simWhence(v,it){
  const n=it[3]|0, fx=(it[4]||[]).map(f=>f[0]), out=[];
  if(n>0) out.push(`Тут уже були події: ${n} за 2 роки`);
  if(fx.length) out.push(`Умови як біля подій: ${fx.join(', ')}`);
- if(!out.length) out.push('Подій тут за 2 роки не було; оцінка — за сукупністю умов довкола');
+ if(!out.length) out.push('Подій тут за 2 роки не було');
  return out}
 function simLine(v,it,quiet,i){
  if(v.n2) return v.title+' — '+simPlace(v,i);
@@ -1427,10 +1413,9 @@ function simPopup(f,ll){
  // Чинники цієї вулиці — головне у вікні, тому стоять першими, до методики.
  h+=factRows(it[4]);
  if(!v.n2&&!(it[4]&&it[4].length))
-  h+=v.env?'<div class="rwhy">На цьому відрізку жодна з ознак не піднята помітно — умови схожі за сукупністю.</div>'
-   :'<div class="rwhy">Модель не виділила на цьому відрізку жодної піднятої ознаки — оцінку дала здебільшого історія подій.</div>';
+  h+='';
  // звичайним текстом, не класом rwhy: той набраний великими, як заголовок
- if(v.proakt) h+=`<div class="rmeth">${esc(v.proakt[0].toUpperCase()+v.proakt.slice(1))}: частину таких подій поліція виявляє сама.</div>`;
+ // позначка проактивності — лише в звіті й методиці (RISHENNYA 34.5)
  // Про модель — один рядок і посилання на звіт (розд. 25, А8): абзац методики
  // у вікні вулиці ніхто не читав, а головне в ньому — чинники — уже вище.
  // Посилання — на розбір вулиці у звіті «Схожі умови» (?st= підсвічує її рядок).
@@ -1543,7 +1528,8 @@ function ctxEvents(){
 qEl.addEventListener('input',()=>{ if(norm(qEl.value)&&!SUG.length){
  sg.innerHTML='<div class="sgnone">Такої адреси немає серед подій карти</div>'; sg.hidden=false}});
 // Фільтр без жодної події (AUDYT-3, № 8): порожня карта без пояснення
-// читалася як збій. Рядок над картою — що саме порожнє й що змінити.
+// читалася як збій. Рядок над картою — лише що саме порожнє; порада «що
+// змінити» була пояснювальним реченням (RISHENNYA 34.5).
 {const e=document.createElement('div'); e.id='kempty'; e.hidden=true; map.getContainer().appendChild(e);}
 // Елемент шукаємо за id, а не тримаємо в const: draw() може прийти раніше,
 // ніж виконається рядок вище.
@@ -1552,9 +1538,9 @@ function emptyState(st){
  const none=!st.vis.length;
  EMPTY.hidden=!none; if(!none) return;
  EMPTY.textContent=MODE==='prob'
-  ?'За поточним фільтром проблем немає — увімкніть інші види чи роки'
-  :CURD>=0?'У цьому районі за поточним фільтром подій немає — увімкніть інші види, роки чи час доби'
-  :'За поточним фільтром подій немає — увімкніть інші види, роки чи час доби';
+  ?'За поточним фільтром проблем немає'
+  :CURD>=0?'У цьому районі за поточним фільтром подій немає'
+  :'За поточним фільтром подій немає';
 }
 // На телефоні навігатор згорнутий до рядка пошуку й кнопки «Фільтри»
 // (AUDYT-3, № 3): розгорнутий, він займав 55% екрана, і карті лишалося

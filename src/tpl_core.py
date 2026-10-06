@@ -482,9 +482,9 @@ function popupHTML(p,n,th,byProblem,cnt,thMaj,st){
    // мовчки; підказку «увімкніть напрямок» лишаємо лише для прихованої теми.
    const shownArts=new Set(ev.map(e=>M.cats[e[1]]));
    const probs=gvis.filter(pr=>pr.arts.some(a=>shownArts.has(a[0])));
+   // напрямок проблеми вимкнено фільтром — лише назва, без поради (RISHENNYA 34.5)
    if(!probs.length&&hidden)
-    pblock=`<div class="hn">Ця адреса — у списку проблем, але за іншим напрямком `+
-     `(${allp.map(x=>x.theme).join(', ')}). Увімкніть відповідні правопорушення, щоб побачити картку.</div>`;
+    pblock=`<div class="hn">Проблема: ${allp.map(x=>x.theme).join(', ')}</div>`;
    if(probs.length){
     pblock=probs.map((pr,pi)=>{
      let h=`<div class="pcard"><div class="ph">Проблема · ${pr.theme}</div>`;
@@ -504,20 +504,16 @@ function popupHTML(p,n,th,byProblem,cnt,thMaj,st){
      // Тепер картка каже лише те, що справді стосується адреси — місце її
      // вулиці в міському переліку, — а виміряні умови показує кнопка.
      if(pr.analysis){
-      h+=`<div class="why"><b>Що каже модель:</b> вулиця, на якій стоїть ця адреса, — `+
-         `у верхніх ${100-pr.analysis.pc}% міста за ризиком (${pr.theme.toLowerCase()}). `+
-         `Які саме умови тут підняті — кнопка нижче.</div>`;
+      h+=`<div class="why"><b>Ризик:</b> вулиця у верхніх ${100-pr.analysis.pc}% міста (${pr.theme.toLowerCase()})</div>`;
      } else {
-      h+=`<div class="why"><b>Що каже модель:</b> ця вулиця не входить до переліку ризикованих. `+
-         `Отже, скупчення пояснюється не обстановкою вулиці, а чимось на самій адресі — `+
-         `це видно тільки на місці.</div>`;
+      // висновок «отже, справа в самій адресі» — пояснення, якого немає в даних
+      h+=`<div class="why"><b>Ризик:</b> вулиці в переліку немає</div>`;
      }
      if(pr.analysis&&pr.analysis.factors&&pr.analysis.factors.length&&(F.cats||[]).length)
       h+=`<button class="pbtn2" data-nf="${pi}">Показати чинники поруч</button>`;
      h+=`<button class="pbtn" data-pp="${pi}">Взяти в роботу — паспорт SARA</button></div>`;
      return h;
     }).join('');
-    if(probs.length>1) pblock+='<div class="hn" style="margin-top:4px">Кілька напрямків на адресі — кілька окремих проблем із різними причинами.</div>';
    }
    // Кнопка потрібна в КОЖНІЙ адресі, не лише у відібраних проблемах — це
    // основний хід слухача: побачив скупчення -> подивився, що довкола ->
@@ -532,7 +528,7 @@ function popupHTML(p,n,th,byProblem,cnt,thMaj,st){
    // окремим реченням — інакше колір і таблиця нижче суперечили б мовчки.
    const nm=gi=>esc(lc(M.groups[gi][0]));
    const majTxt=p[3]&&thMaj!==null
-    ?`<div class="tt">${byProblem&&th!==thMaj?`Колір — за напрямком проблеми (${nm(th)}). `:''}`+
+    ?`<div class="tt">`+
      `За поточним фільтром тут переважає ${nm(thMaj)}, ${cnt[thMaj]} із ${n}.</div>`:'';
    const html=`<div class="lp">
    ${cinf?`<span class="cbadge" style="background:var(--sunk);color:${cinf[1]}">${cinf[0]}</span>`:''}
