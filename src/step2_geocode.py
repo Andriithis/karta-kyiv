@@ -180,7 +180,9 @@ def nearby(ns, h, exact, nums):
 # запустити цей крок — він завантажить шар заново.
 KMDA_ON = True          # False — точки КМДА зникають з усього (карта, модель)
 KMDA = os.path.join(DATA, 'geokoder_kmda.csv.gz')
-KMDA_URL = ('https://gisserver-stage.kyivcity.gov.ua/mayno/rest/services/KYIV_API/'
+# Робочий сервер, а не stage: шар той самий (46 742 записи на обох, 06.10),
+# а stage можуть вимкнути без попередження.
+KMDA_URL = ('https://gisserver.kyivcity.gov.ua/mayno/rest/services/KYIV_API/'
             + urllib.parse.quote('Адреси') + '/FeatureServer/0/query')
 # У 1% адрес геокодер і OSM розходяться на кілометри — однакові назви вулиць у
 # різних кінцях міста, садові товариства. Тому точку КМДА беремо, лише якщо
