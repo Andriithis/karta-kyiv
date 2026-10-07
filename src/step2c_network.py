@@ -48,6 +48,10 @@ METY = {
 VAGA_TYPU = {'b1_mall': 8, 'market': 6, 'b1_super': 4, 'shop24': 1, 'b1_hospital': 5, 'clinic': 3,
              'b1_pharmacy': 1, 'school': 4, 'kindergarten': 2, 'b1_cafe': 1, 'b1_fastfood': 1,
              'posluhy': 1, 'park_vkhid': 1}
+# вага цілі «робота» — площа рамки, але не більше 0,5 км²; відношення з
+# рамкою понад 2 км² — розкидані корпуси, не місце
+MAKS_PLOSHCHA_M2 = 500_000.0
+ROZKYD_M2 = 2_000_000.0
 # мети, для яких людина без цілі в межах ходьби їде транспортом
 TRANSPORTOM = ('робота', 'школи')
 
@@ -202,7 +206,16 @@ def tsili(raw):
             for e in els(k):
                 c = centr(e)
                 if not c: continue
-                w = max(ploshcha(e), 200.0) if vaga == 'площа' else VAGA_TYPU.get(k, 1)
+                if vaga == 'площа':
+                    s = ploshcha(e)
+                    # Університет у OSM — відношення з корпусів по всьому місту:
+                    # рамка КНУ 29 км², Драгоманова 36 км², а центр рамки — ніде.
+                    # Такі цілі пропускаємо, решту обмежуємо: одна промзона
+                    # не має важити як район (знімок 07.10, ZVIT-32).
+                    if e.get('type') == 'relation' and s > ROZKYD_M2: continue
+                    w = min(max(s, 200.0), MAKS_PLOSHCHA_M2)
+                else:
+                    w = VAGA_TYPU.get(k, 1)
                 acc.append((c[0], c[1], w))
         out[m] = acc
     trans = [c for k in ('b1_metro', 'b1_stops') for e in raw.get(k) or [] if (c := centr(e))]
