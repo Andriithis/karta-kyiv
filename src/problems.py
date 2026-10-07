@@ -485,6 +485,37 @@ def vorota(evs, S, kind_q, sim=''):
 PROBLEMA = ('хронічна', 'фіксує поліція')       # статуси, що йдуть у перелік
 
 
+_KL = []
+
+
+def zlyty_adresy(cnt):
+    """[(адреса, подій)]: одна адреса — одне написання (ZAVDANNYA-32, 2.3;
+    33, В5). «пл. Спортивна, 1-А» і «вул. Спортивна, 1А», «В. Васильківська»
+    і «Велика Васильківська», «С. Русової» і «Софії Русової» — та сама
+    будівля. Ключ — adr_kliuch (тип відкинуто, ініціали розгорнуто, номер без
+    дефіса); поверх нього — той самий номер і повні слова однієї назви
+    всередині другої: адреси тут уже з одного місця (30 м), тож скорочене
+    ім'я чи ініціал без пробілу («М.Незалежності») — не інша вулиця. Підпис —
+    найчастіше написання."""
+    import re as re_
+    import adr_kliuch as AK
+    if not _KL: _KL.append(AK.Kliuch())
+    K = _KL[0]
+    gr = []                                   # [підпис, подій, номер, повні слова]
+    for a, n in cnt.most_common():
+        st_, _, h = str(a).rpartition(', ')
+        k = K(re_.sub(r'\.(?=\S)', '. ', st_), h) if st_ else None
+        if not k:
+            gr.append([a, n, None, None]); continue
+        sl = {w for w in k[0].split() if len(w) > 2}
+        for g in gr:
+            if g[2] == k[1] and g[3] is not None and (sl <= g[3] or g[3] <= sl):
+                g[1] += n; g[3] |= sl; break
+        else:
+            gr.append([a, n, k[1], sl])
+    return sorted(((g[0], g[1]) for g in gr), key=lambda x: -x[1])
+
+
 def formuietsia(u, kind_q, n_last=2, n_prev=6, min_n=3):
     """Р3.2: останні n_last кварталів проти попередніх n_prev, тест Пуассона.
     До попередніх додаємо одну подію, щоб місце без історії не отримувало
@@ -816,10 +847,10 @@ def run(V=None, log=print, FACT=None):
         th = M.simtheme(sim)
         g, st, s = vorota(evs, S, kind_q, sim)
         u = s.pop('evs', [])
-        addrs = collections.Counter(e['adr'] for e in u)
+        addrs = zlyty_adresy(collections.Counter(e['adr'] for e in u))
         rec = dict(riven=riven, sim=sim, vyd=th, mekhanizm=M.simname(sim), status=st, vorota=g,
-                   p=list(rep), adresy=[a for a, _ in addrs.most_common()],
-                   adresy_n=addrs.most_common(), klas='B', **s)
+                   p=list(rep), adresy=[a for a, _ in addrs],
+                   adresy_n=addrs, klas='B', **s)
         if u:
             # doc_id подій, що їх порахували ворота, — картка на карті показує
             # саме їх, з усіх адрес місця (завдання 29, п. 2)
@@ -1016,23 +1047,29 @@ def run(V=None, log=print, FACT=None):
         for x in c: used.add(id(x))
         c.sort(key=lambda x: (x['status'] != 'хронічна', -x['za_2roky']))
         g0 = c[0]
-        evs = [e for x in c for e in pary_ev.get(id(x), ())]
+        # Число, роки, статті й події картки — лише механізми, що пройшли
+        # ворота як заявні (Р2); проактивні — лише в розбивці з «(фіксує
+        # поліція)» (ZAVDANNYA-33, В5): Спортивна, 1А показувала 112 подій, з
+        # яких заявних 20. Заявних немає — це проблема, яку фіксує поліція.
+        yadro = [x for x in c if x['status'] == 'хронічна'] or c
+        evs = [e for x in yadro for e in pary_ev.get(id(x), ())]
         adr = collections.Counter()
         for x in c:
             for a, n in x['adresy_n']: adr[a] += n
+        adr_n = zlyty_adresy(adr)
         rec = dict(g0)
         rec.update(sim=g0['vyd'], mekhanizm=L.THEMES.get(g0['vyd'], g0['vyd']),
                    status='хронічна' if any(x['status'] == 'хронічна' for x in c) else 'фіксує поліція',
-                   podii=sum(x['podii'] for x in c), za_2roky=sum(x['za_2roky'] for x in c),
-                   za_4kv=sum(x['za_4kv'] for x in c), adresy=[a for a, _ in adr.most_common()],
-                   adresy_n=adr.most_common(), docs=[d for x in c for d in x.get('docs', [])],
-                   roky=sorted({y for x in c for y in x.get('roky', [])}),
-                   ostannia=max(x['ostannia'] for x in c),
+                   podii=sum(x['podii'] for x in yadro), za_2roky=sum(x['za_2roky'] for x in yadro),
+                   za_4kv=sum(x['za_4kv'] for x in yadro), adresy=[a for a, _ in adr_n],
+                   adresy_n=adr_n, docs=[d for x in yadro for d in x.get('docs', [])],
+                   roky=sorted({y for x in yadro for y in x.get('roky', [])}),
+                   ostannia=max(x['ostannia'] for x in yadro),
                    rozbyvka=[dict(sim=x['sim'], mekhanizm=x['mekhanizm'], status=x['status'],
                                   podii=x['podii'], za_2roky=x['za_2roky'], typ=x.get('typ')) for x in c])
         # Статті з повторами: Counter з генератора склеїв би однакові ключі
         st_ = collections.Counter()
-        for x in c:
+        for x in yadro:
             for k, n in x.get('statti', []): st_[k] += n
         rec['statti'] = st_.most_common()
         zapysy.append(rec)
