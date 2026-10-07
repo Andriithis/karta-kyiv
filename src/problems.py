@@ -1102,6 +1102,6 @@ def run(V=None, log=print, FACT=None):
 
 if __name__ == '__main__':
     r = run()
-    # --1551-md: окремий файл для чату «Проблеми» (1551-SKHOZHI-UMOVY.md)
+    # --1551-md: окремий файл для чату «Проблеми» (doslidzhennya/1551-SKHOZHI-UMOVY.md)
     if '--1551-md' in sys.argv and r and r.get('skhozhi_1551'):
-        zvit_1551_md(r['skhozhi_1551'], os.path.join(ROOT, '1551-SKHOZHI-UMOVY.md'))
+        zvit_1551_md(r['skhozhi_1551'], os.path.join(ROOT, 'doslidzhennya', '1551-SKHOZHI-UMOVY.md'))
