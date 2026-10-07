@@ -277,30 +277,42 @@ placeEl().addEventListener('click',e=>{ if(e.target.closest('[data-kp="close"]')
  if(t.closest('[data-cmore]')){CELL.page++; return renderCell()}
  // «Показати адреси» — вигляд «Адреси» на тому самому місці й масштабі
  if(t.closest('[data-ca]')){closeCell(); return setView('addr')}
- if(t.closest('[data-link]')) return kopiyuvaty(CELL.hex?`c=${CELL.hex[2]},${(CELL.hex[1]/MY_).toFixed(5)},${(CELL.hex[0]/MX_).toFixed(5)}`:'');
+ if(t.closest('[data-link]')) return kopiyuvaty(CELL.hex?`c=${CELL.hex[2]},${(CELL.hex[1]/MY_).toFixed(5)},${(CELL.hex[0]/MX_).toFixed(5)}`:'',t.closest('[data-link]'));
  if(t.closest('[data-cz]')){let s=90,w=180,n=-90,ea=-180;
   for(const i of CELL.ad){const p=P[i]; if(p[0]<s)s=p[0]; if(p[0]>n)n=p[0]; if(p[1]<w)w=p[1]; if(p[1]>ea)ea=p[1]}
   map.fitBounds([[w,s],[ea,n]],{padding:sidePad(),maxZoom:16.5,duration:900})}
 },true);
 document.addEventListener('keydown',e=>{ if(e.key!=='Escape') return; bezPosylannia(); if(CELL) closeCell()});
 // ==== ПОСИЛАННЯ НА МІСЦЕ (KARTA-1.0 №15; RISHENNYA 35.9) ====
-// Адреса сторінки з #m=<lat>,<lon> (адреса, проблема) чи #c=<R>,<lat>,<lon>
-// (сота); відкриття — карта на місці з карткою.
-function kopiyuvaty(h){ if(!h) return;
+// Адреса сторінки з #m=<lat>,<lon>[,<механізм проблеми>] (адреса, проблема)
+// чи #c=<R>,<lat>,<lon> (сота); відкриття — карта на місці з карткою.
+// Проблема — за адресою й механізмом, а не за порядковим номером: номер
+// міняється щопонеділка, і посилання, яке викладач дав слухачам, ламалося б
+// (ZAVDANNYA-33, А2).
+function kopiyuvaty(h,btn){ if(!h) return;
  const u=location.origin+location.pathname+location.search+'#'+h;
  history.replaceState(null,'','#'+h);
- // Буфер обміну браузер може не дати (стара сторінка, заборона) — тоді
- // посилання лишається в адресному рядку, і так і кажемо, а не «скопійовано».
- const tost=s=>{const t=document.createElement('div'); t.id='kcopy'; t.textContent=s; map.getContainer().appendChild(t);
-  setTimeout(()=>t.remove(),1600)};
- const ne=()=>tost('Посилання — в адресному рядку');
- try{navigator.clipboard.writeText(u).then(()=>tost('Посилання скопійовано'),ne)}catch(e){ne()}}
+ // На телефоні — меню «Поділитися»: посилання йде одразу в месенджер
+ if(navigator.share&&matchMedia('(pointer:coarse)').matches){navigator.share({url:u}).catch(()=>{}); return}
+ // Відповідь — на самій кнопці; буфер обміну браузер може не дати (стара
+ // сторінка, заборона) — тоді посилання лишається в адресному рядку.
+ const skazaty=s=>{ if(!btn){const t=document.createElement('div'); t.id='kcopy'; t.textContent=s;
+   map.getContainer().appendChild(t); return setTimeout(()=>t.remove(),1600)}
+  const t0=btn.dataset.t0||(btn.dataset.t0=btn.textContent); btn.textContent=s;
+  clearTimeout(btn._t); btn._t=setTimeout(()=>{btn.textContent=t0},1500)};
+ const ne=()=>skazaty('в адресному рядку');
+ try{navigator.clipboard.writeText(u).then(()=>skazaty('скопійовано'),ne)}catch(e){ne()}}
 function zPosylannia(){
  const h=decodeURIComponent(location.hash.slice(1));
- let m=/^m=(-?[\d.]+),(-?[\d.]+)$/.exec(h);
- if(m){const la=+m[1], lo=+m[2]; let best=-1,bd=1e9;
+ let m=/^m=(-?[\d.]+),(-?[\d.]+)(?:,(.+))?$/.exec(h);
+ if(m){const la=+m[1], lo=+m[2], mech=m[3]; let best=-1,bd=1e9;
   P.forEach((p,i)=>{if(!p[3]) return; const d=Math.hypot((p[0]-la)*MY_,(p[1]-lo)*MX_); if(d<bd){bd=d;best=i}});
-  if(best>=0&&bd<=30) focusAddress(best); return}
+  const j=best>=0&&bd<=30&&mech?probsOf(P[best]).findIndex(q=>q.mech===mech):0;
+  // адреси чи проблеми після оновлення немає — те саме місце, без картки
+  if(best<0||bd>30||j<0) return map.jumpTo({center:[lo,la],zoom:16});
+  afterMove(()=>{openAt(best); if(j>0){PLACE.pi=j; renderPlace()}});
+  const w=placeEl().offsetWidth||396;
+  map.flyTo({center:[P[best][1],P[best][0]],zoom:16,offset:[window.innerWidth>700?w/2:0,0]}); return}
  m=/^c=(\d+),(-?[\d.]+),(-?[\d.]+)$/.exec(h);
  if(m){const R_=+m[1], la=+m[2], lo=+m[3], cx=lo*MX_, cy=la*MY_;
   if(!HEXG.some(G=>G.R===R_)) return;
@@ -315,7 +327,9 @@ function zPosylannia(){
   el.classList.remove('kp-cell','kp-tall');
   const b=el.querySelector('.kp-body'); if(!b||el.querySelector('[data-plink]')) return;
   const p=P[PLACE.i]; b.insertAdjacentHTML('beforeend',`<button class="pbtn2" data-plink="1">Посилання</button>`);
-  el.querySelector('[data-plink]').onclick=()=>kopiyuvaty(`m=${p[0].toFixed(5)},${p[1].toFixed(5)}`)}}
+  const bt=el.querySelector('[data-plink]');
+  bt.onclick=()=>{const pr=placeData().pr;
+   kopiyuvaty(`m=${p[0].toFixed(5)},${p[1].toFixed(5)}`+(pr?','+encodeURIComponent(pr.mech):''),bt)}}}
 // ==== ВИГЛЯДИ: «Соти · Стовпчики · Кільця · Адреси» (RISHENNYA 35.9) ====
 // «◆ Проблеми» — окремий перемикач «лише проблеми». За замовчуванням — соти;
 // вибір пам'ятає браузер. Стовпчики — з нахилом 55°, решта — без нахилу.
