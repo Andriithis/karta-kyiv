@@ -135,10 +135,15 @@ HEAVY = {
  # роботодавці; вага цілі — площа (out bb)
  'robota': 'nwr["office"];way["building"~"^(office|commercial|industrial|retail|warehouse)$"];'
            'way["landuse"~"^(commercial|industrial|retail)$"];nwr["amenity"~"^(university|college|hospital)$"]',
+ # Решта пішої мережі (рішення Андрія 07.10): внутрішньоквартальні проїзди,
+ # сходи, велодоріжки. Без них двори мікрорайонів були окремими шматками, і
+ # прохідність зводила весь масив в одну точку (ZVIT-32, 4.4)
+ 'pishky_dod': 'way["highway"~"^(service|steps|cycleway|track|corridor|bridleway)$"]',
 }
 # Як вивантажувати важкий шар: геометрія для мереж і меж, центр і рамка для
 # будинків і роботи (площа з рамки)
 OUTMODE = {'roads': 'out tags geom;', 'foot': 'out tags geom;', 'dorogy_velyki': 'out tags geom;',
+           'pishky_dod': 'out tags geom;',
            'zhytlo_zona': 'out geom;', 'houses': 'out tags center bb;', 'robota': 'out tags center bb;'}
 # Магістралі (рішення Андрія 30.09; ZAVDANNYA-31, ч. 1): у шарі roads їх
 # немає. Одним запитом на все місто сервер відповідав 504, тож — плитками, як
