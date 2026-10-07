@@ -468,6 +468,10 @@ def main():
     idx = {s: i for i, s in enumerate(sids)}
     n = len(sids)
     Y = collections.defaultdict(lambda: np.zeros(n))   # (ключ, 'YYYY-MM') -> події на відрізках
+    # Усі події виду на відрізках, разом із тими, що належать точкам: запасна
+    # ціль ліній для виду, якому точок не вистачило (Андрій 07.10) — інакше
+    # АЛК, МАЙ, крадіжки й НАС лишалися без ризику зовсім
+    YV = collections.defaultdict(lambda: np.zeros(n))
     n_snap = collections.Counter(); n_all = collections.Counter(); n_pro = collections.Counter()
     SNAPST = collections.Counter()
     ev_seg = []                                          # (відрізок, подія) — для пішохідного ризику
@@ -496,6 +500,12 @@ def main():
             for k in ks_:
                 n_all[k] += 1; n_pro[k] += e['pro']; YP[(k, e['m'])][nal[ie]] += 1
             SNAPST['належить точці'] += 1
+            ck = (round(e['la'], 5), round(e['lo'], 5), e['street'])
+            if ck not in cache:
+                s, svoya = PV.znaity(e['la'], e['lo'], SNAP_M, VR.vulytsia(e['street']))
+                cache[ck] = (s, svoya, sg_old.nearest(e['la'], e['lo'], SNAP_M))
+            if cache[ck][0] is not None:
+                for k in ks_: YV[(k, e['m'])][idx[cache[ck][0]]] += 1
             continue
         ks = [th] + ([e['mekh']] if e['mekh'] else [])
         if e.get('vul'):
@@ -506,7 +516,8 @@ def main():
             SNAPST['лише вулиця, коротка'] += 1
             for k in ks:
                 n_all[k] += 1; n_pro[k] += e['pro']; n_snap[k] += 1; n_vul[k] += 1
-                for sid in c_: Y[(k, e['m'])][idx[sid]] += 1 / len(c_)
+                for sid in c_:
+                    Y[(k, e['m'])][idx[sid]] += 1 / len(c_); YV[(k, e['m'])][idx[sid]] += 1 / len(c_)
             continue
         for k in ks: n_all[k] += 1; n_pro[k] += e['pro']
         ck = (round(e['la'], 5), round(e['lo'], 5), e['street'])
@@ -520,7 +531,7 @@ def main():
         if o is None or SEG[s]['way'] != o: SNAPST['інша лінія OSM, ніж раніше'] += 1
         for k in ks:
             n_snap[k] += 1
-            Y[(k, e['m'])][idx[s]] += 1
+            Y[(k, e['m'])][idx[s]] += 1; YV[(k, e['m'])][idx[s]] += 1
         ev_seg.append((idx[s], e))
     log('   прив\'язка: ' + ', '.join(f'{k} {v:,}' for k, v in SNAPST.most_common()))
 
@@ -539,10 +550,11 @@ def main():
     MAPW = [mshift(ly, lm, -3 - j) for j in range(12)][::-1]
     ROKY2 = [mshift(ly, lm, -j) for j in range(24)]
     ROKY3 = [mshift(ly, lm, -j) for j in range(36)]
+    YSRC = [Y]          # звідки лінії беруть події: Y — без подій точок; YV — усі
     def cnt(k, months):
         v = np.zeros(n)
         for m in months:
-            a = Y.get((k, m))
+            a = YSRC[0].get((k, m))
             if a is not None: v += a
         return v
     def rik(y): return [f'{y}-{m:02d}' for m in range(1, 13)]
@@ -725,6 +737,49 @@ def main():
                 for di, d in enumerate(dn):
                     if MP.in_ring(t['la'], t['lo'], B[d]): foldP[i] = di % 5 + 1; break
         log(f'   змінних точок: {XP.shape[1]}')
+    def model_tochok(key, th, nm):
+        """Ризик точками (ZAVDANNYA-32, 6) для виду: на карту, якщо PAI ≥ RT.MIN_PAI.
+        Окремо від ліній — вид, якому для ліній подій замало (вони відійшли
+        точкам), бере ризик лише точками (Андрій 07.10). Повертає рядок звіту."""
+        if not (NP_ and XP is not None): return None
+        def cntp(months):
+            v = np.zeros(NP_)
+            for m in months:
+                a = YP.get((key, m))
+                if a is not None: v += a
+            return v
+        p24, p25, p26 = cntp(rik(2024)), cntp(rik(2025)), cntp(rik(2026))
+        if p25.sum() >= 50 and p26.sum() >= 20:
+            hP, muP, sdP = hst(p24); hP2, _a, _b = hst(p25, muP, sdP); hPm, _a, _b = hst(cntp(MAPW), muP, sdP)
+            one = np.ones(NP_)
+            AP = lambda H, cols: np.column_stack([H, XPL, XP[:, cols]] if cols else [H, XPL])
+            sP = rtm.stijkist(XP[:, CANDP], p25, one, [ctypP[j] for j in CANDP], H=np.column_stack([hP, XPL]),
+                              folds=foldP, runs=max(20, rtm.N_STAB // 2), log=log)
+            colsP = [CANDP[c] for c in sP['cols']]
+            fP, _ = rtm.nb_fit(AP(hP, colsP), p25, one)
+            PAI_P = RT.pai(rtm.nb_predict(fP, AP(hP2, colsP), one), p26)
+            PAI_PH = RT.pai(p25, p26)
+            pmP = rtm.nb_predict(fP, AP(hPm, colsP), one)
+            info = dict(PAI=round(PAI_P, 2), PAI_історія=round(PAI_PH, 2), подій_навчання=int(p25.sum()),
+                              на_карті=PAI_P >= RT.MIN_PAI,
+                              чинники=[cnameP[j] for j in colsP])
+            log(f'   точки: PAI на верхніх 5% точок {PAI_P:.2f} (історія {PAI_PH:.2f}); '
+                + ('на карті' if PAI_P >= RT.MIN_PAI else 'СХОВАНО'))
+            if PAI_P >= RT.MIN_PAI:
+                oP = np.argsort(-pmP, kind='stable'); pctP = np.empty(NP_); pctP[oP] = 100 * (np.arange(NP_) + 1) / NP_
+                n2P = cntp(ROKY2)
+                kP = min(300, max(20, NP_ // 100))
+                def facP(i):
+                    rows = []
+                    for k_, j in enumerate(colsP, start=1 + 1 + XPL.shape[1]):
+                        c = float(fP.params[k_]) * (XP[i, j] - XP[:, j].mean())
+                        if c > 0 and ctypP[j]: rows.append((c, cnameP[j]))
+                    return [r for _c, r in sorted(rows, reverse=True)[:3]]
+                tochky_out[key] = dict(theme=th, name=nm, pai=round(PAI_P, 2), items=[
+                    [round(TP[i]['la'], 5), round(TP[i]['lo'], 5), TP[i]['typ'], int(n2P[i]),
+                     round(float(pctP[i]), 2), round(float(pmP[i]), 2), facP(i)] for i in oP[:kP]])
+            return info
+        return dict(на_карті=False, причина=f'замало подій на точках: {int(p25.sum())} у 2025')
     for key, vyd in KEYS:
         th = key if vyd == 'тема' else M.simtheme(key)
         nm = L.THEMES.get(key, key) if vyd == 'тема' else M.simname(key)
@@ -736,13 +791,30 @@ def main():
         kinds[key] = dict(назва=nm, вид=vyd, подій=n_all[key], на_вулицях=n_snap[key],
                           проактивних=round(pr, 3), позначка=mark,
                           відсіяно={k[1]: v for k, v in drop.items() if k[0] == key})
+        YSRC[0] = Y
         y24, y25, y26 = cnt(key, rik(2024)), cnt(key, rik(2025)), cnt(key, rik(2026))
+        vsi_podii = False; tp_gotovo = None
         if y25.sum() < MIN_EV or y26.sum() < 50:
-            log(f'   замало подій: {int(y25.sum())} у 2025 (потрібно {MIN_EV}), {int(y26.sum())} у 2026')
-            report[key] = dict(вид=vyd, тема=L.THEMES.get(th, th), назва=nm, на_карті=False,
-                               сховано='замало подій для навчання', навчання=int(y25.sum()),
-                               позначка=mark)
-            continue
+            # Події відійшли точкам (бар, магазин, перехрестя) — тоді ризик
+            # точками; точок не вистачає — лінії на всіх подіях виду, без
+            # виділення точкам (Андрій 07.10)
+            log(f'   лініям замало подій: {int(y25.sum())} у 2025 (потрібно {MIN_EV}), {int(y26.sum())} у 2026 — точки')
+            tp = model_tochok(key, th, nm)
+            if tp and tp.get('на_карті'):
+                report[key] = dict(вид=vyd, тема=L.THEMES.get(th, th), назва=nm, на_карті=False,
+                                   сховано='лінії: події відійшли точкам — ризик точками', навчання=int(y25.sum()),
+                                   позначка=mark, точки=tp)
+                continue
+            YSRC[0] = YV; tp_gotovo = tp      # точки вже пораховано — вдруге не треба
+            y24, y25, y26 = cnt(key, rik(2024)), cnt(key, rik(2025)), cnt(key, rik(2026))
+            log(f'   точок замало ({(tp or {}).get("причина") or "PAI нижче порогу"}) — лінії на всіх подіях виду: '
+                f'{int(y25.sum())} у 2025, {int(y26.sum())} у 2026')
+            if y25.sum() < MIN_EV or y26.sum() < 50:
+                report[key] = dict(вид=vyd, тема=L.THEMES.get(th, th), назва=nm, на_карті=False,
+                                   сховано='замало подій для навчання', навчання=int(y25.sum()),
+                                   позначка=mark, точки=tp)
+                continue
+            vsi_podii = True
         Htr, mu, sd = hst(y24)
         Hte, _m, _s = hst(y25, mu, sd)
         Hmap, _m, _s = hst(cnt(key, MAPW), mu, sd)
@@ -869,6 +941,7 @@ def main():
         ts = lambda fs: {d['тип'] for d in fs}
         facsB = factors(fB, sB['cols'], sB)
         e = dict(вид=vyd, тема=L.THEMES.get(th, th), назва=nm, ключ=key, позначка=mark,
+                 лінії_на_всіх_подіях=vsi_podii,
                  вікно='історія 2024 → події 2025; перевірка: історія 2025 → події 2026',
                  вікно_карти=[MAPW[0], MAPW[-1]],
                  історія_навчання=int(y24.sum()), навчання=int(y25.sum()), перевірка=int(y26.sum()),
@@ -910,45 +983,8 @@ def main():
                                       for i in shown],
                                grid=[row(i, rk, n2, None, True) for i in om[:TOPGRID]])
         # ---- точки (6) ----
-        if NP_ and XP is not None:
-            def cntp(months):
-                v = np.zeros(NP_)
-                for m in months:
-                    a = YP.get((key, m))
-                    if a is not None: v += a
-                return v
-            p24, p25, p26 = cntp(rik(2024)), cntp(rik(2025)), cntp(rik(2026))
-            if p25.sum() >= 50 and p26.sum() >= 20:
-                hP, muP, sdP = hst(p24); hP2, _a, _b = hst(p25, muP, sdP); hPm, _a, _b = hst(cntp(MAPW), muP, sdP)
-                one = np.ones(NP_)
-                AP = lambda H, cols: np.column_stack([H, XPL, XP[:, cols]] if cols else [H, XPL])
-                sP = rtm.stijkist(XP[:, CANDP], p25, one, [ctypP[j] for j in CANDP], H=np.column_stack([hP, XPL]),
-                                  folds=foldP, runs=max(20, rtm.N_STAB // 2), log=log)
-                colsP = [CANDP[c] for c in sP['cols']]
-                fP, _ = rtm.nb_fit(AP(hP, colsP), p25, one)
-                PAI_P = RT.pai(rtm.nb_predict(fP, AP(hP2, colsP), one), p26)
-                PAI_PH = RT.pai(p25, p26)
-                pmP = rtm.nb_predict(fP, AP(hPm, colsP), one)
-                e['точки'] = dict(PAI=round(PAI_P, 2), PAI_історія=round(PAI_PH, 2), подій_навчання=int(p25.sum()),
-                                  на_карті=PAI_P >= RT.MIN_PAI,
-                                  чинники=[cnameP[j] for j in colsP])
-                log(f'   точки: PAI на верхніх 5% точок {PAI_P:.2f} (історія {PAI_PH:.2f}); '
-                    + ('на карті' if PAI_P >= RT.MIN_PAI else 'СХОВАНО'))
-                if PAI_P >= RT.MIN_PAI:
-                    oP = np.argsort(-pmP, kind='stable'); pctP = np.empty(NP_); pctP[oP] = 100 * (np.arange(NP_) + 1) / NP_
-                    n2P = cntp(ROKY2)
-                    kP = min(300, max(20, NP_ // 100))
-                    def facP(i):
-                        rows = []
-                        for k_, j in enumerate(colsP, start=1 + 1 + XPL.shape[1]):
-                            c = float(fP.params[k_]) * (XP[i, j] - XP[:, j].mean())
-                            if c > 0 and ctypP[j]: rows.append((c, cnameP[j]))
-                        return [r for _c, r in sorted(rows, reverse=True)[:3]]
-                    tochky_out[key] = dict(theme=th, name=nm, pai=round(PAI_P, 2), items=[
-                        [round(TP[i]['la'], 5), round(TP[i]['lo'], 5), TP[i]['typ'], int(n2P[i]),
-                         round(float(pctP[i]), 2), round(float(pmP[i]), 2), facP(i)] for i in oP[:kP]])
-            else:
-                e['точки'] = dict(на_карті=False, причина=f'замало подій на точках: {int(p25.sum())} у 2025')
+        tp = tp_gotovo if tp_gotovo is not None else model_tochok(key, th, nm)
+        if tp is not None: e['точки'] = tp
         log(f'   PAI на довжину: разом {PAI_T:.2f}, історія {PAI_H:.2f}, середовище {PAI_E:.2f}, '
             f'захід->схід {PAI_G if PAI_G is None else round(PAI_G, 2)}; як рахувалося — разом {star["разом"]}; '
             f'чинників {len(facs)}; спільних з навчанням на 2025: {e["стійкість"]["спільних_чинників"]} чинників, '
@@ -1093,16 +1129,20 @@ def write_report(report, kinds, OLD, OLDR, layers, blocks_m, shcho, nseg, ncand,
       '| Попередня версія | Вулиць показано | Збулося |\n|---|---|---|---|---|---|---|---|---|---|\n')
     for k, e in report.items():
         o = OLD.get(k, {}) if isinstance(OLD.get(k), dict) else {}
-        old = o.get('PAI_разом_довжина') or o.get('PAI_середовище', '—')
+        # «разом» з попереднього звіту — те саме, з чим порівнюємо; середовище
+        # бралося помилково (ГП 3,83 замість 5,44 — перевірка 07.10)
+        old = o.get('PAI_разом') or o.get('PAI_разом_довжина') or '—'
         if 'PAI_разом' not in e:
-            w(f"| {e['назва']} | ні — {e['сховано']} | — | — | — | — | — | {old} | — | — |\n"); continue
+            tp = e.get('точки') or {}
+            kr = (f"точки: PAI {tp['PAI']} (історія {tp.get('PAI_історія')})" if tp.get('PAI') is not None else '')
+            w(f"| {e['назва']} | ні — {e['сховано']}{'; ' + kr if kr else ''} | — | — | — | — | — | {old} | — | — |\n"); continue
         s = e['PAI_як_рахувалося']
         w(f"| {e['назва']} | {'так' if e['на_карті'] else 'ні — ' + e['сховано']} | **{e['PAI_разом']}** "
           f"| {e['PAI_історія']} | {e['PAI_середовище']} | {e['PAI_інший_район'] if e['PAI_інший_район'] is not None else '—'} "
           f"| {s['разом']} / {s['історія']} / {s['середовище']} | {old} "
           f"| {e['вулиць_показано']} | {e['з_них_збулося']} |\n")
-    w('\n«Попередня версія» — PAI з попереднього `engine_report.json` (там — модель лише середовища і стара '
-      'міра на лініях OSM), тож порівняння — для чесності, не умова.\n\n')
+    w('\n«Попередня версія» — PAI «разом» з попереднього `engine_report.json` (дані й вікна там інші), '
+      'тож порівняння — для чесності, не умова.\n\n')
 
     w('## 3. Стійкість між роками\n\n')
     w('Та сама модель, навчена на 2025 → 2026: скільки стійких чинників спільні з навченою на 2024 → 2025 і '
