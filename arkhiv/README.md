@@ -16,6 +16,7 @@
 | Виконані завдання й звіти (перенесено 07.10.2026, ZAVDANNYA-33, А5) | `ZAVDANNYA-30.md`, `ZVIT-30.md`, `ZAVDANNYA-31.md`, `ZAVDANNYA-PROBLEMY-29.md` |
 | Плани, що виконані чи перейшли в інше місце (07.10) | `PLAN-KROK7.md` (модель ризику — тепер METODYKA, розд. 4–5), `PLAN-BAZA.md` (план спільної бази — у приватному `dani-edrsr`, після 1.0) |
 | Аудит 4 і передача чату «Проблеми» (07.10) | `AUDYT-4.md`, `PEREDACHA-PROBLEMY.md` |
+| Інструкція про токен спільної бази — перехід скасовано (07.10, RISHENNYA 36.11) | `INSTRUKTSIYA-DANI.md` |
 
 Видалено тоді ж (є в історії git): локальні `.bat` старого ручного конвеєра
 (`0d`, `1`, `2`, `2b`, `2c`, `4`, `DIAGNOSTYKA`, `FABULY`, `ONOVYTY`,
@@ -31,6 +32,5 @@ Actions; разові діагностики адрес `src/diag_addr*.py`, `sr
 
 07.10.2026: `1551-SKHOZHI-UMOVY.md` — не в архів, а в `doslidzhennya/` (його пише
 `problems.py --1551-md`). У корені лишено `NAPRYAM-PROBLEMY.md` — на його
-додаток Б посилається публічний звіт «Проблеми»; `INSTRUKTSIYA-DANI.md` —
-інструкція для Андрія ще не виконана; `ZVIT-KROK7.md` і
+додаток Б посилається публічний звіт «Проблеми»; `ZVIT-KROK7.md` і
 `ZVIT-1551-ZAKONOMIRNOSTI.md` — їх пише workflow «Оновлення карти».
