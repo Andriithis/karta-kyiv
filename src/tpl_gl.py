@@ -1527,6 +1527,9 @@ function ctxEvents(){
    return tip(e,`<b>${esc(it[1]||'без назви')}</b><span>≈ ${it[2].toLocaleString('uk')} осіб на добу (модель)</span>`)}
   const pp=map.getLayoutProperty('k-pop','visibility')==='visible'&&map.queryRenderedFeatures(e.point,{layers:['k-pop']})[0];
   if(pp) return tip(e,`<b>${pp.properties.n.toLocaleString('uk')} осіб</b>`);
+  // Над сотою, стовпчиком чи ризиком своя підказка (tpl_vyhlyady) — район
+  // тоді мовчить: дві підказки накладалися й закривали число соти (Андрій 07.10)
+  if(hexHit(e.point)||riskAt(e.point)){ if(map.getSource('k-dist')) distHover(-1); TIP.remove(); return}
   if(!RINGS_ON) map.getCanvas().style.cursor='';
   // Район під курсором — підсвітка й назва, лише на міському огляді (до
   // z13, розд. 25, А4): ближче вона спливала над кожною вулицею й заважала.
