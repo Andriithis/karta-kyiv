@@ -35,12 +35,14 @@ function binHex(st){
    let b=B.get(k); if(!b){b={n:0,g:new Array(NG_).fill(0),ad:[],pr:0,cx,cy,k}; B.set(k,b)}
    b.n+=v[1]; b.ad.push(PIDX.get(p)); for(const g in v[4]) b.g[g]+=v[4][g];
    if(probsOf(p).some(q=>q.thi===undefined||q.thi<0||st.GVIS.has(q.thi))) b.pr=1}
-  // Колір — вид, якого тут БІЛЬШЕ, НІЖ У СЕРЕДНЬОМУ ПО МІСТУ (35.6): серед видів
-  // з ≥ max(5, 10% соти) подій — найбільше (частка в соті) / (частка в місті),
-  // якщо > 1,5; інакше — найчисленніший вид. Під фільтром одного виду — його колір.
+  // Колір — вид, якого тут БІЛЬШЕ, НІЖ У СЕРЕДНЬОМУ ПО МІСТУ (35.6): найбільше
+  // (частка в соті) / (частка в місті) серед видів з ≥ max(3, 10% соти) подій —
+  // щоб одна подія не фарбувала соту. Раніше ще й поріг 1,5 і запасний
+  // «найчисленніший вид» — і майже все було зелене, ДТП (33, В2). Найчисленніший
+  // лишився лише для соти, де жоден вид не набрав мінімуму.
   const bs=[...B.values()].sort((a,b)=>a.n-b.n), L_=bs.length;
-  bs.forEach((b,i)=>{let gi=b.g.indexOf(Math.max(...b.g)), best=1.5;
-   const min=Math.max(5,.1*b.n);
+  bs.forEach((b,i)=>{let gi=b.g.indexOf(Math.max(...b.g)), best=0;
+   const min=Math.max(3,.1*b.n);
    for(let g=0;g<NG_;g++){ if(b.g[g]<min||!cityG[g]) continue;
     const r=(b.g[g]/b.n)/(cityG[g]/cityN); if(r>best){best=r; gi=g}}
    b.gi=gi; const rank=L_>1?i/(L_-1):1;
@@ -56,15 +58,23 @@ function hexData(G,cols){
  const dim=RISK_ON?.35:1;
  return {type:'FeatureCollection',features:[...B.values()].filter(b=>!cols||b.n>=med).map(b=>({type:'Feature',
   geometry:{type:'Polygon',coordinates:hexPoly(b.cx,b.cy,G.R,cols?.62:1)},
-  properties:{k:b.k,c:PALA[b.gi%PALA.length],a:b.a*dim,pr:b.pr,n:b.n,h:G.R*7*Math.sqrt(b.n/mx)}}))}}
+  // cl — світліший колір вибраного стовпчика, поки відкрита картка (33, В6)
+  properties:{k:b.k,c:PALA[b.gi%PALA.length],cl:svitlishe(PALA[b.gi%PALA.length]),gi:b.gi,a:b.a*dim,pr:b.pr,n:b.n,h:G.R*7*Math.sqrt(b.n/mx)}}))}}
+function svitlishe(c){const m=/^#?([0-9a-f]{6})$/i.exec(c||''); if(!m) return c;
+ const v=parseInt(m[1],16), f=x=>Math.round(x+(255-x)*.45);
+ return '#'+[v>>16,(v>>8)&255,v&255].map(f).map(x=>x.toString(16).padStart(2,'0')).join('')}
 const HEX_FADE={L:[[0,1],[12.3,1],[12.8,0]],S:[[12.0,0],[12.4,1],[14.3,1],[14.7,0]],X:[[14.3,0],[14.7,1]]};
 const fadeBy=(id,v)=>['interpolate',['linear'],['zoom'],...HEX_FADE[id].flatMap(([z,f])=>[z,f?v:0])];
+// Стовпчики — одна сота 330 м на всіх масштабах (33, В6; макет
+// MAKET-STOVPCHYKY): розмір у метрах від масштабу не залежить, як у kepler.gl
+// і deck.gl. Розпад на 130 і 30 м давав «привидів» і голки; соти (2D) — як були.
+const COL_G='L';
 function hexReady(){
  const before=map.getLayer('k-addr-shadow')?'k-addr-shadow':undefined;
  for(const G of HEXG){const id=G.id;
   if(!map.getSource('k-hex-'+id)){
    map.addSource('k-hex-'+id,{type:'geojson',data:{type:'FeatureCollection',features:[]}});
-   map.addSource('k-col-'+id,{type:'geojson',data:{type:'FeatureCollection',features:[]}});
+   map.addSource('k-col-'+id,{type:'geojson',promoteId:'k',data:{type:'FeatureCollection',features:[]}});
    map.addLayer({id:'k-hex-'+id,type:'fill',source:'k-hex-'+id,paint:{'fill-color':['get','c'],
     'fill-opacity':fadeBy(id,['get','a'])}},before);
    map.addLayer({id:'k-hexl-'+id,type:'line',source:'k-hex-'+id,paint:{'line-width':.6,
@@ -74,9 +84,10 @@ function hexReady(){
     paint:{'line-width':['interpolate',['linear'],['zoom'],10,.6,12,.9,13,1.3],'line-opacity':fadeBy(id,1)}},before);
    // Стовпчики — один колір (стопка видів шарами вводила в оману, 7.3); не
    // «осідають» (рішення Андрія 06.10): лишаються стовпчиками на всіх масштабах.
-   map.addLayer({id:'k-col-'+id,type:'fill-extrusion',source:'k-col-'+id,paint:{'fill-extrusion-color':['get','c'],
+   map.addLayer({id:'k-col-'+id,type:'fill-extrusion',source:'k-col-'+id,paint:{
+    'fill-extrusion-color':['case',['boolean',['feature-state','sel'],false],['get','cl'],['get','c']],
     'fill-extrusion-height':['get','h'],
-    'fill-extrusion-opacity':fadeBy(id,.8)}},before);
+    'fill-extrusion-opacity':.8}},before);
   }}
  if(!map.getSource('k-hexsel')){
   map.addSource('k-hexsel',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
@@ -90,7 +101,7 @@ function hexPaint(){
  const ln=isDark()?'rgba(0,0,0,.35)':'rgba(255,255,255,.4)', ink=cssv('--ink');
  for(const G of HEXG){map.setPaintProperty('k-hexl-'+G.id,'line-color',ln);
   map.setPaintProperty('k-hexp-'+G.id,'line-color',ink);
-  map.setPaintProperty('k-col-'+G.id,'fill-extrusion-opacity',fadeBy(G.id,isDark()?.85:.8))}
+  map.setPaintProperty('k-col-'+G.id,'fill-extrusion-opacity',isDark()?.85:.8)}
  map.setPaintProperty('k-hexsel','line-color',ink); map.setPaintProperty('k-hexselh','line-color',cssv('--halo')||'#fff');
 }
 function drawHex(st){
@@ -99,7 +110,7 @@ function drawHex(st){
  const soty=MODE==='soty', stovp=MODE==='stovp';
  for(const G of HEXG){
   map.getSource('k-hex-'+G.id).setData(soty?hexData(G,false):{type:'FeatureCollection',features:[]});
-  map.getSource('k-col-'+G.id).setData(stovp?hexData(G,true):{type:'FeatureCollection',features:[]});
+  map.getSource('k-col-'+G.id).setData(stovp&&G.id===COL_G?hexData(G,true):{type:'FeatureCollection',features:[]});
   for(const l of ['k-hex-','k-hexl-','k-hexp-']) layerVis(l+G.id,soty);
   layerVis('k-col-'+G.id,stovp)}
 }
@@ -275,10 +286,15 @@ function cellEvs(ad){const st=LASTST||computeVis(), out=[];
 function openCell(kind,ad,hex,ll){
  if(POPUP) POPUP.remove(); closePlace();
  CELL={kind,ad,tab:'ogl',open:-1,page:1,hex,ll};
- if(hex) map.getSource('k-hexsel').setData({type:'FeatureCollection',features:[{type:'Feature',
+ // у стовпчиках контуру на землі немає — вибраний стовпчик світліший (33, В6)
+ if(hex&&MODE==='stovp'){const k=hexAt(hex[1]/MY_,hex[0]/MX_,hex[2])[0];
+  CELL.colSel=k; map.setFeatureState({source:'k-col-'+COL_G,id:k},{sel:true})}
+ else if(hex) map.getSource('k-hexsel').setData({type:'FeatureCollection',features:[{type:'Feature',
   geometry:{type:'Polygon',coordinates:hexPoly(hex[0],hex[1],hex[2])},properties:{}}]});
  renderCell()}
-function closeCell(){CELL=null; if(map.getSource('k-hexsel')) map.getSource('k-hexsel').setData({type:'FeatureCollection',features:[]});
+function closeCell(){
+ if(CELL&&CELL.colSel!==undefined&&map.getSource('k-col-'+COL_G)) map.setFeatureState({source:'k-col-'+COL_G,id:CELL.colSel},{sel:false});
+ CELL=null; if(map.getSource('k-hexsel')) map.getSource('k-hexsel').setData({type:'FeatureCollection',features:[]});
  const el=placeEl(); if(!PLACE){el.hidden=true; el.classList.remove('kp-cell','kp-tall'); document.body.classList.remove('kp-open')}}
 let CELL_DOCS={key:'',cs:undefined};
 function renderCell(){
@@ -400,7 +416,10 @@ function setView(v){
  document.querySelectorAll('#fcat [data-m]').forEach(x=>swSet(x,x.dataset.m===v));
  if(v==='stovp'&&was!=='stovp') map.easeTo({pitch:55,duration:700});
  if(v!=='stovp'&&was==='stovp') map.easeTo({pitch:0,duration:700});
- if(CELL&&v==='addr') closeCell();
+ // Зміна вигляду скидає вибір і контури попереднього (33, В4): шестикутник
+ // вибраної соти висів у «Кільцях» поруч із кільцем
+ if(v!==was){ if(CELL) closeCell(); if(POPUP) POPUP.remove(); bezPosylannia();
+  if(map.getSource('k-hexsel')) map.getSource('k-hexsel').setData({type:'FeatureCollection',features:[]})}
  draw()}
 {const VIEWS=[['soty','Соти'],['stovp','Стовпчики'],['rings','Кільця'],['addr','Адреси']];
  let v=null; try{v=localStorage.getItem('karta-vyhlyad')}catch(e){}
@@ -418,7 +437,7 @@ function hexHit(p){ if(MODE!=='soty'&&MODE!=='stovp') return null;
  const f=map.queryRenderedFeatures(p,{layers:ids.filter(id=>map.getLayer(id))});
  if(!f.length) return null;
  // з кількох сіток — та, що зараз видніша
- const z=map.getZoom(), id=z<12.55?'L':z<14.5?'S':'X', g=f.find(x=>x.layer.id.endsWith(id))||f[0];
+ const z=map.getZoom(), id=MODE==='stovp'?COL_G:z<12.55?'L':z<14.5?'S':'X', g=f.find(x=>x.layer.id.endsWith(id))||f[0];
  const G=HEXG.find(x=>g.layer.id.endsWith(x.id)), b=HEXB[G.id].get(g.properties.k);
  return b?{G,b}:null}
 map.on('click',e=>{ if(CLICK_TAKEN||iconAt(e.point)) return;
@@ -432,7 +451,10 @@ map.on('mousemove',e=>{
  const h=hexHit(e.point);
  if(h){map.getCanvas().style.cursor='pointer';
   const a=new Set(h.b.ad).size;
-  VTIP.setLngLat(e.lngLat).setHTML(`<b>${fmt(h.b.n)} ${pl(h.b.n,'подія','події','подій')} · ${fmt(a)} ${pl(a,'адреса','адреси','адрес')}</b>`).addTo(map); return}
+  // над стовпчиком — лише він сам: скільки подій і чий колір (33, В6)
+  VTIP.setLngLat(e.lngLat).setHTML(MODE==='stovp'
+   ?`<b>${fmt(h.b.n)} ${pl(h.b.n,'подія','події','подій')} · ${esc(lc(shortOf(h.b.gi)))}</b>`
+   :`<b>${fmt(h.b.n)} ${pl(h.b.n,'подія','події','подій')} · ${fmt(a)} ${pl(a,'адреса','адреси','адрес')}</b>`).addTo(map); return}
  VTIP.remove()});
 const VTIP=new maplibregl.Popup({closeButton:false,closeOnClick:false,className:'k-tip',offset:14,maxWidth:'320px'});
 map.on('mouseout',()=>VTIP.remove());

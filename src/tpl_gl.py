@@ -496,7 +496,8 @@ function oglHTML(d){
  const {p,pr,evs}=d;
  let h='';
  if(pr){
-  h+=`<div class="kp-pc"><div class="kp-pch">Проблема · ${esc(pr.theme)}</div><div class="kp-pct">${esc(pr.mech)}</div>
+  // «Проблема · вид» — уже в шапці картки; тут удруге не повторюємо (33, В5)
+  h+=`<div class="kp-pc"><div class="kp-pct">${esc(pr.mech)}</div>
    <div class="tt">${pr.n} ${pl(pr.n,'однорідна подія','однорідні події','однорідних подій')} за ${pr.years.length} ${pl(pr.years.length,'рік','роки','років')} (${pr.years.join(', ')})</div>${probMore(pr)}</div>`;
  }
  h+=placeArts(p,evs)+placeHist(p,evs);
@@ -1092,7 +1093,13 @@ const ringLayer={id:'k-rings', type:'custom', renderingMode:'2d',
 // setStyle (його не можна описати в стилі), тож додаємо після кожного стилю.
 // Значки «Що поруч» — над кільцями, як маркери Leaflet над полотном: після
 // зміни стилю кільця стають під них, а не на самий верх.
-function ringsReady(){ if(!map.getLayer('k-rings')) map.addLayer(ringLayer,map.getLayer('k-near-ring')?'k-near-ring':undefined) }
+// Кільця — над підписами підкладки й районів (33, В4: «Київ» лежав на кільці),
+// але під номерами «Що поруч»: шар іде одразу після останнього шару підписів.
+function ringsReady(){ if(map.getLayer('k-rings')) return;
+ const L=map.getStyle().layers; let last=-1;
+ L.forEach((l,i)=>{ if(l.type==='symbol'&&!l.id.startsWith('k-near')) last=i});
+ const nxt=L.slice(last+1).find(l=>l.id.startsWith('k-near'));
+ map.addLayer(ringLayer,nxt?nxt.id:undefined) }
 // Видимість шару адрес — після кадру, а не всередині шару: міняти стиль
 // посеред малювання не можна. Мірило — чи малював цей кадр кільця
 // (RINGS_ON з frameList), а не поріг зуму: так між кільцями й адресами
@@ -1532,7 +1539,8 @@ function ctxEvents(){
   if(pp) return tip(e,`<b>${pp.properties.n.toLocaleString('uk')} осіб</b>`);
   // Над сотою, стовпчиком чи ризиком своя підказка (tpl_vyhlyady) — район
   // тоді мовчить: дві підказки накладалися й закривали число соти (Андрій 07.10)
-  if(hexHit(e.point)||riskAt(e.point)){ if(map.getSource('k-dist')) distHover(-1); TIP.remove(); return}
+  // у стовпчиках підказки району немає зовсім — лише межа й підпис (33, В6)
+  if(MODE==='stovp'||hexHit(e.point)||riskAt(e.point)){ if(map.getSource('k-dist')) distHover(-1); TIP.remove(); return}
   if(!RINGS_ON) map.getCanvas().style.cursor='';
   // Район під курсором — підсвітка й назва, лише на міському огляді (до
   // z13, розд. 25, А4): ближче вона спливала над кожною вулицею й заважала.
