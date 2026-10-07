@@ -7,9 +7,11 @@
 Мешканці будинку — населення шестикутника Kontur, поділене пропорційно
 площі поверхів. Ціль обирається за відстанню мережею й вагою (розмір):
 до 3 цілей мети в межах ходьби, імовірність ∝ вага × exp(−d / 400 м).
-Роботи чи школи в межах ходьби немає — людина йде до зупинки чи метро.
-Зворотний потік — ті, хто приїхав: від зупинок і метро до роботи, стільки
-ж людей, скільки поїхало транспортом на роботу по місту.
+60% поїздок на роботу й до вишів — завжди пішки до зупинки чи метро; школи
+чи роботи в межах ходьби немає — теж (рішення Андрія 07.10). Зворотний
+потік — ті, хто приїхав: від зупинок і метро до роботи, стільки ж людей,
+скільки поїхало транспортом на роботу, і приїжджі — до ТЦ, ринків, парків,
+вокзалів і місць з магазинами й кафе.
 
 Вихід — data/network.json: [геометрія, назва, potik, id відрізка] для КОЖНОГО
 відрізка між перехрестями (vidrizky); відрізок без маршрутів — 0, а не
@@ -54,6 +56,39 @@ MAKS_PLOSHCHA_M2 = 500_000.0
 ROZKYD_M2 = 2_000_000.0
 # мети, для яких людина без цілі в межах ходьби їде транспортом
 TRANSPORTOM = ('робота', 'школи')
+
+# ---- ТРАНСПОРТ І ПРИЇЖДЖІ (рішення Андрія 07.10; ZVIT-32, 4.4) ----
+# Попередня модель вела до зупинки лише тих, кому роботи поруч немає, а
+# робота є майже всюди — метро й центр лишалися без потоку. Тепер частка
+# поїздок на роботу й до вишів іде пішки до зупинки чи метро завжди.
+# Орієнтир Андрія ~60% (План сталої міської мобільності); відкритий розподіл
+# Києва 2015 р. для всіх поїздок: 37% громадським транспортом, 35% пішки,
+# 28% авто (texty.org.ua, 2020) — без авто 51%, а поїздки на роботу довші.
+TRANSPORT_ROBOTA = 0.60
+GT_USIKH = 37 / (37 + 35)      # частка громадського транспорту серед поїздок без авто
+# Приїжджі — решта поїздок громадським транспортом понад роботу: від зупинок
+# і метро до ТЦ, ринків, парків, вокзалів і місць з магазинами й кафе.
+# Школи, магазини поруч, аптеки — без змін (пішки), тож приїжджі — окремі
+# поїздки понад шість мет: (0,51 − 0,30 × 0,60) ≈ 0,33 на мешканця.
+PRYIZHDZHI = GT_USIKH - METY['робота'][1] * TRANSPORT_ROBOTA
+R_METRO, R_ZUPYNKA = 1500.0, 500.0   # м: до метро йдуть далі, ніж до зупинки
+# Метро — кілька ліній і поїзд щокілька хвилин: між входом за 800 м і
+# зупинкою за 200 м люди частіше обирають метро. Вага взята до перевірки й
+# не підганялася; частка метро серед поїздок транспортом — у журналі, для
+# звірки з річними даними (метро ≈ 45% поїздок громадським транспортом).
+VAGA_METRO = 5.0
+R_MAGAZYNY = 150.0             # вага місця приїжджих — магазини й кафе в 150 м
+MAGAZYNY_KAFE = ('shop24', 'b1_super', 'b1_alk', 'b1_mall', 'b1_cafe', 'b1_fastfood', 'b1_bars')
+
+# ---- ПІША МЕРЕЖА (рішення Андрія 07.10, п. 4) ----
+# Магістралі (motorway, trunk) — пішки лише з позначеним тротуаром; решта
+# доріг, проїзди й сходи — пішки. Тротуар, що не сходиться з мережею
+# (кінець лінії, не прив'язаний до переходу), з'єднується з найближчою
+# іншою лінією в 25 м; шматок мережі, що лишився окремо, — з головною
+# мережею в 50 м. Без цього 25% мешканців стояли на окремих шматках, і
+# масив зводився в одну точку (провулок Матущака — 8 893 осіб).
+MAGISTRALI = ('motorway', 'motorway_link', 'trunk', 'trunk_link')
+PRYVIAZKA_M, SHMATOK_M = 25.0, 50.0
 
 # ---- БУДИНКИ ----
 ZHYTLO = ('apartments', 'residential', 'house', 'dormitory', 'detached', 'semidetached_house', 'terrace')
@@ -124,6 +159,80 @@ class Grid:
                     d = math.hypot((p[0] - la) * my, (p[1] - lo) * mx)
                     if d < bd: bd, best = d, k
         return best if bd <= rad else None
+
+    def within(s, la, lo, rad):
+        """[(відстань, індекс)] усіх точок у rad м"""
+        my, mx = mdeg(la)
+        n = int(max(rad / my, rad / mx) / s.c) + 1
+        ci, cj = int(la / s.c), int(lo / s.c)
+        out = []
+        for i in range(ci - n, ci + n + 1):
+            for j in range(cj - n, cj + n + 1):
+                for p, k in s.g.get((i, j), ()):
+                    d = math.hypot((p[0] - la) * my, (p[1] - lo) * mx)
+                    if d <= rad: out.append((d, k))
+        return out
+
+
+def pishi_liniyi(raw):
+    """лінії, якими ходять пішки: вулиці (магістралі — лише з тротуаром),
+    доріжки, проїзди, сходи"""
+    out = []
+    for w in VR.vulytsi(raw):
+        t = w.get('tags') or {}
+        if t.get('highway') in MAGISTRALI and t.get('sidewalk') not in ('both', 'left', 'right', 'yes'):
+            continue
+        out.append(w)
+    return out + list(raw.get('foot') or []) + list(raw.get('pishky_dod') or [])
+
+
+def transport(raw):
+    """[(lat, lon, метро?)]: входи метро (станція без входів — сама станція)
+    і наземні зупинки, разом із залізничними станціями"""
+    out, z_vkhodamy = [], set()
+    st = [e for e in raw.get('b1_metro') or [] if (e.get('tags') or {}).get('railway') == 'station']
+    vkh = [e for e in raw.get('b1_metro') or [] if (e.get('tags') or {}).get('railway') == 'subway_entrance']
+    metro_st = [e for e in st if (e.get('tags') or {}).get('station') == 'subway']
+    for e in vkh:
+        c = centr(e)
+        if not c: continue
+        out.append((c[0], c[1], True))
+        near = min(metro_st, key=lambda s_: dist_m(c, centr(s_)), default=None)
+        if near is not None and dist_m(c, centr(near)) <= 500: z_vkhodamy.add(near['id'])
+    for e in metro_st:
+        if e['id'] not in z_vkhodamy and (c := centr(e)): out.append((c[0], c[1], True))
+    for e in st:
+        if (e.get('tags') or {}).get('station') != 'subway' and (c := centr(e)): out.append((c[0], c[1], False))
+    for e in raw.get('b1_stops') or []:
+        if (c := centr(e)): out.append((c[0], c[1], False))
+    return out
+
+
+def mistsia_pryizhdzhykh(raw):
+    """[(lat, lon, вага)]: ТЦ, ринки, парки, вокзали і місця з магазинами та
+    кафе (клітинки 150 м); вага — магазини й кафе в 150 м, не менше 1.
+    Окремого ручного «центру» немає: центр виходить сам — там їх більше."""
+    seen, pts = set(), []
+    for k in MAGAZYNY_KAFE:
+        for e in raw.get(k) or []:
+            if (e.get('type'), e.get('id')) in seen: continue
+            seen.add((e.get('type'), e.get('id')))
+            if (c := centr(e)): pts.append(c)
+    g = Grid(pts, cell=0.002)
+    vaga = lambda la, lo: max(1, len(g.within(la, lo, R_MAGAZYNY)))
+    out = []
+    obj = (list(raw.get('b1_mall') or []) + list(raw.get('b1_market') or []) + list(raw.get('park') or [])
+           + [e for e in raw.get('b1_metro') or [] if (e.get('tags') or {}).get('railway') == 'station'
+              and (e.get('tags') or {}).get('station') not in ('subway',)])
+    for e in obj:
+        if (c := centr(e)): out.append((c[0], c[1], vaga(*c)))
+    kl = collections.defaultdict(list)
+    C = 150.0 / 111320
+    for la, lo in pts: kl[(int(la / C), int(lo / C))].append((la, lo))
+    for v in kl.values():
+        la, lo = sum(p[0] for p in v) / len(v), sum(p[1] for p in v) / len(v)
+        out.append((la, lo, vaga(la, lo)))
+    return out
 
 
 def v_poligoni(la, lo, ring):
@@ -218,8 +327,7 @@ def tsili(raw):
                     w = VAGA_TYPU.get(k, 1)
                 acc.append((c[0], c[1], w))
         out[m] = acc
-    trans = [c for k in ('b1_metro', 'b1_stops') for e in raw.get(k) or [] if (c := centr(e))]
-    return out, trans
+    return out
 
 
 def naselennia(houses, log=print):
@@ -259,6 +367,8 @@ def main():
     t0 = time.time()
     raw = json.load(open(RAW, encoding='utf-8'))
     roads, foot = VR.vulytsi(raw), raw.get('foot') or []
+    if not raw.get('pishky_dod'):
+        print('УВАГА: у знімку немає pishky_dod (проїзди, сходи) — двори мікрорайонів будуть окремими шматками')
     houses = budynky(raw)
     print(f'дороги {len(roads):,}   пішохідні {len(foot):,}   житлові будинки {len(houses):,}')
     if not houses or not foot:
@@ -275,9 +385,12 @@ def main():
         if k not in nid: nid[k] = len(coord); coord.append(k)
         return nid[k]
     A, B, W = [], [], []
-    for w in roads + foot:
+    liniyi = pishi_liniyi(raw)
+    lin_of = collections.defaultdict(set)      # вузол -> лінії, щоб не з'єднувати лінію саму з собою
+    for li, w in enumerate(liniyi):
         g = w.get('geometry') or []
         ks = [key(p['lat'], p['lon']) for p in g]
+        for k in ks: lin_of[node(k)].add(li)
         for u, v in zip(ks, ks[1:]):
             if u == v: continue
             d = dist_m(u, v)
@@ -285,12 +398,37 @@ def main():
             a, b = node(u), node(v)
             A += [a, b]; B += [b, a]; W += [d, d]
     N = len(coord)
+    stup = np.bincount(np.array(A, dtype=np.int64), minlength=N)
+    vsi = Grid(coord, cell=0.0004)
+    # кінець лінії, що ні з чим не сходиться, — до найближчої іншої лінії
+    n_kin = 0
+    for a in np.where(stup == 1)[0]:
+        la, lo = coord[a]
+        cand = [(d, k) for d, k in vsi.within(la, lo, PRYVIAZKA_M) if k != a and not (lin_of[k] & lin_of[a])]
+        if cand:
+            d, k = min(cand)
+            A += [a, k]; B += [k, a]; W += [max(d, 1.0)] * 2; n_kin += 1
+    G = csr_matrix((W, (A, B)), shape=(N, N))
+    nc, lab = connected_components(G, directed=False)
+    big = np.bincount(lab).argmax()
+    # шматки, що лишились окремо, — з головною мережею в 50 м
+    n_sh = 0
+    gol = Grid([coord[i] for i in np.where(lab == big)[0]], cell=0.0006)
+    gol_ids = np.where(lab == big)[0]
+    krashche = {}
+    for i in np.where(lab != big)[0]:
+        k = gol.nearest(coord[i][0], coord[i][1], SHMATOK_M)
+        if k is None: continue
+        d = dist_m(coord[i], coord[gol_ids[k]])
+        if lab[i] not in krashche or d < krashche[lab[i]][0]: krashche[lab[i]] = (d, i, int(gol_ids[k]))
+    for d, i, k in krashche.values():
+        A += [i, k]; B += [k, i]; W += [max(d, 1.0)] * 2; n_sh += 1
     G = csr_matrix((W, (A, B)), shape=(N, N))
     nc, lab = connected_components(G, directed=False)
     big = np.bincount(lab).argmax()
     main_n = np.where(lab == big)[0]
-    print(f'1) граф: вузлів {N:,}, ребер {len(W) // 2:,}; найбільша компонента {len(main_n):,} '
-          f'({100 * len(main_n) / N:.0f}%)')
+    print(f'1) граф: ліній {len(liniyi):,}, вузлів {N:,}, ребер {len(W) // 2:,}; з\'єднано кінців {n_kin:,}, '
+          f'шматків {n_sh:,}; найбільша компонента {len(main_n):,} ({100 * len(main_n) / N:.0f}%)')
     ngrid = Grid([coord[i] for i in main_n])
     snap = lambda la, lo, r: (lambda k: None if k is None else int(main_n[k]))(ngrid.nearest(la, lo, r))
 
@@ -304,7 +442,7 @@ def main():
     print(f'2) джерел (вузлів з мешканцями): {len(src):,}; мешканців на мережі {sum(src.values()):,.0f}')
 
     # ---- цілі ----
-    T, trans = tsili(raw)
+    T = tsili(raw)
     tn = {}
     for m, lst in T.items():
         nodes, ws = [], []
@@ -313,8 +451,24 @@ def main():
             if k is not None: nodes.append(k); ws.append(w)
         tn[m] = (np.array(nodes, dtype=np.int64), np.array(ws, dtype=float))
         print(f'   мета «{m}»: цілей {len(lst):,}, у мережі {len(nodes):,}')
-    trn = np.array(sorted({k for la, lo in trans if (k := snap(la, lo, 300)) is not None}), dtype=np.int64)
-    print(f'   зупинок і входів метро в мережі: {len(trn):,}')
+    # транспорт: вузол -> (метро?); метро переважає зупинку на тому самому вузлі
+    tr = {}
+    for la, lo, metro in transport(raw):
+        k = snap(la, lo, 300)
+        if k is not None: tr[k] = tr.get(k, False) or metro
+    trn = np.array(sorted(tr), dtype=np.int64)
+    TRN_M = np.array([tr[k] for k in trn])
+    TRN_R = np.where(TRN_M, R_METRO, R_ZUPYNKA)
+    TRN_W = np.where(TRN_M, VAGA_METRO, 1.0)
+    print(f'   транспорт у мережі: входів метро {int(TRN_M.sum()):,}, зупинок {int((~TRN_M).sum()):,}')
+    MP = mistsia_pryizhdzhykh(raw)
+    mp_n, mp_w = [], []
+    for la, lo, w in MP:
+        k = snap(la, lo, 400)
+        if k is not None: mp_n.append(k); mp_w.append(w)
+    mp_n, mp_w = np.array(mp_n, dtype=np.int64), np.array(mp_w, dtype=float)
+    print(f'   місць для приїжджих: {len(MP):,}, у мережі {len(mp_n):,}')
+    LIMIT = max(MAX_M * 1.25, R_METRO)
 
     load = collections.defaultdict(float)     # (u, v), u < v -> людей
 
@@ -335,76 +489,114 @@ def main():
         p = w[ok] * np.exp(-d[ok] / TAU)
         return ok, p / p.sum()
 
+    def bali_transportu(d):
+        """вага × exp(−d/τ) для зупинок і метро в їхньому радіусі, інакше 0"""
+        return np.where(np.isfinite(d) & (d <= TRN_R), TRN_W * np.exp(-np.minimum(d, 1e6) / TAU), 0.0)
+
+    def do_transportu(d):
+        b = bali_transportu(d)
+        ok = np.where(b > 0)[0]
+        if not len(ok): return ok, None
+        if len(ok) > K_CIL: ok = ok[np.argpartition(-b[ok], K_CIL)[:K_CIL]]
+        return ok, b[ok] / b[ok].sum()
+
     # ---- маршрути з дому ----
     S_ = np.array(list(src.keys()), dtype=np.int64)
     R_ = np.array([src[k] for k in S_], dtype=float)
     BATCH = 64
-    transportom = 0.0
+    obsiah = collections.Counter()            # поїздки транспортом: робота, приїжджі
+    do_metro = 0.0
     st = collections.Counter()
     print('3) маршрути з дому…', flush=True)
     for b0 in range(0, len(S_), BATCH):
         idx = S_[b0:b0 + BATCH]
-        D, Pr = dijkstra(G, directed=False, indices=idx, limit=MAX_M * 1.25, return_predecessors=True)
+        D, Pr = dijkstra(G, directed=False, indices=idx, limit=LIMIT, return_predecessors=True)
         for r, s in enumerate(idx):
             R = R_[b0 + r]
+            dt = D[r, trn] if len(trn) else np.zeros(0)
+            def transportom(L, m):
+                nonlocal do_metro
+                ok, p = do_transportu(dt) if len(trn) else ((), None)
+                if p is None:
+                    st[m + ': недосяжно'] += 1; return False
+                for j, pj in zip(ok, p):
+                    walk(Pr[r], s, trn[j], L * pj)
+                    if TRN_M[j]: do_metro += L * pj
+                st[m + ': транспортом'] += 1
+                return True
             for m, (keys, share, _v) in METY.items():
                 nodes, ws = tn[m]
-                # цілей мети немає зовсім (шар не завантажився) — для роботи
-                # й шкіл це «поза ходьбою», а не «нікуди не йдуть»
                 if not len(nodes) and m not in TRANSPORTOM: continue
                 ok, p = rozpodil(D[r, nodes], ws) if len(nodes) else (nodes, None)
-                if p is not None:
+                if m == 'робота':
+                    # частка — транспортом завжди; решта — до роботи поруч, а
+                    # немає її в межах ходьби — теж транспортом
+                    t_ = R * share * TRANSPORT_ROBOTA
+                    w_ = R * share - t_
+                    if p is None: t_, w_ = t_ + w_, 0.0
+                    if w_:
+                        for j, pj in zip(ok, p): walk(Pr[r], s, nodes[j], w_ * pj)
+                        st[m + ': пішки'] += 1
+                    if transportom(t_, m): obsiah['робота'] += t_
+                elif p is not None:
                     st[m + ': пішки'] += 1
                     for j, pj in zip(ok, p): walk(Pr[r], s, nodes[j], R * share * pj)
-                elif m in TRANSPORTOM and len(trn):
-                    dt = D[r, trn]
-                    j = int(np.argmin(dt))
-                    if np.isfinite(dt[j]) and dt[j] <= MAX_M:
-                        walk(Pr[r], s, trn[j], R * share)
-                        if m == 'робота': transportom += R * share
-                        st[m + ': до зупинки'] += 1
-                    else:
-                        st[m + ': недосяжно'] += 1
+                elif m in TRANSPORTOM:
+                    transportom(R * share, m)
                 else:
                     st[m + ': недосяжно'] += 1
+            # приїжджі — поїздки транспортом понад шість мет: з дому до зупинки
+            if PRYIZHDZHI > 0 and transportom(R * PRYIZHDZHI, 'приїжджі'):
+                obsiah['приїжджі'] += R * PRYIZHDZHI
         if (b0 // BATCH) % 50 == 0:
             print(f'   {b0 + len(idx):,} / {len(S_):,} · {time.time() - t0:.0f} c', flush=True)
     print('   ' + ', '.join(f'{k} {v:,}' for k, v in sorted(st.items())))
+    vsogo_tr = sum(obsiah.values())
+    print(f'   поїздок транспортом: робота {obsiah["робота"]:,.0f}, приїжджі {obsiah["приїжджі"]:,.0f}; '
+          f'з них до метро {100 * do_metro / max(vsogo_tr, 1):.0f}% (звірка: метро ≈ 45% поїздок громадським транспортом)')
 
-    # ---- зворотний потік: ті, хто приїхав на роботу ----
-    nodes, ws = tn['робота']
-    if transportom > 0 and len(nodes) and len(trn):
-        best = np.full((len(nodes), K_CIL), np.inf); bs = np.full((len(nodes), K_CIL), -1, dtype=np.int64)
+    # ---- приїзд: від зупинок і метро до роботи й до місць приїжджих ----
+    def pryizd(obs, nodes, ws, nazva):
+        """obs осіб приїжджають до цілей ∝ вага; кожна ціль — з K_CIL зупинок
+        чи входів метро з найбільшими балами (як і з дому)"""
+        if obs <= 0 or not len(nodes) or not len(trn): return
+        nb = len(nodes)
+        best = np.zeros((nb, K_CIL)); bs = np.full((nb, K_CIL), -1, dtype=np.int64)
         for b0 in range(0, len(trn), BATCH):
             idx = trn[b0:b0 + BATCH]
-            D = dijkstra(G, directed=False, indices=idx, limit=MAX_M * 1.25)[:, nodes]   # зупинки × цілі
-            for r in range(len(idx)):
-                row = np.concatenate([best, D[r][:, None]], axis=1)
-                srow = np.concatenate([bs, np.full((len(nodes), 1), b0 + r)], axis=1)
-                o = np.argsort(row, axis=1)[:, :K_CIL]
-                best = np.take_along_axis(row, o, 1); bs = np.take_along_axis(srow, o, 1)
-        dosyazh = np.isfinite(best[:, 0]) & (best[:, 0] <= MAX_M)
+            D = dijkstra(G, directed=False, indices=idx, limit=LIMIT)[:, nodes]     # зупинки × цілі
+            Sb = np.where(np.isfinite(D) & (D <= TRN_R[b0:b0 + BATCH, None]),
+                          TRN_W[b0:b0 + BATCH, None] * np.exp(-np.minimum(D, 1e6) / TAU), 0.0).T
+            cat = np.concatenate([best, Sb], axis=1)
+            ci = np.concatenate([bs, np.broadcast_to(np.arange(b0, b0 + len(idx)), (nb, len(idx)))], axis=1)
+            o = np.argsort(-cat, axis=1)[:, :K_CIL]
+            best = np.take_along_axis(cat, o, 1); bs = np.take_along_axis(ci, o, 1)
+        dosyazh = best[:, 0] > 0
         A_ = np.where(dosyazh, ws, 0.0)
-        pryizd = transportom * A_ / A_.sum() if A_.sum() else A_
-        # маршрути від зупинок, згруповані за зупинкою
+        if not A_.sum(): return
+        prybulo = obs * A_ / A_.sum()
         po_zup = collections.defaultdict(list)
         for j in np.where(dosyazh)[0]:
-            d = best[j]; ok = np.isfinite(d) & (d <= MAX_M)
-            p = np.exp(-d[ok] / TAU); p /= p.sum()
-            for k, pk in zip(bs[j][ok], p): po_zup[int(k)].append((int(nodes[j]), pryizd[j] * pk))
+            ok = best[j] > 0
+            p = best[j][ok] / best[j][ok].sum()
+            for k, pk in zip(bs[j][ok], p): po_zup[int(k)].append((int(nodes[j]), prybulo[j] * pk))
         zk = sorted(po_zup)
         for b0 in range(0, len(zk), BATCH):
             idx = trn[zk[b0:b0 + BATCH]]
-            _D, Pr = dijkstra(G, directed=False, indices=idx, limit=MAX_M * 1.25, return_predecessors=True)
+            _D, Pr = dijkstra(G, directed=False, indices=idx, limit=LIMIT, return_predecessors=True)
             for r, k in enumerate(zk[b0:b0 + BATCH]):
                 for t, L in po_zup[k]: walk(Pr[r], int(trn[k]), t, L)
-        print(f'4) зворотний потік: {transportom:,.0f} осіб приїхали на роботу до {int(dosyazh.sum()):,} цілей '
-              f'від {len(zk):,} зупинок')
+        print(f'4) приїзд «{nazva}»: {obs:,.0f} осіб до {int(dosyazh.sum()):,} цілей від {len(zk):,} зупинок і входів')
+    pryizd(obsiah['робота'], *tn['робота'], 'робота')
+    pryizd(obsiah['приїжджі'], mp_n, mp_w, 'приїжджі')
 
     # ---- зведення по відрізках між перехрестями ----
-    # Навантаження відрізка = середнє по його ребрах, зважене на довжину;
-    # доріжка впритул уздовж дороги (≤ 35 м) — частина коридору вулиці.
-    SEG = VR.build(roads)
+    # Паралельні тротуари й доріжки впритул уздовж вулиці (≤ 35 м) — частина
+    # її коридору, і їхні потоки СКЛАДАЮТЬСЯ (рішення Андрія 07.10, п. 3):
+    # навантаження × довжина всіх ребер коридору ділиться на довжину осі
+    # вулиці — сума поперек, середнє вздовж. Раніше було середнє по ребрах, і
+    # вулиця з двома тротуарами мала половину потоку.
+    SEG = VR.build(VR.vulytsi(raw))
     seg_of = VR.rebra(SEG)
     CELL = 0.0006
     rgrid = collections.defaultdict(list)
@@ -423,7 +615,7 @@ def main():
                     d = math.hypot((pa - la) * my, (po - lo) * mx)
                     if d < bd: bd, best_ = d, s_
         return best_ if bd <= rad else None
-    acc = collections.defaultdict(float); ln = collections.defaultdict(float)
+    acc = collections.defaultdict(float)
     for (u, v), c in load.items():
         a, b = coord[u], coord[v]
         sid = seg_of.get((a, b))
@@ -431,14 +623,15 @@ def main():
             sid = owner((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
             if sid is None: continue
         d = dist_m(a, b) or 1.0
-        acc[sid] += c * d; ln[sid] += d
+        acc[sid] += c * d
     items = []
     for sid, s in SEG.items():
         g = s['pts']; stp = max(1, len(g) // 10)
         geo = [[round(p[0], 5), round(p[1], 5)] for p in g[::stp]]
         if geo[-1] != [round(g[-1][0], 5), round(g[-1][1], 5)]:
             geo.append([round(g[-1][0], 5), round(g[-1][1], 5)])
-        potik = int(round(TUDY_NAZAD * acc[sid] / ln[sid])) if ln.get(sid) else 0
+        L_os = sum(dist_m(p, q) for p, q in zip(g, g[1:])) or 1.0
+        potik = int(round(TUDY_NAZAD * acc[sid] / L_os)) if acc.get(sid) else 0
         items.append([geo, s['name'], potik, sid])
     items.sort(key=lambda x: -x[2])
     json.dump({'title': 'Прохідність (модельований потік людей, осіб на добу)', 'versiia': 2, 'items': items},
@@ -465,6 +658,42 @@ def main():
         top = max(hit, key=lambda x: x[2]); med = sorted(h[2] for h in hit)[len(hit) // 2]
         print(f'   {q}: макс {top[2]:,} (вище за {pct(top[2]):.0f}% відрізків), медіана {med:,} '
               f'({pct(med):.0f}%), відрізків {len(hit)}')
+    perevirka_metro(raw, items)
+
+
+def perevirka_metro(raw, items, log=print):
+    """Зовнішня перевірка (рішення Андрія 07.10, п. 5): пасажиропотік станцій
+    метро (2017) проти модельованого потоку в 300 м від входів — кореляція
+    рангів Спірмена. Міра станції — Σ потік × довжина відрізків, що мають
+    точку в 300 м від входу (люди, що підходять до станції, проходять тут).
+    Параметри під цю перевірку не підганяються."""
+    pp = os.path.join(DATA, 'metro_pasazhyropotik_2017.json')
+    if not os.path.exists(pp): log('   немає data/metro_pasazhyropotik_2017.json — перевірку пропущено'); return None
+    from scipy.stats import spearmanr
+    norm = lambda s: (s or '').replace('ʼ', "'").replace('’', "'").replace('«', '').replace('»', '').strip().lower()
+    PS = {norm(k): v for k, v in json.load(open(pp, encoding='utf-8'))['stantsii'].items()}
+    st = [e for e in raw.get('b1_metro') or [] if (e.get('tags') or {}).get('station') == 'subway'
+          and (e.get('tags') or {}).get('railway') == 'station']
+    vkh = [centr(e) for e in raw.get('b1_metro') or [] if (e.get('tags') or {}).get('railway') == 'subway_entrance']
+    tochky = collections.defaultdict(list)
+    for c in vkh:
+        if not c: continue
+        s_ = min(st, key=lambda e: dist_m(c, centr(e)), default=None)
+        if s_ is not None and dist_m(c, centr(s_)) <= 500: tochky[s_['id']].append(c)
+    g = Grid([tuple(p) for it in items for p in it[0]], cell=0.003)
+    vlas = [k for k, it in enumerate(items) for _p in it[0]]
+    dov = [sum(dist_m(p, q) for p, q in zip(it[0], it[0][1:])) for it in items]
+    rows = []
+    for e in st:
+        nm = norm((e.get('tags') or {}).get('name'))
+        if nm not in PS: continue
+        pts = tochky.get(e['id']) or [centr(e)]
+        vids = {vlas[k] for c in pts for _d, k in g.within(c[0], c[1], 300)}
+        rows.append((nm, PS[nm], sum(items[k][2] * dov[k] for k in vids) / 1000))
+    if len(rows) < 10: log(f'   метро: зіставлено лише {len(rows)} станцій — перевірку пропущено'); return None
+    rho, pv = spearmanr([r[1] for r in rows], [r[2] for r in rows])
+    log(f'   метро: {len(rows)} станцій, кореляція рангів Спірмена ρ = {rho:.2f} (p = {pv:.3g})')
+    return rho, rows
 
 
 if __name__ == '__main__':
