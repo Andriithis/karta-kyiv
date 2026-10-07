@@ -81,11 +81,19 @@ jobs:
           if [ "${{ github.event.inputs.bez_dampu }}" = "true" ]; then
             if ls data/kyiv_*.csv >/dev/null 2>&1; then
               echo "::notice::без свіжого дампу — беру збережений від $(cat data/_dump_data.txt 2>/dev/null || echo '?')"
-              exit 0
+            else
+              echo "::warning::збереженого дампу немає — запуск без нових документів"
+              echo "BEZ_DAMPU=1" >> "$GITHUB_ENV"
             fi
-            echo "::error::збереженого дампу немає — без свіжого не обійтися"; exit 1
+            exit 0
           fi
-          python src/step0_fetch_dump.py $(date +%Y)
+          # Архів не приїхав і збереженого немає — запуск не зупиняється, а йде
+          # на знімку events.csv.gz без нових документів (Андрій 07.10, варіант 2)
+          if ! python src/step0_fetch_dump.py $(date +%Y); then
+            echo "::warning::дампу ЄДРСР немає — запуск без нових документів; у рішень $(date +%Y) не буде посилань на текст до наступного дампу"
+            echo "BEZ_DAMPU=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
           # минулий рік добираємо раз на місяць (перший понеділок)
           if [ "$(date +%d)" -le 07 ]; then
             python src/step0_fetch_dump.py $(( $(date +%Y) - 1 )) || true
@@ -101,7 +109,7 @@ jobs:
           python src/step0_fetch_dump.py --posylannya || true
 
       - name: Зберегти дамп ЄДРСР на наступні запуски
-        if: ${{ github.event.inputs.bez_dampu != 'true' }}
+        if: ${{ github.event.inputs.bez_dampu != 'true' && env.BEZ_DAMPU != '1' && hashFiles('data/kyiv_*.csv') != '' }}
         uses: actions/cache/save@v4
         with:
           path: |

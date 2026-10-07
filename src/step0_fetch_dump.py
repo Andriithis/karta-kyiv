@@ -70,24 +70,44 @@ def find_url(year):
     return None
 
 def download(url, zpath):
-    """качає архів; повертає True, якщо файл приїхав"""
-    for i in range(1, TRIES + 1):
+    """качає архів; повертає True, якщо файл приїхав цілим.
+    07.10 портал віддав 171 МБ з 290 і закрив з'єднання без помилки — архів
+    «приїхав» обірваним. Тепер розмір звіряється із заявленим, а обірване
+    докачується з того самого місця (Range: сервер відповідає 206), і zip
+    перевіряється до розбору."""
+    import zipfile
+    total = None
+    for i in range(1, TRIES + 2):
+        have = os.path.getsize(zpath) if os.path.exists(zpath) else 0
+        h = dict(UA)
+        if have: h['Range'] = f'bytes={have}-'
         try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=1800) as r, \
-                 open(zpath, 'wb') as f:
-                n = 0
-                while True:
-                    chunk = r.read(1 << 20)
-                    if not chunk: break
-                    f.write(chunk); n += len(chunk)
-                    if n % (50 << 20) < (1 << 20): print(f'   {n/1048576:.0f} МБ', flush=True)
-            print(f'   завантажено {os.path.getsize(zpath)/1048576:.0f} МБ')
-            return True
+            with urllib.request.urlopen(urllib.request.Request(url, headers=h), timeout=1800) as r:
+                if have and r.status != 206:
+                    have = 0                      # сервер не докачує — з початку
+                cr = r.headers.get('Content-Range') or ''
+                if '/' in cr: total = int(cr.rsplit('/', 1)[1])
+                elif r.headers.get('Content-Length') and not have: total = int(r.headers['Content-Length'])
+                if have: print(f'   докачую з {have/1048576:.0f} МБ', flush=True)
+                with open(zpath, 'ab' if have else 'wb') as f:
+                    n = have
+                    while True:
+                        chunk = r.read(1 << 20)
+                        if not chunk: break
+                        f.write(chunk); n += len(chunk)
+                        if n % (50 << 20) < (1 << 20): print(f'   {n/1048576:.0f} МБ', flush=True)
         except Exception as e:
-            print(f'   спроба {i} з {TRIES}: завантаження обірвалось ({type(e).__name__})',
-                  flush=True)
-            if os.path.exists(zpath): os.remove(zpath)
-            if i < TRIES: time.sleep(PAUSE)
+            print(f'   спроба {i}: завантаження обірвалось ({type(e).__name__})', flush=True)
+        got = os.path.getsize(zpath) if os.path.exists(zpath) else 0
+        if total and got < total:
+            print(f'   приїхало {got/1048576:.0f} з {total/1048576:.0f} МБ — докачую', flush=True)
+            time.sleep(PAUSE); continue
+        if got and zipfile.is_zipfile(zpath):
+            print(f'   завантажено {got/1048576:.0f} МБ, архів цілий')
+            return True
+        print(f'   спроба {i}: архів не цілий — качаю з початку', flush=True)
+        if os.path.exists(zpath): os.remove(zpath)
+        time.sleep(PAUSE)
     return False
 
 # ---- ФОРМА РІШЕННЯ (ZAVDANNYA-ADRESY.md, п.1) ----

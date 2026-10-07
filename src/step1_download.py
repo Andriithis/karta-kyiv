@@ -98,6 +98,13 @@ def load_tasks(done):
     rows, seen = [], set()
     files = sorted(glob.glob(os.path.join(DATA, 'kyiv_*.csv')))
     if not files:
+        # Дамп не приїхав і збереженого немає (update.yml ставить BEZ_DAMPU):
+        # база — зі знімка events.csv.gz, нових документів цього разу немає;
+        # у рішень поточного року на карті не буде посилання на текст до
+        # наступного вдалого дампу (Андрій 07.10, варіант 2)
+        if os.environ.get('BEZ_DAMPU'):
+            print('УВАГА: дампу ЄДРСР немає — нових документів не беру, працюю на знімку')
+            return []
         print('ПОМИЛКА: покладіть kyiv_2024.csv тощо у папку data'); sys.exit(1)
     for fp in files:
         with open(fp, encoding='utf-8-sig') as fh:
