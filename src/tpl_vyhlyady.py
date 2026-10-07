@@ -203,11 +203,69 @@ function riskPopup(o,ll){
  let h=`<div class="rpop"><b>${o.pt?esc(s.typ):esc(s.name||'без назви')}</b>`+
   riskRows(s,o.pt).map(t=>`<div class="sub">${t}</div>`).join('')+riskWhence(s).map(t=>`<div class="rmeth">${esc(t)}</div>`).join('');
  const k0=s.kinds.filter(x=>typeOn(x.gi))[0]; if(k0) h+=factRows(k0.fx&&k0.fx[0]&&k0.fx[0].length>1?k0.fx:null);
+ // Скарги 1551 у 50 м (перехрестя — 30 м): рядок, що розгортає список, —
+ // у вікні ризику вкладок немає (RISHENNYA 35.10)
+ const sk=skRyzyk(o);
+ if(sk&&sk.length) h+=`<button class="rsk-b" data-rsk="1" aria-expanded="false">Скарги (${fmt(sk.length)})</button><div class="rsk" hidden>${skHTML(sk,50,true)}</div>`;
  h+=`<div class="rmeth"><a class="rdoc" style="display:inline;margin:0" href="skhozhi-umovy.html" target="_blank" rel="noopener">Як пораховано ↗</a></div></div>`;
  if(POPUP) POPUP.remove(); clearNear();
  const w=document.createElement('div'); w.innerHTML=h;
+ const rb=w.querySelector('[data-rsk]');
+ if(rb) rb.onclick=()=>{const l=w.querySelector('.rsk'); l.hidden=!l.hidden; rb.setAttribute('aria-expanded',String(!l.hidden))};
+ // файл скарг ще їде — вікно домалюється, коли прийде, якщо воно ще відкрите
+ if(sk===null&&SKG===null&&SKG_P) SKG_P.then(()=>{ if(POPUP&&POPUP._sk===o) riskPopup(o,ll)});
  POPUP=new maplibregl.Popup({maxWidth:'340px',anchor:'bottom',focusAfterOpen:false,closeOnClick:false}).setLngLat(ll).setDOMContent(w).addTo(map);
+ POPUP._sk=o;
  keepClear(POPUP,[ll.lng,ll.lat],0)}
+// ==== СКАРГИ 1551 — вкладка «Скарги (N)» (RISHENNYA 35.10; ZAVDANNYA-32, ч. 9) ====
+// Файл skargy.json поруч (map_skargy.py) тягнемо, коли вперше відкривають
+// картку; поки його немає, вкладки немає, а прийшов — картка малюється знову.
+// Скарги видно завжди, навіть якщо на ризик вони не впливають: це голос
+// мешканців місця. Без пояснень і без «причини» — лише дата, зміст, результат.
+let SKG=null, SKG_P=null, SK_LIM=50, SK_POPUP=null;
+function skargy(){
+ if(!SKG_P) SKG_P=fetch('skargy.json').then(r=>r.ok?r.json():null).catch(()=>null).then(d=>{
+  if(!d){SKG=false; return SKG}
+  const d0=Date.parse(d.d0), C=0.001, g=new Map();
+  d.la=d.s.map(x=>x[0]/1e5); d.lo=d.s.map(x=>x[1]/1e5);
+  d.dt=d.s.map(x=>new Date(d0+x[2]*864e5).toISOString().slice(0,10));
+  d.la.forEach((la,j)=>{const k=Math.floor(la/C)+','+Math.floor(d.lo[j]/C); (g.get(k)||g.set(k,[]).get(k)).push(j)});
+  d.g=g; SKG=d;
+  if(CELL) renderCell(); else if(PLACE) renderPlace();
+  return SKG});
+ return SKG}
+// усі скарги в r м від будь-якої з точок [[шир, довг], …]
+function skBlyzko(pts,r){const d=SKG, C=0.001, out=new Set();
+ for(const [la,lo] of pts){const my=111320, mx=111320*Math.cos(la*Math.PI/180);
+  const ci=Math.floor(la/C), cj=Math.floor(lo/C), n=Math.ceil(r/(C*mx))+1;
+  for(let i=ci-n;i<=ci+n;i++) for(let j=cj-n;j<=cj+n;j++) for(const k of d.g.get(i+','+j)||[])
+   if(Math.hypot((d.la[k]-la)*my,(d.lo[k]-lo)*mx)<=r) out.add(k)}
+ return [...out].sort((a,b)=>a-b)}      // файл уже впорядкований: новіші вгорі
+// кожні ~5 м точок уздовж лінії — щоб «50 м від відрізка», а не від вершин
+function skLinia(g,r){const pts=[];
+ for(let i=0;i+1<g.length;i++){const a=g[i], b=g[i+1], L=Math.hypot((b[0]-a[0])*111320,(b[1]-a[1])*71000), n=Math.max(1,Math.ceil(L/5));
+  for(let t=0;t<n;t++) pts.push([a[0]+(b[0]-a[0])*t/n,a[1]+(b[1]-a[1])*t/n])}
+ if(g.length) pts.push(g[g.length-1]);
+ return skBlyzko(pts,r)}
+// для картки: адреса — той самий будинок; проблема — її адреси й 30 м
+// (R_MISCE, як у голосі мешканців, але всі види); сота — скарги в соті
+function skMisce(d){ if(!skargy()) return null;
+ if(d.pr){const ii=[...new Set((d.pr.ev&&d.pr.ev.length?d.pr.ev:[[PLACE.i,0]]).map(r=>r[0]))];
+  return skBlyzko(ii.map(i=>[P[i][0],P[i][1]]),30)}
+ return d.p[3]?(SKG.a[PLACE.i]||[]):[]}
+function skHex(hex){ if(!skargy()) return null;
+ const [cx,cy,R_]=hex, out=[];
+ for(const k of skBlyzko([[cy/MY_,cx/MX_]],R_*1.01)){const [_k,x,y]=hexAt(SKG.la[k],SKG.lo[k],R_);
+  if(Math.abs(x-cx)<1&&Math.abs(y-cy)<1) out.push(k)}
+ return out}
+function skRyzyk(o){ if(!skargy()) return null;
+ return o.pt?skBlyzko([[o.s.la,o.s.lo]],/перехрест/i.test(o.s.typ||'')?30:50):skLinia(o.s.g,50)}
+function skHTML(ids,lim,bezShche){const d=SKG;
+ return ids.slice(0,lim).map(k=>`<div class="kp-dec kp-sk"><div class="l1"><b>${esc(fmtDate(d.dt[k]))}</b></div>`+
+   `<div class="l2">${esc(d.c[d.s[k][3]])}</div><div class="l3">${esc(d.r[d.s[k][4]])}</div></div>`).join('')+
+  (ids.length>lim?(bezShche?`<div class="tt">ще ${fmt(ids.length-lim)}</div>`:`<button class="kp-lnk" data-skmore="1">ще ${Math.min(50,ids.length-lim)}</button>`):'')}
+document.addEventListener('click',e=>{ if(!e.target.closest('[data-skmore]')) return;
+ SK_LIM+=50; if(CELL) renderCell(); else if(PLACE) renderPlace()},true);
 // ==== КАРТКА СОТИ / КІЛЬЦЯ (7.11, макет «Картка соти», версія 2) ====
 let CELL=null;   // {kind:'СОТА'|'КІЛЬЦЕ', ad:[індекси P], tab, open, page, hex:[cx,cy,R]|null, ll}
 function cellEvs(ad){const st=LASTST||computeVis(), out=[];
@@ -231,8 +289,11 @@ function renderCell(){
  const top=[...byA.entries()].sort((a,b)=>b[1]-a[1])[0];
  const g=new Array(M.groups.length).fill(0); evs.forEach(r=>g[CATTH[EVR(r)[1]]]++);
  const probs=CELL.ad.map(i=>[i,probsOf(P[i])]).filter(x=>x[1].length);
+ const sk=CELL.hex?skHex(CELL.hex):null;
+ if(CELL.tab==='skarg'&&!(sk&&sk.length)) CELL.tab='ogl';
  let body='';
- if(CELL.tab==='ogl'){
+ if(CELL.tab==='skarg') body=skHTML(sk,SK_LIM);
+ else if(CELL.tab==='ogl'){
   if(probs.length) body+=probs.slice(0,3).map(([i,ps])=>`<div class="kp-pc" role="button" tabindex="0" data-cp="${i}"><div class="kp-pch">Проблема · ${esc(ps[0].theme)}</div>`+
    `<div class="kp-pct">${esc(ps[0].mech)}</div><div class="tt">${esc(P[i][2])}</div></div>`).join('');
   body+=`<div class="kc-vydy">${g.map((v,gi)=>v?`<button data-cv="${gi}" aria-expanded="${CELL.open===gi}"><i style="background:${PALA[gi%PALA.length]}"></i>${esc(shortOf(gi))}<b>${fmt(v)}</b></button>`+
@@ -260,7 +321,8 @@ function renderCell(){
   <div class="kp-sum">${fmt(n)} ${pl(n,'подія','події','подій')} · ${fmt(adN)} ${pl(adN,'адреса','адреси','адрес')}</div>
   <div class="kc-strip">${g.map((v,gi)=>v?`<i style="flex:${v};background:${PALA[gi%PALA.length]}"></i>`:'').join('')}</div>
   <button class="kp-x" data-kp="close" aria-label="Закрити (Esc)" title="Закрити (Esc)">×</button></div>
-  <div class="kp-tabs" role="tablist"><button role="tab" data-ct="ogl" aria-selected="${CELL.tab==='ogl'}">Огляд</button><button role="tab" data-ct="rish" aria-selected="${CELL.tab==='rish'}">Рішення (${fmt(n)})</button></div>
+  <div class="kp-tabs" role="tablist"><button role="tab" data-ct="ogl" aria-selected="${CELL.tab==='ogl'}">Огляд</button><button role="tab" data-ct="rish" aria-selected="${CELL.tab==='rish'}">Рішення (${fmt(n)})</button>`+
+  (sk&&sk.length?`<button role="tab" data-ct="skarg" aria-selected="${CELL.tab==='skarg'}">Скарги (${fmt(sk.length)})</button>`:'')+`</div>
   <div class="kp-body">${body}</div>`;
  el.hidden=false; el.classList.add('kp-cell'); document.body.classList.add('kp-open');
 }
@@ -271,7 +333,7 @@ placeEl().addEventListener('click',e=>{ if(e.target.closest('[data-kp="close"]')
  const t=e.target;
  if(t.closest('.kp-head')&&!t.closest('[data-kp]')&&matchMedia('(max-width:700px)').matches){placeEl().classList.toggle('kp-tall'); return}
  const x=t.closest('[data-kp="close"]'); if(x){e.stopImmediatePropagation(); return closeCell()}
- const ct=t.closest('[data-ct]'); if(ct){CELL.tab=ct.dataset.ct; return renderCell()}
+ const ct=t.closest('[data-ct]'); if(ct){CELL.tab=ct.dataset.ct; SK_LIM=50; return renderCell()}
  const cv=t.closest('[data-cv]'); if(cv){const gi=+cv.dataset.cv; CELL.open=CELL.open===gi?-1:gi; return renderCell()}
  const cp=t.closest('[data-cp]'); if(cp){const i=+cp.dataset.cp; closeCell(); return openAt(i)}
  if(t.closest('[data-cmore]')){CELL.page++; return renderCell()}

@@ -530,6 +530,10 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
                   ensure_ascii=False, separators=(',', ':'))
         tot += os.path.getsize(fp)
     print(f'   справи адрес: {len(by_d)} файлів у spravy/ ({tot/1048576:.1f} МБ)')
+    # скарги 1551 для вкладки «Скарги N» (RISHENNYA 35.10) — теж окремим файлом
+    if not district:
+        import map_skargy
+        map_skargy.zibraty(P, os.path.dirname(dst) or '.')
 
     open(dst, 'w', encoding='utf-8').write(html)
     print(f'готово: {os.path.basename(dst)} ({os.path.getsize(dst)/1048576:.1f} МБ)')

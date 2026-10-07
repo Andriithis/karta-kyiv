@@ -136,6 +136,12 @@ html .tsw button{min-height:32px;display:inline-flex;align-items:center}
  border-bottom:2px solid transparent;box-sizing:border-box}
 #kplace .kp-tabs button[aria-selected="true"]{color:var(--ink);border-color:var(--ink)}
 #kplace .kp-tabs button:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}
+/* з «Скаргами» вкладок чотири — на телефоні підпис не ламається на два рядки,
+   вкладки гортаються вбік */
+#kplace .kp-tabs{overflow-x:auto;scrollbar-width:none}
+#kplace .kp-tabs::-webkit-scrollbar{display:none}
+#kplace .kp-tabs button{white-space:nowrap;flex:none}
+@media (max-width:420px){#kplace .kp-tabs button{padding:0 6px;font-size:12.5px}}
 #kplace .kp-body{overflow:auto;padding:10px 16px 14px;scrollbar-width:none;overscroll-behavior:contain}
 #kplace .kp-body::-webkit-scrollbar{display:none}
 #kplace .kp-pc{border-left:3px solid var(--ink);background:var(--sunk);border-radius:6px;padding:8px 10px;margin-bottom:8px}
@@ -157,6 +163,14 @@ html .tsw button{min-height:32px;display:inline-flex;align-items:center}
 #kplace .kp-dec.open .l3{white-space:normal;color:var(--ink)}
 #kplace .kp-dec .l4{font-size:12px;margin-top:4px;color:var(--dim)}
 #kplace .kp-dec .l4 a{color:var(--ink)}
+/* скарги 1551 (RISHENNYA 35.10): рядок як у рішення, без розгортання — текст одразу повністю */
+#kplace .kp-dec.kp-sk{cursor:default}
+#kplace .kp-sk .l3,.rpop .kp-sk .l3{white-space:normal}
+.rpop .rsk-b{display:block;background:none;border:0;padding:0;margin-top:8px;font:inherit;font-size:12px;color:var(--ink);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.rpop .rsk{max-height:200px;overflow-y:auto;margin-top:4px}
+.rpop .kp-dec{border-top:1px solid var(--rule);padding:6px 0}
+.rpop .kp-dec .l1{font-size:12px}
+.rpop .kp-dec .l2,.rpop .kp-dec .l3{font-size:11.5px;color:var(--dim);line-height:1.35}
 #kplace .kp-near{list-style:none;margin:6px 0 0;padding:0}
 #kplace .kp-near li{display:flex;gap:8px;align-items:center;min-height:32px;border-top:1px solid var(--rule);font-size:12.5px;cursor:pointer}
 #kplace .kp-near li.hl{background:var(--sunk)}

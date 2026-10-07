@@ -554,7 +554,10 @@ function renderPlace(){
  const dkey=PLACE.i+'|'+PLACE.pi;
  const body=el.querySelector('.kp-body'), top=body?body.scrollTop:0;
  const nDec=evs.length;
- const tabs=[['ogl','Огляд'],['rish',`Рішення (${nDec})`]].concat(p[3]?[['near',`Що поруч (${PLACE.near.length})`]]:[]);
+ // «Скарги (N)» — поруч із «Рішення» (RISHENNYA 35.10); скарг немає — вкладки немає
+ const sk=skMisce(d);
+ const tabs=[['ogl','Огляд'],['rish',`Рішення (${nDec})`]].concat(sk&&sk.length?[['skarg',`Скарги (${fmt(sk.length)})`]]:[])
+  .concat(p[3]?[['near',`Що поруч (${PLACE.near.length})`]]:[]);
  if(!tabs.some(t=>t[0]===PLACE.tab)) PLACE.tab='ogl';
  const title=p[3]?(p[2]||'адреса не визначена'):streetName(p)+' · вся вулиця';
  el.innerHTML=`<div class="kp-head">
@@ -565,7 +568,7 @@ function renderPlace(){
    <button class="kp-x" data-kp="close" aria-label="Закрити (Esc)" title="Закрити (Esc)">×</button>
   </div>
   <div class="kp-tabs" role="tablist">${tabs.map(([k,n])=>`<button role="tab" data-kp-tab="${k}" aria-selected="${k===PLACE.tab}">${n}</button>`).join('')}</div>
-  <div class="kp-body">${PLACE.tab==='ogl'?oglHTML(d):PLACE.tab==='rish'?rishHTML(d,DOCS_NOW.key===dkey?DOCS_NOW.cs:undefined):nearHTML()}</div>`;
+  <div class="kp-body">${PLACE.tab==='ogl'?oglHTML(d):PLACE.tab==='rish'?rishHTML(d,DOCS_NOW.key===dkey?DOCS_NOW.cs:undefined):PLACE.tab==='skarg'?skHTML(sk,SK_LIM):nearHTML()}</div>`;
  el.hidden=false; document.body.classList.add('kp-open');
  el.querySelector('.kp-body').scrollTop=top;
  // «Що поруч» — на карті лише поки відкрита його вкладка, з тими самими
@@ -607,7 +610,7 @@ function placeKeepVisible(i){
 }
 placeEl().addEventListener('click',e=>{
  if(!PLACE) return;
- const t=e.target.closest('[data-kp-tab]'); if(t){PLACE.tab=t.dataset.kpTab; PLACE.open=-1; renderPlace(); return}
+ const t=e.target.closest('[data-kp-tab]'); if(t){PLACE.tab=t.dataset.kpTab; PLACE.open=-1; SK_LIM=50; renderPlace(); return}
  const pi=e.target.closest('[data-kp-pi]'); if(pi){PLACE.pi=+pi.dataset.kpPi; PLACE.open=-1; renderPlace(); return}
  const k=e.target.closest('[data-kp]'); if(k){ if(k.dataset.kp==='close') closePlace(); else if(k.dataset.kp==='arts'){PLACE.allArts=true; renderPlace()} return}
  if(e.target.closest('a')) return;
