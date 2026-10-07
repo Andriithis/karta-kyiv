@@ -19,3 +19,4 @@ vykhid/
 
 # скарги 1551 — у гілці analiz-1551; у main лише для збірки (update.yml)
 data/1551/
+data/_dump_data.txt

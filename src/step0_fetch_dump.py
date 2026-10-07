@@ -292,6 +292,11 @@ def main():
                 print(f'   Архів пошкоджений або обірваний ({type(e).__name__}). Рік пропущено.'); continue
             give_up(f'Архів пошкоджений або обірваний ({type(e).__name__}).')
         os.remove(zpath)
+        # Дата свіжого дампу — для кешу Actions (update.yml): портал мовчить —
+        # запуск бере збережений і каже, від якого він дня
+        if year == this_year and not only_forms:
+            open(os.path.join(DATA, '_dump_data.txt'), 'w', encoding='utf-8').write(
+                datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M UTC') + '\n')
         # Поточний рік і так приходить у kyiv_*.csv кожного запуску; у
         # репозиторій ідуть лише минулі роки, які інакше не пережили б запуск.
         if year < this_year:

@@ -19,6 +19,9 @@ on:
         description: 'Дослідження 1551 → події (звіт ZVIT-1551, ~1–1,5 год) — окремим запуском від перенавчання'
         type: boolean
         default: false
+      bez_dampu:
+        description: 'Без свіжого дампу ЄДРСР — останній збережений (коли портал data.gov.ua не відповідає)'
+        type: boolean
       n_stab:
         description: 'Прогонів відбору стійкості (100 за методикою; менше — лише якщо не вкладається в час)'
         default: '100'
@@ -58,8 +61,30 @@ jobs:
             echo "::warning::знімка OSM немає — запустіть «Знімок OSM»"
           fi
 
+      # Дамп ЄДРСР (kyiv_*.csv) між запусками живе в кеші Actions: 07.10 портал
+      # data.gov.ua не відповідав, а без дампу крок 0 зупиняв увесь запуск, хоча
+      # дамп за той самий день уже качав ранковий. Тепер крок 0 бере останній
+      # збережений, якщо портал мовчить (step0_fetch_dump продовжує, коли
+      # kyiv_*.csv є), або одразу — галочкою «без свіжого дампу».
+      - name: Останній збережений дамп ЄДРСР
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/kyiv_*.csv
+            data/_dump_data.txt
+          key: edrsr-dump-${{ github.run_id }}
+          restore-keys: edrsr-dump-
+
       - name: Крок 0 — свіжий дамп ЄДРСР
         run: |
+          if [ -f data/_dump_data.txt ]; then echo "збережений дамп — від $(cat data/_dump_data.txt)"; fi
+          if [ "${{ github.event.inputs.bez_dampu }}" = "true" ]; then
+            if ls data/kyiv_*.csv >/dev/null 2>&1; then
+              echo "::notice::без свіжого дампу — беру збережений від $(cat data/_dump_data.txt 2>/dev/null || echo '?')"
+              exit 0
+            fi
+            echo "::error::збереженого дампу немає — без свіжого не обійтися"; exit 1
+          fi
           python src/step0_fetch_dump.py $(date +%Y)
           # минулий рік добираємо раз на місяць (перший понеділок)
           if [ "$(date +%d)" -le 07 ]; then
@@ -74,6 +99,15 @@ jobs:
           # номери справ і посилання минулих років (data/posylannya): качає
           # лише ті роки, яких ще немає, тобто зазвичай нічого
           python src/step0_fetch_dump.py --posylannya || true
+
+      - name: Зберегти дамп ЄДРСР на наступні запуски
+        if: ${{ github.event.inputs.bez_dampu != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/kyiv_*.csv
+            data/_dump_data.txt
+          key: edrsr-dump-${{ github.run_id }}
 
       - name: Крок 1 — тексти рішень і адреси
         env:
