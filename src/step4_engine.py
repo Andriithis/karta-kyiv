@@ -791,7 +791,12 @@ def main():
         facs = factors(fT, sT['cols'], sT, k0=K0)
         facsE = factors(fE, sE['cols'], sE, k0=XL.shape[1])
         facs0 = factors(f0, s0['cols'], s0)
-        ludy = {cname[j]: sexp(float(fT.params[2 + k])) for k, j in enumerate(JL)}
+        # з 95% інтервалом, як у factors(): RR людей без інтервалу не каже,
+        # чи прохідність справді щось додає (Андрій 07.10)
+        ciT = fT.conf_int()
+        ludy = {cname[j]: dict(RR=sexp(float(fT.params[2 + k])), RR_від=sexp(ciT[2 + k][0]),
+                               RR_до=sexp(ciT[2 + k][1]))
+                for k, j in enumerate(JL)}
 
         # ---- дві мірки — суд і скарги (35.3) ----
         dvi = None
