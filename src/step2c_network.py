@@ -90,6 +90,12 @@ MAGAZYNY_KAFE = ('shop24', 'b1_super', 'b1_alk', 'b1_mall', 'b1_cafe', 'b1_fastf
 MAGISTRALI = ('motorway', 'motorway_link', 'trunk', 'trunk_link')
 PRYVIAZKA_M, SHMATOK_M = 25.0, 50.0
 
+# ---- ЧИЯ ЛІНІЯ (рішення Андрія 07.10, друге) ----
+# Тротуар уздовж широкої магістралі буває за 40–60 м від осі; паралельність
+# відрізняє його від доріжки двору поруч.
+PARALEL_M, PARALEL_KUT, BLYZKO_M = 60.0, 20.0, 35.0
+KROK_OSI_M = 20.0
+
 # ---- БУДИНКИ ----
 ZHYTLO = ('apartments', 'residential', 'house', 'dormitory', 'detached', 'semidetached_house', 'terrace')
 POVERHY_TYPU = {'house': 1.5, 'detached': 1.5, 'semidetached_house': 1.5, 'terrace': 2,
@@ -591,39 +597,58 @@ def main():
     pryizd(obsiah['приїжджі'], mp_n, mp_w, 'приїжджі')
 
     # ---- зведення по відрізках між перехрестями ----
-    # Паралельні тротуари й доріжки впритул уздовж вулиці (≤ 35 м) — частина
-    # її коридору, і їхні потоки СКЛАДАЮТЬСЯ (рішення Андрія 07.10, п. 3):
-    # навантаження × довжина всіх ребер коридору ділиться на довжину осі
-    # вулиці — сума поперек, середнє вздовж. Раніше було середнє по ребрах, і
-    # вулиця з двома тротуарами мала половину потоку.
+    # Тротуари й доріжки вздовж вулиці — частина її коридору, і їхні потоки
+    # СКЛАДАЮТЬСЯ (рішення Андрія 07.10, п. 3): навантаження × довжина всіх
+    # ребер коридору ділиться на довжину осі — сума поперек, середнє вздовж.
+    # Чия лінія (рішення Андрія 07.10, друге): паралельна осі (кут ≤ 20°) у
+    # 60 м — тротуар цієї вулиці; решта — найближча вісь у 35 м. Вісь узята
+    # точками кожні 20 м: раніше бралася середина шматка осі, і тротуар біля
+    # кінця довгого прямого шматка магістралі не належав нікому.
+    from scipy.spatial import cKDTree
     SEG = VR.build(VR.vulytsi(raw))
     seg_of = VR.rebra(SEG)
-    CELL = 0.0006
-    rgrid = collections.defaultdict(list)
-    for sid, s in SEG.items():
-        for a, b in zip(s['pts'], s['pts'][1:]):
-            mla, mlo = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
-            rgrid[(int(mla / CELL), int(mlo / CELL))].append((mla, mlo, sid))
-
-    def owner(la, lo, rad=35.0):
-        my, mx = mdeg(la)
-        ci, cj = int(la / CELL), int(lo / CELL)
-        best_, bd = None, 1e18
-        for di in (-1, 0, 1):
-            for dj in (-1, 0, 1):
-                for pa, po, s_ in rgrid.get((ci + di, cj + dj), ()):
-                    d = math.hypot((pa - la) * my, (po - lo) * mx)
-                    if d < bd: bd, best_ = d, s_
-        return best_ if bd <= rad else None
+    KX = 111320.0 * math.cos(math.radians(50.45))
+    xy = lambda la, lo: (lo * KX, la * 111320.0)
+    SX, SY, SA, SS = [], [], [], []
+    sids = list(SEG)
+    for si, sid in enumerate(sids):
+        for a, b in zip(SEG[sid]['pts'], SEG[sid]['pts'][1:]):
+            (x1, y1), (x2, y2) = xy(*a), xy(*b)
+            L = math.hypot(x2 - x1, y2 - y1)
+            if L <= 0: continue
+            kut = math.degrees(math.atan2(y2 - y1, x2 - x1)) % 180
+            for t in range(int(L // KROK_OSI_M) + 1):
+                f = min(1.0, (t * KROK_OSI_M + KROK_OSI_M / 2) / L)
+                SX.append(x1 + (x2 - x1) * f); SY.append(y1 + (y2 - y1) * f); SA.append(kut); SS.append(si)
+    SA, SS = np.array(SA), np.array(SS)
+    tree = cKDTree(np.column_stack([SX, SY]))
     acc = collections.defaultdict(float)
+    reshta = []                               # ребра не з осі: (середина, кут, навантаження × довжина)
     for (u, v), c in load.items():
         a, b = coord[u], coord[v]
-        sid = seg_of.get((a, b))
-        if sid is None:
-            sid = owner((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
-            if sid is None: continue
         d = dist_m(a, b) or 1.0
-        acc[sid] += c * d
+        sid = seg_of.get((a, b))
+        if sid is not None:
+            acc[sid] += c * d; continue
+        (x1, y1), (x2, y2) = xy(*a), xy(*b)
+        reshta.append(((x1 + x2) / 2, (y1 + y2) / 2, math.degrees(math.atan2(y2 - y1, x2 - x1)) % 180, c * d))
+    if reshta:
+        R = np.array(reshta)
+        dd, ix = tree.query(R[:, :2], k=12, distance_upper_bound=PARALEL_M)
+        ok = np.isfinite(dd)
+        ixc = np.where(ok, ix, 0)
+        dk = np.abs(R[:, 2:3] - SA[ixc]); dk = np.minimum(dk, 180 - dk)
+        par = ok & (dk <= PARALEL_KUT)
+        perp = ok & (dd <= BLYZKO_M)
+        # найближча паралельна точка осі; немає — найближча будь-яка в 35 м
+        j_par = np.where(par.any(1), par.argmax(1), -1)
+        j_blyz = np.where(perp.any(1), perp.argmax(1), -1)
+        j = np.where(j_par >= 0, j_par, j_blyz)
+        rows = np.where(j >= 0)[0]
+        for r_, s_ in zip(rows, SS[ixc[rows, j[rows]]]):
+            acc[sids[s_]] += R[r_, 3]
+        print(f'   ребер поза осями {len(R):,}: паралельних у {PARALEL_M:.0f} м {int((j_par >= 0).sum()):,}, '
+              f'інших у {BLYZKO_M:.0f} м {int(((j_par < 0) & (j_blyz >= 0)).sum()):,}, нічиїх {int((j < 0).sum()):,}')
     items = []
     for sid, s in SEG.items():
         g = s['pts']; stp = max(1, len(g) // 10)
