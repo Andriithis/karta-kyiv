@@ -488,15 +488,16 @@ PROBLEMA = ('хронічна', 'фіксує поліція')       # стат�
 _KL = []
 
 
-def zlyty_adresy(cnt):
+def zlyty_adresy(cnt, pts=None):
     """[(адреса, подій)]: одна адреса — одне написання (ZAVDANNYA-32, 2.3;
     33, В5). «пл. Спортивна, 1-А» і «вул. Спортивна, 1А», «В. Васильківська»
     і «Велика Васильківська», «С. Русової» і «Софії Русової» — та сама
     будівля. Ключ — adr_kliuch (тип відкинуто, ініціали розгорнуто, номер без
     дефіса); поверх нього — той самий номер і повні слова однієї назви
-    всередині другої: адреси тут уже з одного місця (30 м), тож скорочене
-    ім'я чи ініціал без пробілу («М.Незалежності») — не інша вулиця. Підпис —
-    найчастіше написання."""
+    всередині другої. Зливаються лише написання в одній точці (≤ R_MISCE,
+    30 м; pts — адреса -> (шир, довг)): у лінії чи ділянці той самий номер
+    на різних вулицях — різні будинки (Андрій 07.10). Підпис — найчастіше
+    написання."""
     import re as re_
     import adr_kliuch as AK
     if not _KL: _KL.append(AK.Kliuch())
@@ -509,7 +510,8 @@ def zlyty_adresy(cnt):
             gr.append([a, n, None, None]); continue
         sl = {w for w in k[0].split() if len(w) > 2}
         for g in gr:
-            if g[2] == k[1] and g[3] is not None and (sl <= g[3] or g[3] <= sl):
+            blyzko = bool(pts) and a in pts and g[0] in pts and dist(pts[a], pts[g[0]]) <= R_MISCE
+            if blyzko and g[2] == k[1] and g[3] is not None and (sl <= g[3] or g[3] <= sl):
                 g[1] += n; g[3] |= sl; break
         else:
             gr.append([a, n, k[1], sl])
@@ -847,10 +849,12 @@ def run(V=None, log=print, FACT=None):
         th = M.simtheme(sim)
         g, st, s = vorota(evs, S, kind_q, sim)
         u = s.pop('evs', [])
-        addrs = zlyty_adresy(collections.Counter(e['adr'] for e in u))
+        ap = {}
+        for e in u: ap.setdefault(e['adr'], tuple(e['p']))
+        addrs = zlyty_adresy(collections.Counter(e['adr'] for e in u), ap)
         rec = dict(riven=riven, sim=sim, vyd=th, mekhanizm=M.simname(sim), status=st, vorota=g,
                    p=list(rep), adresy=[a for a, _ in addrs],
-                   adresy_n=addrs, klas='B', **s)
+                   adresy_n=addrs, adresy_p=ap, klas='B', **s)
         if u:
             # doc_id подій, що їх порахували ворота, — картка на карті показує
             # саме їх, з усіх адрес місця (завдання 29, п. 2)
@@ -1053,10 +1057,11 @@ def run(V=None, log=print, FACT=None):
         # яких заявних 20. Заявних немає — це проблема, яку фіксує поліція.
         yadro = [x for x in c if x['status'] == 'хронічна'] or c
         evs = [e for x in yadro for e in pary_ev.get(id(x), ())]
-        adr = collections.Counter()
+        adr, ap = collections.Counter(), {}
         for x in c:
             for a, n in x['adresy_n']: adr[a] += n
-        adr_n = zlyty_adresy(adr)
+            for a, p_ in (x.get('adresy_p') or {}).items(): ap.setdefault(a, p_)
+        adr_n = zlyty_adresy(adr, ap)
         rec = dict(g0)
         rec.update(sim=g0['vyd'], mekhanizm=L.THEMES.get(g0['vyd'], g0['vyd']),
                    status='хронічна' if any(x['status'] == 'хронічна' for x in c) else 'фіксує поліція',
@@ -1066,7 +1071,8 @@ def run(V=None, log=print, FACT=None):
                    roky=sorted({y for x in yadro for y in x.get('roky', [])}),
                    ostannia=max(x['ostannia'] for x in yadro),
                    rozbyvka=[dict(sim=x['sim'], mekhanizm=x['mekhanizm'], status=x['status'],
-                                  podii=x['podii'], za_2roky=x['za_2roky'], typ=x.get('typ')) for x in c])
+                                  podii=x['podii'], za_2roky=x['za_2roky'], typ=x.get('typ'),
+                                  vorota=dict(x.get('vorota') or {}), r8_p=x.get('r8_p')) for x in c])
         # Статті з повторами: Counter з генератора склеїв би однакові ключі
         st_ = collections.Counter()
         for x in yadro:
