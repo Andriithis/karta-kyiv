@@ -1,11 +1,17 @@
 name: Знімок OSM
 
 # Знімок OpenStreetMap (рішення Андрія 06.10, RISHENNYA 35.9; KARTA-1.0 №17):
-# адреси (крок 2) і шари середовища, вулиць, будинків (крок 2b) качаються
+# адреси (крок 2) і шари середовища, вулиць, будинків (крок 2b) збираються
 # раз на місяць окремо від збірки й лягають у гілку osm. «Оновлення карти»
-# бере їх звідти й більше не залежить від збоїв Overpass. Не завантажилося —
-# знімок лишається попереднім (у гілку osm йде лише повний), а докачане
-# чекає наступного запуску в гілці osm-chastkovyi (не довше 7 днів).
+# бере їх звідти й більше не залежить від збоїв Overpass.
+#
+# Джерело — файл України з Geofabrik (рішення Андрія 07.10): Overpass
+# тижнями віддавав 504, і чотиригодинний знімок обривався, а з файлу місто
+# збирається за кілька хвилин (src/osm_pbf.py — ті самі запити й формат).
+# Overpass — запасний шлях: якщо Geofabrik не вдався, або вручну
+# («джерело: overpass»). Там не завантажилося — знімок лишається попереднім
+# (у гілку osm йде лише повний), а докачане чекає наступного запуску в гілці
+# osm-chastkovyi (не довше 7 днів).
 # 28-го — щоб за ним «Прохідність» устигла до першого понеділка місяця,
 # коли модель перенавчається.
 
@@ -13,6 +19,12 @@ on:
   schedule:
     - cron: '0 1 28 * *'
   workflow_dispatch:
+    inputs:
+      dzherelo:
+        description: 'Джерело знімка'
+        type: choice
+        options: [geofabrik, overpass]
+        default: geofabrik
 
 permissions:
   contents: write
@@ -24,17 +36,41 @@ concurrency:
 jobs:
   znimok:
     runs-on: ubuntu-latest
-    # Адреси до 40 хв + шари до 220 хв + запас, щоб устигнути зберегти часткове
+    # Overpass: адреси до 40 хв + шари до 220 хв + запас, щоб устигнути
+    # зберегти часткове
     timeout-minutes: 280
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      # ---- Geofabrik ----
+      - name: Geofabrik → Київ (osmium) → ті самі файли
+        id: gf
+        if: ${{ inputs.dzherelo != 'overpass' }}
+        continue-on-error: true
+        timeout-minutes: 40
+        run: |
+          set -e
+          sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+          pip install --quiet osmium shapely numpy
+          curl -fsSL --retry 3 -o /tmp/ua.osm.pbf https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
+          ls -la /tmp/ua.osm.pbf
+          python src/osm_pbf.py mezha /tmp/kyiv_2km.geojson
+          # smart + boundary — щоб межа міста (відношення) прийшла цілою
+          osmium extract -p /tmp/kyiv_2km.geojson -s smart -S types=multipolygon,boundary \
+            /tmp/ua.osm.pbf -o /tmp/kyiv.osm.pbf
+          ls -la /tmp/kyiv.osm.pbf
+          python src/osm_pbf.py /tmp/kyiv.osm.pbf
+          echo geofabrik > data/_osm_dzherelo.txt
+
+      # ---- Overpass (запасний шлях) ----
       # Обірваний запуск лишає докачане в гілці osm-chastkovyi; наступний
       # бере його й качає лише відсутні шари й плитки. Старше 7 днів — заново:
       # знімок має бути одного часу, а не зшитий з різних тижнів.
       - name: Часткове з попереднього запуску (не старше 7 днів)
+        if: ${{ steps.gf.outcome != 'success' }}
         run: |
           date -u +'%Y-%m-%d' > data/_osm_pochatok.txt
           if git fetch -q origin osm-chastkovyi; then
@@ -55,15 +91,19 @@ jobs:
             echo "часткового немає — починаю заново"
           fi
       - name: Адреси OSM (крок 2)
+        if: ${{ steps.gf.outcome != 'success' }}
         timeout-minutes: 40
         run: |
           python -c "import sys; sys.path.insert(0,'src'); import step2_geocode as G; sys.exit(0 if G.fetch() else 1)"
       - name: Шари OSM (крок 2b) — докачати відсутнє, з будинками й роботою
+        if: ${{ steps.gf.outcome != 'success' }}
         # менше за ліміт джоби: має лишитися час зберегти часткове
         timeout-minutes: 220
-        run: python src/step2b_risks.py --znimok
+        run: |
+          python src/step2b_risks.py --znimok
+          echo overpass > data/_osm_dzherelo.txt
       - name: Зберегти часткове в osm-chastkovyi
-        if: failure() || cancelled()
+        if: ${{ (failure() || cancelled()) && steps.gf.outcome != 'success' }}
         run: |
           set -e
           mkdir -p /tmp/osm
@@ -83,6 +123,7 @@ jobs:
           git add -f osm
           git commit -qm "часткове OSM від $(cat osm/pochatok.txt)"
           git push -f origin HEAD:osm-chastkovyi
+
       - name: Покласти в гілку osm
         run: |
           set -e
@@ -90,6 +131,7 @@ jobs:
           gzip -9 -c data/osm_kyiv_city.json > /tmp/osm/osm_kyiv_city.json.gz
           gzip -9 -c data/osm_risks_raw.json > /tmp/osm/osm_risks_raw.json.gz
           date -u +'%Y-%m-%d' > /tmp/osm/data.txt
+          cp data/_osm_dzherelo.txt /tmp/osm/dzherelo.txt
           ls -la /tmp/osm
           git config user.name  "karta-bot"
           git config user.email "actions@github.com"
@@ -101,7 +143,10 @@ jobs:
           fi
           rm -rf osm && mkdir osm && cp /tmp/osm/* osm/
           git add -f osm
-          git commit -m "знімок OSM $(cat osm/data.txt)" || echo "змін немає"
+          git commit -m "знімок OSM $(cat osm/data.txt), $(cat osm/dzherelo.txt)" || echo "змін немає"
           git push origin osm
-          # повний знімок є — часткове більше не потрібне
-          git push origin --delete osm-chastkovyi || true
+          # повний знімок Overpass є — його часткове більше не потрібне
+          # (після Geofabrik не чіпаємо: часткове Overpass ще може знадобитися)
+          if [ "$(cat osm/dzherelo.txt)" = overpass ]; then
+            git push origin --delete osm-chastkovyi || true
+          fi
