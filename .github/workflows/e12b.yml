@@ -1,0 +1,36 @@
+name: Е12б — будівлі OSM для еталона точок
+
+# ZAVDANNYA-36, А2: полігони будівель з адресами й названі великі об'єкти
+# з файлу Geofabrik (той самий шлях, що в «Знімку OSM»). Лише дослідження:
+# у main нічого не комітить, результат — артефакт «e12b-budivli».
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  budivli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Geofabrik → Київ → будівлі
+        run: |
+          set -e
+          sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+          pip install --quiet osmium shapely numpy
+          curl -fsSL --retry 3 -o /tmp/ua.osm.pbf https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
+          python src/osm_pbf.py mezha /tmp/kyiv_2km.geojson
+          osmium extract -p /tmp/kyiv_2km.geojson -s smart -S types=multipolygon,boundary \
+            /tmp/ua.osm.pbf -o /tmp/kyiv.osm.pbf
+          mkdir -p vyhid
+          python doslidzhennya/audyt-34/kod/e12b_budivli.py /tmp/kyiv.osm.pbf vyhid/e12b_budivli.json.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e12b-budivli
+          path: vyhid/

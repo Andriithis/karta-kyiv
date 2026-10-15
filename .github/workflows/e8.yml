@@ -1,0 +1,119 @@
+name: Е8 — перевірка ризиків
+
+# ZAVDANNYA-35, крок 2: R0–R12 × E1–E7 на наборі 36.14 і, для порівняння, на
+# чинному класі B. Лише дослідження: у main нічого не комітить, результат —
+# артефакт «e8-pidsumok» (таблиці переносить Claude Code в E8-ryzyky.md).
+# Важке — окремим workflow, щоб не займати «Оновлення карти» (ZAVDANNYA-35, 1).
+
+on:
+  workflow_dispatch:
+    inputs:
+      n_stab:
+        description: 'Прогонів відбору стійкості на кожну модель (20 — підходів і зрізів тут ~10× більше, ніж у перенавчанні)'
+        default: '20'
+
+permissions:
+  contents: read
+
+jobs:
+  # Дані збираються один раз тими самими кроками, що в «Оновленні карти»,
+  # і йдуть паралельним задачам артефактом — інакше кожна геокодувала б заново
+  dani:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Знімок OSM з гілки osm
+        run: |
+          git fetch --depth=1 origin osm
+          git checkout FETCH_HEAD -- osm && git reset -q
+          gunzip -c osm/osm_kyiv_city.json.gz > data/osm_kyiv_city.json
+          gunzip -c osm/osm_risks_raw.json.gz > data/osm_risks_raw.json
+          echo "знімок OSM від $(cat osm/data.txt)"
+      - name: База подій зі знімка, геокодування, установи
+        env:
+          BEZ_DAMPU: '1'
+        run: |
+          python src/step1_download.py
+          python src/step2_geocode.py
+          python src/step2b_risks.py
+      # Набір 36.14 — заново на свіжій базі (поправка центрального чату 15.10:
+      # після 08.10 додалось 6 425 рішень з будинком, переважно МАЙ і НАС 2026)
+      - name: Набір подій 36.14
+        run: |
+          python doslidzhennya/audyt-34/kod/e12_nabir.py
+          cp doslidzhennya/audyt-34/kod/nabir_36_14.csv.gz data/nabir_36_14.csv.gz
+      - name: Дані 1551 (для R12)
+        run: |
+          if git fetch --depth=1 origin analiz-1551 && git checkout FETCH_HEAD -- data/1551; then
+            git reset -q -- data/1551; echo "1551: $(ls data/1551 | wc -l) файлів"
+          else
+            echo "::warning::1551 недоступний — R12 буде пропущено"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e8-dani
+          retention-days: 3
+          path: |
+            data/
+            !data/teksty/
+
+  perevirka:
+    needs: dani
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix:
+        vyd: ['ГП', 'АЛК', 'НАР', 'НАС', 'МАЙ', 'ДТП', 'ДОР', 'ГП_хуліг', 'ДОР_залишення_місця', 'МАЙ_крадіжка', 'ДОР_ДТП_дорога', 'ДОР_ДТП_двір']
+        nabir: ['36_14', 'B']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: e8-dani
+          path: data
+      - name: Перевірка виду
+        env:
+          VYD: ${{ matrix.vyd }}
+          NABIR: ${{ matrix.nabir }}
+          # на чинному класі B — лише R0, R1, R2, R3, R9: це порівняння наборів
+          LITE: ${{ matrix.nabir == 'B' && '1' || '0' }}
+          N_STAB: ${{ github.event.inputs.n_stab || '20' }}
+          OUT: e8_vyhid
+        run: |
+          pip install --quiet numpy scipy scikit-learn statsmodels lightgbm
+          python -u doslidzhennya/audyt-34/kod/e8_perevirka.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e8-${{ strategy.job-index }}
+          path: e8_vyhid/
+          if-no-files-found: ignore
+
+  zvedennia:
+    needs: perevirka
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: e8-[0-9]*
+          path: e8_vyhid
+          merge-multiple: true
+      - name: Таблиці
+        run: python doslidzhennya/audyt-34/kod/e8_zvedennia.py e8_vyhid > e8_vyhid/E8-perevirka-tablytsi.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e8-pidsumok
+          path: e8_vyhid/
