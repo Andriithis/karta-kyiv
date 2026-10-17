@@ -193,6 +193,8 @@ function riskDraw(){
 // «серед N% найризикованіших вулиць Києва · очікується ~M подій за рік» —
 // N — місце серед УСІХ відрізків міста, вгору до цілого (< 1 → «1%»); M —
 // прогноз моделі на 12 місяців (Андрій 06.10). Види — без дублікатів.
+// M не справджується в жодному виді (0–45% при порозі 60%) — у першій хвилі
+// прибирається (RISHENNYA 36.17.3); «серед N%» лишається.
 const pctCity=p=>p==null?null:Math.max(1,Math.ceil(p));
 const muTxt=m=>m==null?'':m<1?' · менше 1 події за рік':` · очікується ~${Math.round(m)} ${pl(Math.round(m),'подія','події','подій')} за рік`;
 function riskRows(s,pt){
@@ -200,6 +202,8 @@ function riskRows(s,pt){
   .filter(x=>!seen.has(x.title)&&seen.add(x.title));
  return ks.map(x=>{const n=pctCity(x.pct);
   return `${esc(x.title)}${n?` — серед ${n}% найризикованіших ${pt?'місць':'вулиць'} Києва`:''}${muTxt(x.mu)}`})}
+// «Умови як біля подій» — з моделі ліній; лінії переходять на історію зі
+// згасанням без середовища, тож для ліній рядок прибирається (RISHENNYA 36.17.1)
 function riskWhence(s){const n=Math.max(0,...s.kinds.map(x=>x.n2)), fx=[...new Set(s.kinds.flatMap(x=>(x.fx||[]).map(f=>f[0])))];
  const out=[]; if(n>0) out.push(`Тут уже були події: ${n} за 2 роки`); if(fx.length) out.push(`Умови як біля подій: ${fx.join(', ')}`);
  return out}

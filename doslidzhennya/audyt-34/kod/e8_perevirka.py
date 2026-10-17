@@ -275,25 +275,32 @@ def main():
     log(f'подій у розрахунках: {len(ev):,}; остання дата {last}; відомі місяці — до {KNOWN}')
 
     # ---- точки, як у step4_engine ----
-    _r2 = set(misiatsi(mshift(last[:7], -24), last[:7]))
     TP = RT.kandydaty(raw, VR.vulytsi(raw), [], VR)
     S_ = RT.Sitka([(t['la'], t['lo']) for t in TP])
-    ist = [0] * len(TP)
-    for e in ev:
-        if e.get('vul') or e['m'] not in _r2: continue
-        for d, k in S_.blyzki(e['la'], e['lo'], RT.R_TOCHKA):
-            if d <= (RT.R_PEREKH if TP[k]['typ'] == 'перехрестя' else RT.R_TOCHKA): ist[k] += 1
-    nal = RT.nalezhnist(ev, TP, ist)
     NP_ = len(TP)
-    log(f'точок-кандидатів {NP_:,}; подій точок {sum(1 for x in nal if x is not None):,}')
+    def nal_do(T):
+        """Належність подій точкам за історією 24 міс. до T включно. У
+        перевірці 15.10 історію брали до останньої дати, тобто разом із
+        ціллю: місце, де події з'явились лише в цілі, ставало точкою завдяки
+        самим цим подіям — середовище це «бачило», історія ні
+        (RISHENNYA 36.17.2; ZAVDANNYA-37, крок 2)."""
+        okno = set(misiatsi(mshift(T, -24), T))
+        ist = [0] * NP_
+        for e in ev:
+            if e.get('vul') or e['m'] not in okno: continue
+            for d, k in S_.blyzki(e['la'], e['lo'], RT.R_TOCHKA):
+                if d <= (RT.R_PEREKH if TP[k]['typ'] == 'перехрестя' else RT.R_TOCHKA): ist[k] += 1
+        return RT.nalezhnist(ev, TP, ist)
+    # стара належність (до останньої дати) — лише для звіту «скільки подій змінили належність»
+    nal_old = nal_do(last[:7])
+    ZRIZY = ['2024-06', '2024-12', '2025-06', '2025-12']
+    NAL = {T: nal_do(T) for T in ZRIZY}
+    log(f'точок-кандидатів {NP_:,}; подій точок: до останньої дати {sum(1 for x in nal_old if x is not None):,}, '
+        + ', '.join(f'до {T} {sum(1 for x in NAL[T] if x is not None):,}' for T in ZRIZY))
 
     # ---- прив'язка: цикл step4_engine.main (лінії — події не точок) ----
     six = list(L.ORDER)
     PV = VR.Pryviazka(SEG)
-    Y = collections.defaultdict(lambda: np.zeros(n))
-    YP = collections.defaultdict(lambda: np.zeros(NP_))
-    XYL = collections.defaultdict(list)       # (ключ) -> [(la, lo, місяць)] подій ліній, для R9
-    XYP = collections.defaultdict(list)
     sl_all = {sid: VR.slova(SEG[sid]['name']) for sid in sids}
     po_slovu = collections.defaultdict(list)
     for sid, w_ in sl_all.items():
@@ -307,30 +314,43 @@ def main():
         if not c_ or len(c_) > E.KOROTKA[0] or sum(SEG[x]['len'] for x in c_) > E.KOROTKA[1]: return None
         return c_
     cache = {}
-    for ie, e in enumerate(ev):
-        ks = [e['th']] + ([e['mekh']] if e['mekh'] else [])
-        if nal[ie] is not None:
+    def pryviazka(nal):
+        Y = collections.defaultdict(lambda: np.zeros(n))
+        YP = collections.defaultdict(lambda: np.zeros(NP_))
+        XYL = collections.defaultdict(list)       # (ключ) -> [(la, lo, місяць)] подій ліній, для R9
+        XYP = collections.defaultdict(list)
+        for ie, e in enumerate(ev):
+            ks = [e['th']] + ([e['mekh']] if e['mekh'] else [])
+            if nal[ie] is not None:
+                for k in ks:
+                    YP[(k, e['m'])][nal[ie]] += 1; XYP[k].append((TP[nal[ie]]['la'], TP[nal[ie]]['lo'], e['m']))
+                continue
+            if e.get('vul'):
+                ck = ('vul', e['street'], round(e['la'], 3), round(e['lo'], 3))
+                if ck not in cache: cache[ck] = korotka(e)
+                c_ = cache[ck]
+                if not c_: continue
+                for k in ks:
+                    for sid in c_:
+                        Y[(k, e['m'])][idx[sid]] += 1 / len(c_)
+                    XYL[k].append((e['la'], e['lo'], e['m']))
+                continue
+            ck = (round(e['la'], 5), round(e['lo'], 5), e['street'])
+            if ck not in cache:
+                cache[ck] = PV.znaity(e['la'], e['lo'], E.SNAP_M, VR.vulytsia(e['street']))[0]
+            s = cache[ck]
+            if s is None: continue
             for k in ks:
-                YP[(k, e['m'])][nal[ie]] += 1; XYP[k].append((TP[nal[ie]]['la'], TP[nal[ie]]['lo'], e['m']))
-            continue
-        if e.get('vul'):
-            ck = ('vul', e['street'], round(e['la'], 3), round(e['lo'], 3))
-            if ck not in cache: cache[ck] = korotka(e)
-            c_ = cache[ck]
-            if not c_: continue
-            for k in ks:
-                for sid in c_:
-                    Y[(k, e['m'])][idx[sid]] += 1 / len(c_)
-                XYL[k].append((e['la'], e['lo'], e['m']))
-            continue
-        ck = (round(e['la'], 5), round(e['lo'], 5), e['street'])
-        if ck not in cache:
-            cache[ck] = PV.znaity(e['la'], e['lo'], E.SNAP_M, VR.vulytsia(e['street']))[0]
-        s = cache[ck]
-        if s is None: continue
-        for k in ks:
-            Y[(k, e['m'])][idx[s]] += 1; XYL[k].append((e['la'], e['lo'], e['m']))
-    log(f'прив\'язка готова, {time.time() - t0:.0f} с')
+                Y[(k, e['m'])][idx[s]] += 1; XYL[k].append((e['la'], e['lo'], e['m']))
+        return Y, YP, XYL, XYP
+    # кожен зріз — своя прив'язка: точкам належать лише події біля місць, що мали події до T
+    PR = {T: pryviazka(NAL[T]) for T in ZRIZY}
+    YS, YPS = {T: p[0] for T, p in PR.items()}, {T: p[1] for T, p in PR.items()}
+    XYLS, XYPS = {T: p[2] for T, p in PR.items()}, {T: p[3] for T, p in PR.items()}
+    # для звіту: (ключі, місяць, точка за старою належністю, точка за головним зрізом)
+    ZMINA = [([e['th']] + ([e['mekh']] if e['mekh'] else []), e['m'], nal_old[i], NAL['2025-12'][i])
+             for i, e in enumerate(ev) if not e.get('vul')]
+    log(f'прив\'язка готова ({len(ZRIZY)} зрізи), {time.time() - t0:.0f} с')
 
     # ---- блоки, райони, захід/схід ----
     blok = np.array([int(la * 111.32) * 100000 + int(lo * 111.32 * math.cos(math.radians(50.45))) for la, lo in mid])
@@ -397,7 +417,7 @@ def main():
     for key, vyd in KEYS:
         tk = time.time()
         res = perevirka(key, vyd, dict(
-            n=n, NP_=NP_, Y=Y, YP=YP, XYL=XYL, XYP=XYP, X=X, XP=XP, cname=cname, ctyp=ctyp,
+            n=n, NP_=NP_, YS=YS, YPS=YPS, XYLS=XYLS, XYPS=XYPS, ZMINA=ZMINA, X=X, XP=XP, cname=cname, ctyp=ctyp,
             cnameP=cnameP, ctypP=ctypP, JL=JL, CAND=CAND, JLP=JLP, CANDP=CANDP, XK=XK, NK=NK,
             XKP=XKP, NKP=NKP, expo=expo, slen=slen, lenP=lenP, mid=mid, PXY=PXY, blok=blok,
             blokP=blokP, rai=rai, raiP=raiP, fold=fold, foldP=foldP, west=west, westP=westP,
@@ -459,7 +479,10 @@ def perevirka(key, vyd, D):
                головний=f'{HOL}→{HOLH}м')
     for odin in ('лінії', 'точки'):
         L_ = odin == 'лінії'
-        YY = D['Y'] if L_ else D['YP']
+        # зріз S -> прив'язка подій за належністю до S (усе в межах зрізу: історія,
+        # навчання й ціль — одна прив'язка)
+        YYS = D['YS'] if L_ else D['YPS']
+        XYS = D['XYLS'] if L_ else D['XYPS']
         size = D['n'] if L_ else D['NP_']
         length = D['slen'] if L_ else D['lenP']
         expo = D['expo'] if L_ else np.ones(size)
@@ -473,27 +496,38 @@ def perevirka(key, vyd, D):
         fold = D['fold'] if L_ else D['foldP']
         NBx = D['NB_'] if L_ else D['NBP']
         Q = D['mid'] if L_ else D['PXY']
-        XY = D['XYL'] if L_ else D['XYP']
         blok = D['blok'] if L_ else D['blokP']
         rai = D['rai'] if L_ else D['raiP']
         west = D['west'] if L_ else D['westP']
         HW = (200, 400, 800) if L_ else (100, 200, 400)
-        ntot = cnt(YY, key, misiatsi('2024-12', '2025-12'), size).sum()
+        ntot = cnt(YYS[HOL], key, misiatsi('2024-12', '2025-12'), size).sum()
         o = dict(подій_2025=int(ntot))
+        if odin == 'точки':
+            # скільки подій цілі головного зрізу змінили належність проти перевірки 15.10
+            ms = set(misiatsi(HOL, HOL_END)); z = collections.Counter()
+            for ks, m, a, b in D['ZMINA']:
+                if m in ms and key in ks:
+                    z['усього'] += 1
+                    if a is not None and b is None: z['точка→лінія'] += 1
+                    elif a is None and b is not None: z['лінія→точка'] += 1
+                    elif a != b: z['інша точка'] += 1
+            o['зміна_належності'] = dict(z)
         if ntot < 50:
             o['пропущено'] = f'замало подій: {int(ntot)} у 2025'
             out[odin] = o; log(f'   {odin}: {o["пропущено"]}'); continue
 
-        def r0(T): return cnt(YY, key, misiatsi(mshift(T, -LB), T), size)
-        def r2(T, h, base):
-            b = r0(T) if base == '12' else rozpad(YY, key, T, 24, size)
+        # S — зріз, чия прив'язка діє (за замовчуванням сам T)
+        def r0(T, S=None): return cnt(YYS[S or T], key, misiatsi(mshift(T, -LB), T), size)
+        def r2(T, h, base, S=None):
+            b = r0(T, S) if base == '12' else rozpad(YYS[S or T], key, T, 24, size)
             return ntkde(NBx, size, h, b, length)
         def r9(T, h):
+            XY = XYS[T]
             pts = np.array([(a, b) for a, b, m in XY[key] if mshift(T, -LB) < m <= T]) if XY[key] else np.zeros((0, 2))
             return kde_sitka(pts, np.ones(len(pts)), Q, h)
 
         # ---- налаштування R2 і R9 на першому зрізі (не на головному) ----
-        yA = cnt(YY, key, misiatsi(TUNE, mshift(TUNE, TUNE_H)), size)
+        yA = cnt(YYS[TUNE], key, misiatsi(TUNE, mshift(TUNE, TUNE_H)), size)
         best2 = max(((h, b) for h in HW for b in ('12', 'R1')),
                     key=lambda hb: e1e2(r2(TUNE, *hb), yA, length)['10']['PAI'])
         best9 = max((150, 300, 600), key=lambda h: e1e2(r9(TUNE, h), yA, length)['10']['PAI'])
@@ -551,25 +585,27 @@ def perevirka(key, vyd, D):
             h0 = r0(T)
             dens['R0'] = h0 / length; mu['R0'] = h0 * 12 / LB
             for mon in (24, 36):
-                dens[f'R1_{mon}'] = rozpad(YY, key, T, mon, size) / length
+                dens[f'R1_{mon}'] = rozpad(YYS[T], key, T, mon, size) / length
             r2v = r2(T, *best2); dens['R2'] = r2v; mu['R2'] = r2v * length * 12 / LB
             dens['R9'] = r9(T, best9)
             if tr is not None:
                 Tt, hh = tr
-                ytr = cnt(YY, key, misiatsi(Tt, T), size)
+                ytr = cnt(YYS[T], key, misiatsi(Tt, T), size)
                 if ytr.sum() >= 30:
-                    H_tr, H_te = hst(r0(Tt)), hst(r0(T), r0(Tt))
+                    H_tr, H_te = hst(r0(Tt, T)), hst(r0(T), r0(Tt, T))
                     p3, t3 = nb_model(H_tr, ytr, H_te)
                     # горизонт навчання h міс.; прогноз M — на 12 міс.
                     sc = 12 / hh
                     dens['R3'] = p3 / length; mu['R3'] = p3 * sc; typy_by['R3'][T] = t3
                     if not LITE:
-                        r2tr, r2te = r2(Tt, *best2) * length, r2v * length
+                        r2tr, r2te = r2(Tt, *best2, S=T) * length, r2v * length
                         G_tr, G_te = hst(r2tr), hst(r2te, r2tr)
                         p4, t4 = nb_model(G_tr, ytr, G_te)
                         dens['R4'] = p4 / length; mu['R4'] = p4 * sc; typy_by['R4'][T] = t4
                         p6, t6 = nb_model(None, ytr, None)
-                        dens['R6'] = p6 / length; mu['R6'] = p6 * sc
+                        # R6 — лише середовище: саме його ознаки мають повторюватись
+                        # між зрізами, інакше підхід не обирається (ZAVDANNYA-37, крок 2)
+                        dens['R6'] = p6 / length; mu['R6'] = p6 * sc; typy_by['R6'][T] = t6
                         # R5: ті самі ознаки (усі кандидати) + R2; монотонність — історія, люди
                         Ftr = np.column_stack([G_tr, XL, XC]); Fte = np.column_stack([G_te, XL, XC])
                         mono = [1] + [1] * XL.shape[1] + [0] * XC.shape[1]
@@ -586,22 +622,25 @@ def perevirka(key, vyd, D):
                             p10, t10 = nb_model(H_tr, ytr, H_te, XK, XK, typ_e=[f'комб:{x}' for x in NK])
                             dens['R10'] = p10 / length; mu['R10'] = p10 * sc
                             typy_by['R10'][T] = [t for t in t10 if str(t).startswith('комб')]
+                            typy_by['R10_усі'][T] = t10
                         # R11: R3 + історія інших видів поруч (згладжена)
-                        O_tr = np.column_stack([hst(ntkde(NBx, size, best2[0], cnt(YY, k2, misiatsi(mshift(Tt, -LB), Tt), size), length) * length)
+                        YT = YYS[T]
+                        O_tr = np.column_stack([hst(ntkde(NBx, size, best2[0], cnt(YT, k2, misiatsi(mshift(Tt, -LB), Tt), size), length) * length)
                                                 for k2 in inshi])
-                        O_te = np.column_stack([hst(ntkde(NBx, size, best2[0], cnt(YY, k2, misiatsi(mshift(T, -LB), T), size), length) * length,
-                                                    ntkde(NBx, size, best2[0], cnt(YY, k2, misiatsi(mshift(Tt, -LB), Tt), size), length) * length)
+                        O_te = np.column_stack([hst(ntkde(NBx, size, best2[0], cnt(YT, k2, misiatsi(mshift(T, -LB), T), size), length) * length,
+                                                    ntkde(NBx, size, best2[0], cnt(YT, k2, misiatsi(mshift(Tt, -LB), Tt), size), length) * length)
                                                 for k2 in inshi])
                         p11, t11 = nb_model(H_tr, ytr, H_te, O_tr, O_te, typ_e=[f'вид:{k2}' for k2 in inshi])
                         dens['R11'] = p11 / length; mu['R11'] = p11 * sc
                         typy_by['R11'][T] = [t for t in t11 if str(t).startswith('вид')]
+                        typy_by['R11_усі'][T] = t11
             rezult[T] = dens; mu_by[T] = mu
 
         # R7: середній ранг R2 і кращої з R3/R5 — кращу обираємо на першому
         # зрізі з навчанням (T7), щоб не підглядати в головний
         def rank01(v): return np.argsort(np.argsort(v)) / max(len(v) - 1, 1)
         if not LITE and 'R3' in rezult[T7]:
-            y1 = cnt(YY, key, misiatsi(T7, mshift(T7, TUNE_H)), size)
+            y1 = cnt(YYS[T7], key, misiatsi(T7, mshift(T7, TUNE_H)), size)
             cand = [a for a in ('R3', 'R5') if a in rezult[T7]]
             b7 = max(cand, key=lambda a: e1e2(rezult[T7][a], y1, length)['10']['PAI'])
             o['R7_з'] = b7
@@ -617,15 +656,15 @@ def perevirka(key, vyd, D):
                 if end > KNOWN:
                     if mshift(T, 4) > KNOWN: continue
                     end = KNOWN
-                yt = cnt(YY, key, misiatsi(T, end), size)
+                yt = cnt(YYS[T], key, misiatsi(T, end), size)
                 if yt.sum() < 20: continue
                 tab[f'{T}→{hz}м'] = dict(до=end, подій=int(yt.sum()),
                                          **{a: e1e2(d, yt, length) for a, d in dens.items()})
         o['E1_E2'] = tab
 
         # ---- головний зріз: E3, E5, E7 ----
-        yH = cnt(YY, key, misiatsi(HOL, HOL_END), size)
-        yE5 = cnt(YY, key, misiatsi(HOL, E5_END), size)
+        yH = cnt(YYS[HOL], key, misiatsi(HOL, HOL_END), size)
+        yE5 = cnt(YYS[HOL], key, misiatsi(HOL, E5_END), size)
         dH = rezult[HOL]
         o['E3'] = butstrep(dH, yH, length, blok)
         o['E5'] = {a: spravdzh(m_ * (len(misiatsi(HOL, E5_END)) / 12), yE5, length)
@@ -652,12 +691,12 @@ def perevirka(key, vyd, D):
         # ---- захід → схід (головний зріз): навчання лише на заході ----
         if not LITE:
             Tt = TWE
-            ytr = cnt(YY, key, misiatsi(Tt, HOL), size)
+            ytr = cnt(YYS[HOL], key, misiatsi(Tt, HOL), size)
             east = ~west
             if ytr[west].sum() >= 30 and yH[east].sum() >= 20:
-                hw = r0(Tt)
+                hw = r0(Tt, HOL)
                 p3, _ = nb_model(hst(hw[west]), ytr[west], hst(r0(HOL)[east], hw[west]), tr_rows=west, te_rows=east)
-                r2tr, r2te = r2(Tt, *best2) * length, r2(HOL, *best2) * length
+                r2tr, r2te = r2(Tt, *best2, S=HOL) * length, r2(HOL, *best2) * length
                 p4, _ = nb_model(hst(r2tr[west]), ytr[west], hst(r2te[east], r2tr[west]), tr_rows=west, te_rows=east)
                 le = length[east]; ye = yH[east]
                 o['захід_схід'] = dict(подій=int(ye.sum()), R0=e1e2(r0(HOL)[east] / le, ye, le),
@@ -665,8 +704,9 @@ def perevirka(key, vyd, D):
                                        R3=e1e2(p3 / le, ye, le), R4=e1e2(p4 / le, ye, le))
 
         # ---- R12: 1551 за змістом (лише лінії, вікна 1551 як у перенавчанні) ----
-        if L_ and not LITE:
-            o['R12'] = r12(key, th, D, YY, cnt, nb_model, hst, length, blok)
+        # BEZ_R12=1 — пропустити: 1551 у ризик не входить (RISHENNYA 36.17.4)
+        if L_ and not LITE and os.environ.get('BEZ_R12') != '1':
+            o['R12'] = r12(key, th, D, YYS[HOL], cnt, nb_model, hst, length, blok)
 
         out[odin] = o
         # для «разом» і 10 вулиць
@@ -685,7 +725,7 @@ def perevirka(key, vyd, D):
         # 10 вулиць, де R2 і R3 розходяться найбільше (з подіями обох років)
         if 'R3' in dl:
             r2r, r3r = np.argsort(np.argsort(-dl['R2'])), np.argsort(np.argsort(-dl['R3']))
-            y25 = cnt(D['Y'], key, misiatsi('2024-12', '2025-12'), D['n'])
+            y25 = cnt(D['YS'][HOL], key, misiatsi('2024-12', '2025-12'), D['n'])
             m_ = (y25 > 0) & (yl > 0)
             ix = np.where(m_)[0]
             ix = ix[np.argsort(-np.abs(r2r[ix] - r3r[ix]))][:10]

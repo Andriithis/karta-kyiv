@@ -4,18 +4,59 @@
 Правило вибору (протокол Е8): найпростіший підхід, PAI якого на головному
 зрізі (10% довжини) не нижчий за нижню межу найкращого (E3) і рангова
 стабільність (E4, Спірмен) не гірша за найкращого більше ніж на 0,05.
+
+Уточнення ZAVDANNYA-37 (крок 2): для МАЙ, НАС, НАР, АЛК (у перевірці 15.10
+<700 подій) Спірмен на двох зрізах шумний — не відсіює, а йде в звіт;
+підхід, ознаки якого між зрізами не повторюються (E6: 0 спільних), не
+обирається. Другий аргумент — тека попереднього прогону: тоді внизу
+таблиця «переможець точок до/після».
 """
 import os, sys, json, glob
 
 PROSTOTA = ['R0', 'R1_24', 'R1_36', 'R2', 'R9', 'R6', 'R3', 'R4', 'R10', 'R11', 'R7', 'R5']
 HOL = '2025-12→12м'
+SPIRMEN_NE_VIDSIIUE = {'МАЙ', 'НАС', 'НАР', 'АЛК'}
 
 
 def f(x, k=2):
     return '—' if x is None else f'{x:.{k}f}'.replace('.', ',')
 
 
-def main(d):
+def nestiiki(o):
+    """підходи, ознаки яких між зрізами не повторюються (E6: 0 спільних з >0 обраних)"""
+    e6 = o.get('E6') or {}
+    out = set()
+    for a in ('R3', 'R4', 'R6', 'R10', 'R11'):
+        x = e6.get(f'{a}_усі') or e6.get(a)
+        if x and x.get('обраних_разом', 0) > 0 and x.get('спільних_усіх') == 0: out.add(a)
+    if 'R5_топ10' in e6 and e6['R5_топ10'].get('спільних_усіх') == 0: out.add('R5')
+    if o.get('R7_з') in out: out.add('R7')
+    return out
+
+
+def vybir(r, odin, nove=True):
+    """(найкращий, переможець, рядки) на головному зрізі; nove — з уточненнями 37"""
+    o = r.get(odin) or {}
+    if not o or 'пропущено' in o: return None
+    t = o['E1_E2']
+    hol = t.get(r.get('головний', HOL)) or t.get(sorted(t)[-1])
+    rows = {}
+    for a in PROSTOTA:
+        if a not in hol: continue
+        rows[a] = dict(pai=hol[a]['10']['PAI'], lo=(o['E3'].get(a) or {}).get('lo'),
+                       sp=(o['E4'].get(a) or {}).get('Спірмен'))
+    if not rows: return None
+    best = max(rows, key=lambda a: rows[a]['pai'])
+    lo, sp = rows[best]['lo'] or rows[best]['pai'], rows[best]['sp']
+    if nove and r['вид'] in SPIRMEN_NE_VIDSIIUE: sp = None
+    ne = nestiiki(o) if nove else set()
+    cand = [a for a in PROSTOTA if a in rows and a not in ne and rows[a]['pai'] >= lo
+            and (sp is None or rows[a]['sp'] is None or rows[a]['sp'] >= sp - 0.05)]
+    win = cand[0] if cand else None
+    return best, win, rows, ne
+
+
+def main(d, d_old=None):
     R = {}
     for p in sorted(glob.glob(os.path.join(d, 'e8_*.json'))):
         r = json.load(open(p, encoding='utf-8'))
@@ -61,11 +102,13 @@ def main(d):
                       f"{f(sum(vals) / len(vals))} ({len(vals)}) | {dd('різниця_з_R0')} | {dd('різниця_з_R2')} | "
                       f"{f(s.get('Спірмен'))} | {f(s.get('Жаккар_5'))} | {f(m.get('частка_M'))} | {f(p.get('сер_лог'))} |")
             if not rows: continue
-            best = max(rows, key=lambda a: rows[a]['pai'])
-            lo, sp = rows[best]['lo'] or rows[best]['pai'], rows[best]['sp']
-            win = next(a for a in PROSTOTA if a in rows and rows[a]['pai'] >= lo
-                       and (sp is None or rows[a]['sp'] is None or rows[a]['sp'] >= sp - 0.05))
-            verdikt.append((r['назва'], odin, best, rows[best]['pai'], win, rows[win]['pai'], r.get('проактивний'),
+            best, win, _, ne = vybir(r, odin)
+            if odin == 'точки' and o.get('зміна_належності'):
+                z = o['зміна_належності']
+                print(f"\nНалежність подій цілі проти перевірки 15.10: усього {z.get('усього', 0)}, точка→лінія {z.get('точка→лінія', 0)}, "
+                      f"лінія→точка {z.get('лінія→точка', 0)}, інша точка {z.get('інша точка', 0)}")
+            if ne: print(f"\nНе обираються (E6: ознаки між зрізами не повторюються): {', '.join(sorted(ne))}")
+            verdikt.append((r['назва'], odin, best, rows[best]['pai'], win, rows[win]['pai'] if win else None, r.get('проактивний'),
                             (o['E7'].get(win) or {}).get('сер_лог')))
             if 'захід_схід' in o:
                 z = o['захід_схід']
@@ -111,6 +154,28 @@ def main(d):
             c = lambda x: f"{f(ta[x]['10']['PAI'])} / {f(tb[x]['10']['PAI'])}" if x in ta and x in tb else '—'
             print(f"| {a['назва']} | {odin} | {ta['подій']} / {tb['подій']} | {c('R0')} | {c('R2')} | {c('R3')} |")
 
+    if d_old:
+        dodo = {}
+        for p in sorted(glob.glob(os.path.join(d_old, 'e8_*_36_14.json'))):
+            r = json.load(open(p, encoding='utf-8')); dodo[r['вид']] = r
+        print('\n## Переможець до і після перерахунку належності\n')
+        print('«До» — перевірка 15.10 (належність за історією до останньої дати, правило 15.10); '
+              '«після, правило 15.10» — нова належність, старе правило; «після» — нова належність і уточнення 37.\n')
+        print('| Вид | Одиниці | Подій цілі до / після | До (PAI 10%) | Після, правило 15.10 | Після (PAI 10%) | Найкращий після | Змінили належність (точка→лінія / лінія→точка / інша точка) |')
+        print('|---|---|---|---|---|---|---|---|')
+        for v in vydy:
+            a, b = dodo.get(v), R.get((v, '36_14'))
+            if not (a and b): continue
+            for odin in ('точки', 'лінії'):
+                va, vb, vs = vybir(a, odin, nove=False), vybir(b, odin), vybir(b, odin, nove=False)
+                if not (va and vb): continue
+                ev = lambda r: (r[odin]['E1_E2'].get(r.get('головний', HOL)) or {}).get('подій', '?')
+                z = b[odin].get('зміна_належності') or {}
+                zz = f"{z.get('точка→лінія', 0)} / {z.get('лінія→точка', 0)} / {z.get('інша точка', 0)}" if odin == 'точки' else '—'
+                pw = lambda x: f"**{x[1]}** ({f(x[2][x[1]]['pai'])})" if x[1] else '—'
+                print(f"| {b['назва']} | {odin} | {ev(a)} / {ev(b)} | {pw(va)} | {vs[1]} | {pw(vb)} | {vb[0]} ({f(vb[2][vb[0]]['pai'])}) | {zz} |")
+
 
 if __name__ == '__main__':
-    main(sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), 'e8_vyhid'))
+    K = os.path.dirname(os.path.abspath(__file__))
+    main(sys.argv[1] if len(sys.argv) > 1 else os.path.join(K, 'e8_vyhid'), sys.argv[2] if len(sys.argv) > 2 else None)

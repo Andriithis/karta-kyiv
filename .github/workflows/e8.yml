@@ -11,6 +11,15 @@ on:
       n_stab:
         description: 'Прогонів відбору стійкості на кожну модель (20 — підходів і зрізів тут ~10× більше, ніж у перенавчанні)'
         default: '20'
+      # ZAVDANNYA-37: перерахунок точок — лише набір 36.14 (36.17.7), без R12
+      # (1551 у ризик не входить, 36.17.4); порівняння з класом B — '["36_14","B"]'
+      nabory:
+        description: 'Набори подій (JSON-список): ["36_14"] або ["36_14","B"]'
+        default: '["36_14"]'
+      bez_r12:
+        description: 'Пропустити R12 (1551)'
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -69,7 +78,7 @@ jobs:
       fail-fast: false
       matrix:
         vyd: ['ГП', 'АЛК', 'НАР', 'НАС', 'МАЙ', 'ДТП', 'ДОР', 'ГП_хуліг', 'ДОР_залишення_місця', 'МАЙ_крадіжка', 'ДОР_ДТП_дорога', 'ДОР_ДТП_двір']
-        nabir: ['36_14', 'B']
+        nabir: ${{ fromJSON(github.event.inputs.nabory || '["36_14"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -86,6 +95,7 @@ jobs:
           # на чинному класі B — лише R0, R1, R2, R3, R9: це порівняння наборів
           LITE: ${{ matrix.nabir == 'B' && '1' || '0' }}
           N_STAB: ${{ github.event.inputs.n_stab || '20' }}
+          BEZ_R12: ${{ github.event.inputs.bez_r12 == 'false' && '0' || '1' }}
           OUT: e8_vyhid
         run: |
           pip install --quiet numpy scipy scikit-learn statsmodels lightgbm
@@ -111,8 +121,9 @@ jobs:
           pattern: e8-[0-9]*
           path: e8_vyhid
           merge-multiple: true
+      # другий аргумент — прогін 15.10 з репозиторію: таблиця «переможець до/після»
       - name: Таблиці
-        run: python doslidzhennya/audyt-34/kod/e8_zvedennia.py e8_vyhid > e8_vyhid/E8-perevirka-tablytsi.md
+        run: python doslidzhennya/audyt-34/kod/e8_zvedennia.py e8_vyhid doslidzhennya/audyt-34/kod/e8_vyhid > e8_vyhid/E8-perevirka-tablytsi.md
       - uses: actions/upload-artifact@v4
         with:
           name: e8-pidsumok
