@@ -1,0 +1,54 @@
+name: Е25 — воронка
+
+# ZAVDANNYA-38, крок 2: нижня частина воронки (точка, карта, проблеми, ризик)
+# на свіжій базі. Лише дослідження: у main нічого не комітить, результат —
+# артефакт «e25-mapa» (mapa.tsv.gz кладе Claude Code у kod/e25_vyhid/, і
+# e25_voronka.py рахує повну воронку локально, де є дамп 2024–2026).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mapa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Знімок OSM з гілки osm
+        run: |
+          git fetch --depth=1 origin osm
+          git checkout FETCH_HEAD -- osm && git reset -q
+          gunzip -c osm/osm_kyiv_city.json.gz > data/osm_kyiv_city.json
+          gunzip -c osm/osm_risks_raw.json.gz > data/osm_risks_raw.json
+          echo "знімок OSM від $(cat osm/data.txt)"
+      # ті самі кроки, що в «Оновленні карти», без свіжого дампу
+      - name: База подій, геокодування, установи
+        env:
+          BEZ_DAMPU: '1'
+        run: |
+          python src/step1_download.py
+          python src/step2_geocode.py
+          python src/step2b_risks.py
+      - name: Дані 1551 для відбору проблем
+        run: |
+          if git fetch --depth=1 origin analiz-1551 && git checkout FETCH_HEAD -- data/1551; then
+            git reset -q -- data/1551; echo "1551: $(ls data/1551 | wc -l) файлів"
+          else
+            echo "::warning::1551 недоступний — голос мешканців буде «даних немає»"
+          fi
+      - name: Карта, проблеми, ризик за документами
+        env:
+          OUT: e25_vyhid
+        run: |
+          pip install --quiet numpy
+          python -u doslidzhennya/audyt-34/kod/e25_mapa.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e25-mapa
+          path: e25_vyhid/mapa.tsv.gz
