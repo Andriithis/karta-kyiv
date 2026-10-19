@@ -44,22 +44,31 @@ POINT = {'house', 'cross', 'base', 'interp'}
 
 
 def vyd(cat, grp=''):
-    # Домашнє насильство в labels — підвид НАС (ст. 173-2), але в дампі це
-    # окрема група, яку крок 1 свідомо не бере (приватні адреси, step1_download
-    # SKIP). Окремим рядком, щоб ця свідома втрата не ховалася в НАС.
-    if grp == '8_DOMESTIC': return 'ДОМ'
+    # Вид — за статтею, як у карті (labels.CODE), не за групою дампу.
+    # Домашнє насильство в карті — частина НАС (35.8); окремим рядком «ДОМ»,
+    # щоб його втрати (АДРЕСА_N, група 8_DOMESTIC) не ховалися в НАС.
+    if L.SIMGROUP.get(cat) == 'НАС_домашнє' or grp == '8_DOMESTIC': return 'ДОМ'
     v = L.CODE.get(cat)
     return v[0] if isinstance(v, tuple) and v[0] in VYDY else 'поза видами'
 
 
 def dump():
-    """doc_id -> (cat, дата рішення, група дампу, номер справи); дублікати між
-    файлами — свіжіший файл."""
+    """doc_id -> (cat, дата рішення, група, номер справи).
+
+    Дамп — kyiv_*.csv разом з events.csv.gz. Локальні kyiv_*.csv старші за
+    статті, додані 30.09 (RISHENNYA 34): ці документи (ст. 51 і 173 КУпАП,
+    домашнє насильство та ін., понад 30 тис. рішень по суті) є лише в
+    events.csv.gz, з групою-видом замість групи дампу. Без них воронка
+    губила третину МАЙ і НАС (VIDPOVID-38, п. 1)."""
     out = {}
     for f in sorted(glob.glob(os.path.join(D, 'kyiv_*.csv'))):
         with open(f, encoding='utf-8-sig') as fh:
             for r in csv.DictReader(fh, delimiter='\t'):
                 out[r['doc_id']] = (r['category_code'], r['date'], r['group'], r['cause_num'])
+    with gzip.open(os.path.join(D, 'events.csv.gz'), 'rt', encoding='utf-8', newline='') as fh:
+        for r in csv.DictReader(fh, delimiter='\t'):
+            if r['doc_id'].isdigit() and r['doc_id'] not in out:
+                out[r['doc_id']] = (r['cat'], r['date'], r['grp'], '')
     return out
 
 
