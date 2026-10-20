@@ -34,7 +34,7 @@ DATA = os.path.join(ROOT, 'data')
 REPORT = os.path.join(DATA, 'problems_report.json')
 D1551 = os.path.join(DATA, '1551')
 
-PRAVYLA = 'В1 з поправками 29–30.09.2026 (METODYKA, розд. 2–3; RISHENNYA, розд. 32–33)'
+PRAVYLA = 'В1 з поправками 29–30.09.2026 (SPECYFIKATSIYA, S-ПР; RISHENNYA, розд. 32–33)'
 R_MISCE = 30          # м: адреси з тим самим механізмом ближче — одне місце
 # Р3 (RISHENNYA 32, затверджено 29.09): 5–6 подій за 3 роки — збіг, а не
 # проблема. ≥12 подій за останні 2 роки — у середньому раз на два місяці — і

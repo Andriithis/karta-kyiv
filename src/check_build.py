@@ -78,6 +78,10 @@ def spec_testy():
         return [f'немає {os.path.basename(SPEC)}'], {}
     import collections
     st = collections.Counter(); bad = []
+    # ≤ 40 КБ (36.31.1): файл читається цілком на початку кожної роботи
+    kb = os.path.getsize(SPEC) / 1024
+    st['КБ'] = round(kb, 1)
+    if kb > 40: bad.append(f'{os.path.basename(SPEC)} — {kb:.1f} КБ, межа 40')
     for ln in open(SPEC, encoding='utf-8'):
         m = re.match(r'^\| (S-[^\s|]+) \|(.*)\|\s*$', ln)
         if not m: continue

@@ -69,6 +69,6 @@
 
 ## Документи
 
-[CILI.md](CILI.md) — навіщо це все · [RISHENNYA.md](RISHENNYA.md) — ухвалені
-рішення · [PLAN-ZAHALNYI.md](PLAN-ZAHALNYI.md) — порядок робіт ·
-[KARTA-1.0.md](KARTA-1.0.md) — що вважається готовим · `arkhiv/` — виконане.
+[CILI.md](CILI.md) — навіщо це все · [SPECYFIKATSIYA.md](SPECYFIKATSIYA.md) —
+чинні правила · [RISHENNYA.md](RISHENNYA.md) — журнал рішень ·
+[PLAN-ZAHALNYI.md](PLAN-ZAHALNYI.md) — порядок робіт · `arkhiv/` — виконане.

@@ -473,7 +473,7 @@ function placeArts(p,evs){
  const rows=Object.entries(c).sort((a,b)=>b[1]-a[1]), show=PLACE.allArts?rows:rows.slice(0,5);
  return `<table class="bd">${show.map(([a,n])=>`<tr><td>${esc(M.cats[a])}</td><td><b>${n}</b></td></tr>`).join('')}</table>`+
   (rows.length>show.length?`<button class="kp-lnk" data-kp="arts">ще ${rows.length-show.length} ${pl(rows.length-show.length,'стаття','статті','статей')}</button>`:'')}
-// В1 (METODYKA, розд. 2–3): рівень місця, розбивка за механізмами й голос
+// В1 (SPECYFIKATSIYA, S-ПР): рівень місця, розбивка за механізмами й голос
 // мешканців — по рядку, без пояснень, яких немає в даних. Тип місця,
 // посібник POP Center, «хто керує» й техніки — лише у звіті «Проблеми»
 // (завдання 30, ч. 2): на карті їх читали як висновок про місце.

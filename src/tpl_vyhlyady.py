@@ -365,7 +365,7 @@ placeEl().addEventListener('click',e=>{ if(e.target.closest('[data-kp="close"]')
   map.fitBounds([[w,s],[ea,n]],{padding:sidePad(),maxZoom:16.5,duration:900})}
 },true);
 document.addEventListener('keydown',e=>{ if(e.key!=='Escape') return; bezPosylannia(); if(CELL) closeCell()});
-// ==== ПОСИЛАННЯ НА МІСЦЕ (KARTA-1.0 №15; RISHENNYA 35.9) ====
+// ==== ПОСИЛАННЯ НА МІСЦЕ (SPECYFIKATSIYA S-К.23; RISHENNYA 35.9) ====
 // Адреса сторінки з #m=<lat>,<lon>[,<механізм проблеми>] (адреса, проблема)
 // чи #c=<R>,<lat>,<lon> (сота); відкриття — карта на місці з карткою.
 // Проблема — за адресою й механізмом, а не за порядковим номером: номер
