@@ -53,6 +53,47 @@ NE_MAE_BUTY = [
 ]
 
 
+# ---- СПЕЦИФІКАЦІЯ ↔ ТЕСТИ (RISHENNYA 36.31.4) ----
+# Правило в SPECYFIKATSIYA.md посилається на перевірку як `test:назва`; тут —
+# реєстр наявних перевірок (назва -> крок цієї збірки). Назва без ⏳, якої
+# тут немає, — червона збірка: інакше правило вдає перевірене, хоча тест
+# прибрали чи перейменували. `⏳test:` — тест ухвалено, ще не написано.
+SPEC = os.path.join(ROOT, 'SPECYFIKATSIYA.md')
+TESTY = {
+    'kompiliatsiia': '1. Компіляція src/',
+    'rozmitka': '5. Розмітка',
+    'js': '5. JavaScript',
+    'ustanovy': '4. Установи не просочилися на карту',
+    'sud_raion': '4б. Суд ↔ район точки',
+    'pai_ryzyku': '4а. Шари ризику: PAI ≥ 3',
+    'specyfikatsiia': '0. Специфікація ↔ тести',
+}
+
+
+def spec_testy():
+    """(помилки, підсумок): тести без ⏳, яких немає в TESTY, і скільки правил
+    чим перевіряються. Розбір — за рядками таблиць `| S-… | правило | джерело |
+    перевірка |`: остання колонка й є перевірка."""
+    if not os.path.exists(SPEC):
+        return [f'немає {os.path.basename(SPEC)}'], {}
+    import collections
+    st = collections.Counter(); bad = []
+    for ln in open(SPEC, encoding='utf-8'):
+        m = re.match(r'^\| (S-[^\s|]+) \|(.*)\|\s*$', ln)
+        if not m: continue
+        st['правил'] += 1
+        perev = m.group(2).split('|')[-1]
+        gotovi = [t for p, t in re.findall(r'(⏳?)test:([a-z0-9_]+)', perev) if not p]
+        plan = re.findall(r'⏳test:([a-z0-9_]+)', perev)
+        for t in gotovi:
+            if t not in TESTY: bad.append(f'{m.group(1)}: test:{t} немає в check_build')
+        if gotovi: st['з тестом'] += 1
+        elif plan: st['тест ухвалено, ще не написано'] += 1
+        elif 'очима' in perev: st['очима'] += 1
+        else: st['без перевірки'] += 1
+    return bad, dict(st)
+
+
 def drop_cache():
     """Прибрати __pycache__ перед перевіркою.
 
@@ -165,6 +206,12 @@ def sud_raion(html_path):
 
 
 def main(save=False):
+    print('0. Специфікація ↔ тести (RISHENNYA 36.31.4)')
+    bad, st = spec_testy()
+    for b in bad: print('   ПОМИЛКА', b)
+    if bad: return 1
+    print('   ' + '; '.join(f'{k} {v}' for k, v in st.items()))
+
     print('1. Компіляція src/')
     drop_cache()
     bad = compile_all()
