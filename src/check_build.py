@@ -67,7 +67,19 @@ TESTY = {
     'sud_raion': '4б. Суд ↔ район точки',
     'pai_ryzyku': '4а. Шари ризику: PAI ≥ 3',
     'specyfikatsiia': '0. Специфікація ↔ тести',
+    'dzherelo_tochky': '4в. Точки карти: «база» й «між сусідами» — 0',
 }
+
+
+def tochky_karty(html_path):
+    """Лічильник p[3] (точність) точок зібраної карти: 0 — центр вулиці,
+    3 — «база», 4 — між сусідами (step3_map.PREC). S-А.3 і S-А.4 вимагають,
+    щоб їх не було зовсім."""
+    import collections
+    html = open(html_path, encoding='utf-8').read()
+    m_ = re.search(r'const M=.*?, P=(\[.*?\]);\n', html, re.S)
+    if not m_: return None
+    return collections.Counter(p[3] for p in json.loads(m_.group(1)) if len(p) > 3)
 
 
 def spec_testy():
@@ -321,6 +333,22 @@ def main(save=False):
         if ch > SUD_MEZHA:
             print(f'   ПОМИЛКА незбіг суду й району {100 * ch:.1f}% > {100 * SUD_MEZHA:.0f}%')
             return 1
+
+    print('4в. Точки карти: «база» й «між сусідами» — 0 (S-А.4)')
+    # На живій карті (site/index.html після кроку 3 у workflow): тестова база
+    # має старе геокодування, на ній «база» ще є.
+    sp = os.path.join(ROOT, 'site', 'index.html')
+    tk = tochky_karty(sp) if os.path.exists(sp) else None
+    if tk is None:
+        print('   site/index.html немає — пропущено')
+    else:
+        # 0 (центр вулиці) — поки лише для вікна пошуку вулиці; прибирається
+        # разом із карткою пошуку (S-А.3, етап В) — тоді й тест bez_nomera
+        pogani = {k: v for k, v in tk.items() if k in (3, 4)}
+        if pogani:
+            print(f'   ПОМИЛКА точок «база» (3) / «між сусідами» (4): {pogani}')
+            return 1
+        print(f'   точок {sum(tk.values()):,}: ' + ', '.join(f'{k}: {v:,}' for k, v in sorted(tk.items())))
 
     print('4а. Шари ризику: PAI на довжину ≥ 3')
     # Шар, гірший за втричі від навмання, на карту не йде (ZAVDANNYA-30, ч. 5).

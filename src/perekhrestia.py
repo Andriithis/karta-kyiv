@@ -54,10 +54,26 @@ class Perekhrestia:
                 g = [(p['lat'], p['lon']) for p in w.get('geometry') or []]
                 if nm and len(g) > 1: s.lines[nm] += _shchilno(g)
         s.os = {nm: osnovy(nm) for nm in s.lines}
+        # ключ довідника -> назви OSM: запасний шлях через adr_kliuch, коли
+        # основи слів не збіглися («Короленківської», «Бальзака» без імені)
+        s.za_kliuchem = collections.defaultdict(set)
+        for nm in s.lines: s.za_kliuchem[skey(nm)].add(nm)
+        s.kliuch = None                               # adr_kliuch.Kliuch, ставить геокодер
         s._c = {}
 
     def vulytsia(s, name):
         """назва OSM для назви з тексту, або (None, причина)"""
+        nm, why = s._za_osnovamy(name)
+        if nm or not s.kliuch: return nm, why
+        # той самий ключ, що й для будинків (S-А.5–6): відмінок, ініціали,
+        # однозначна неповна назва
+        k, pr = s.kliuch.rozibraty(name)
+        c = s.za_kliuchem.get(k) if pr is not None else None
+        # кілька назв OSM з одним ключем — та сама вулиця («вулиця Лугова» і
+        # «Лугова вулиця»): беремо ту, що має найдовшу лінію
+        return (max(sorted(c), key=lambda n: len(s.lines[n])), '') if c else (None, why)
+
+    def _za_osnovamy(s, name):
         q = osnovy(name)
         if not q: return None, 'назву не розібрано'
         # усі основи з тексту мають бути в назві OSM: «Хмельницького» — так,

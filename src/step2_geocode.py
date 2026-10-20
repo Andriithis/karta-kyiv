@@ -20,15 +20,9 @@ TILES = 3
 
 QHEAD = '[out:json][timeout:600];area["boundary"="administrative"]["admin_level"="4"]["name"="Київ"]->.k;'
 
-TYPEWORDS = r'(вулиця|вулиці|вулицю|вул\.?|проїзд\w*|проспект[уі]?|просп\.?|бульвар[уі]?|бульв\.?|б-р|провулок|провулку|пров\.?|площа|площі|пл\.?|шосе|набережна|набережної|наб\.?|узвіз|узвозу|алея|алеї|тупик|тракт|мікрорайон)'
-
-def norm(s):
-    if not s: return ''
-    s = s.lower().replace('\u2019', "'").replace('`', "'").replace('\u02bc', "'")
-    s = re.sub(TYPEWORDS, ' ', s)
-    s = re.sub(r"[^а-яіїєґ0-9' \-]", ' ', s)
-    s = s.replace('-', ' ').replace("'", '')
-    return re.sub(r'\s+', ' ', s).strip()
+# Нормалізація адреси — лише в adr_kliuch (36.30.6): звідси її беруть і
+# старі імпорти `from step2_geocode import norm, skey, nh`.
+from adr_kliuch import norm, skey, nh, TYPEWORDS
 
 # ---- ТИП ВУЛИЦІ ОКРЕМО ВІД НАЗВИ (ZAVDANNYA-32, 2.1) ----
 # norm() викидає тип: «бульв. Лесі Українки» = «вул. Лесі Українки». Для
@@ -75,11 +69,6 @@ def pidpys(st):
         st = re.sub(a, b, st)
     return st
 
-
-def nh(h):
-    if not h: return ''
-    h = h.upper().replace(' ', '').replace('\\', '/')
-    return re.sub(r'[^0-9A-ZА-Я/]', '', h)
 
 def _ask(body, label):
     data = urllib.parse.urlencode({'data': QHEAD + body}).encode()
@@ -140,33 +129,10 @@ def spread_km(pts):
 # Перехрестя — src/perekhrestia.py (завдання 30, ч. 4): точка перетину ліній
 # OSM, а не середина між найближчими будинками двох вулиць, як було тут.
 
-# ---- БУДИНКИ, ЯКИХ НЕМАЄ В OSM (PLAN-TEKSTY.md, 4б) ----
-# Лише для подій класу B — чужу адресу розстановка зробила б точнішою, ніж
-# вона є. Перевірка на установи — далі, у step3_map, як для всіх адрес.
-NEIGHBOUR = 8           # сусід того самого боку — не далі за 8 номерів
-# «20Б» стає поруч із будинком 20, а не на ньому: інакше точка злилася б з
-# подіями самого будинку 20 і його підпис став би чужим. ~4 м на північ.
+# «20Б» стає поруч із будинком 20, а не на ньому (~4 м на північ). Самих
+# точок «база» й «між сусідами» більше немає (S-А.4); константу читає
+# step3_map для старих баз.
 BESIDE = 0.00004
-
-
-def nearby(ns, h, exact, nums):
-    """(lat, lon, 'base' | 'interp') або None."""
-    m = re.match(r'^(\d+)', h)
-    if not m:
-        return None
-    n = int(m.group(1))
-    if h != str(n) and (ns, str(n)) in exact:
-        la, lo = exact[(ns, str(n))]
-        return (round(la + BESIDE, 6), lo, 'base')
-    nn = nums.get(ns) or {}
-    lo_ = [x for x in nn if x < n and x % 2 == n % 2 and n - x <= NEIGHBOUR]
-    hi_ = [x for x in nn if x > n and x % 2 == n % 2 and x - n <= NEIGHBOUR]
-    if not (lo_ and hi_):
-        return None
-    a, b = max(lo_), min(hi_)
-    f = (n - a) / (b - a)
-    (la1, lo1), (la2, lo2) = nn[a], nn[b]
-    return (round(la1 + f * (la2 - la1), 6), round(lo1 + f * (lo2 - lo1), 6), 'interp')
 
 
 # ---- ГЕОКОДЕР МІСТА (КМДА) — друге джерело точних будинків ----
@@ -220,12 +186,6 @@ def fetch_kmda():
     with gzip.open(KMDA, 'rt', encoding='utf-8', newline='') as fh:
         return [(r['street'], r['house'], float(r['lat']), float(r['lon']))
                 for r in csv.DictReader(fh, delimiter='\t')]
-
-
-def skey(s):
-    """Ключ вулиці без порядку слів: у геокодері «Корольова Академіка», у
-    текстах і в OSM — «Академіка Корольова»."""
-    return ' '.join(sorted(norm(s).split()))
 
 
 def _m(la, lo, la0):
@@ -347,8 +307,11 @@ def main():
     # ньому тримаються «20Б → 20» і розстановка між сусідами.
     kand = collections.defaultdict(list); streets = collections.defaultdict(list)
     streets_t = collections.defaultdict(list)
+    # Ключ — той самий skey, що й у КМДА, карти й пошуку (adr_kliuch): раніше
+    # OSM ішов за norm (з порядком слів), КМДА — за skey, і одна адреса з
+    # двох джерел мала два різні ключі.
     for st, h, la, lo in rows:
-        ns = norm(st)
+        ns = skey(st)
         if not ns: continue
         kand[(ns, nh(h))].append((la, lo, stype(st), st))
         streets[ns].append((la, lo)); streets_t[(ns, stype(st))].append((la, lo))
@@ -426,17 +389,36 @@ def main():
     print(f'   номер без прилиплого прийменника («1/5У» -> «1/5»): {n_unglued:,}')
     print(f'2) зіставлення заново: {len(todo):,} записів (з проходу по текстах: {len(tk):,})')
 
-    tail = collections.defaultdict(list)
-    for k in centro:
-        p = k.split()
-        if len(p) > 1: tail[p[-1]].append(k)
+    # Назва з тексту -> ключ довідника тим самим модулем, що й карта й пошук
+    # (S-А.5–6): ініціали, перейменування, відмінок, однозначна неповна назва.
+    # «Хвостовий» збіг за останнім словом прибрано: він брав неповну назву й
+    # без перевірки однозначності. «20Б → 20» і розстановку між сусідами теж:
+    # точка «бази» поза своєю будівлею в 100% випадків, інтерполяції — в 94%
+    # (Е12б, А2; S-А.4) — така подія тепер як без номера.
+    import adr_kliuch
+    KL = adr_kliuch.Kliuch()
+    PRAV = collections.Counter()           # правило ключа -> точок «будинок»
 
-    # Номери будинків вулиці цифрою — для «20Б → 20» і розстановки між
-    # сусідами (PLAN-TEKSTY.md, 4б; RISHENNYA, розд. 21).
-    nums = collections.defaultdict(dict)
-    for (k, h), ll in exact.items():
-        if h.isdigit(): nums[k].setdefault(int(h), ll)
-
+    PXI.kliuch = KL
+    # Номер без дробу, якого в довіднику немає, — кутовий будинок «N/M» тієї
+    # самої вулиці: суди пишуть «Олени Теліги, 13», в OSM — «13/14». Це сам
+    # будинок, а не точка між сусідами. Дріб один — він; кілька — той, що лежить
+    # між сусідніми номерами N−2 і N+2 (обидва є, кожен не далі DRIB_M); інакше точки немає (ZAVDANNYA-39, А.1; на підтвердження).
+    DRIB, DRIB_M = True, 200
+    po_drobu = collections.defaultdict(list)
+    for (k, hh), c in kand.items():
+        if '/' in hh and hh.split('/')[0].isdigit(): po_drobu[(k, hh.split('/')[0])] += c
+    def drib(ns_, h_):
+        c = po_drobu.get((ns_, h_))
+        if not c: return None
+        if spread_km([(a, b) for a, b, _t, _s in c]) <= R_ODNA / 5: return c[0]
+        n = int(h_); a_, b_ = kand.get((ns_, str(n - 2))), kand.get((ns_, str(n + 2)))
+        if not (a_ and b_): return None
+        # у сусіда буває кілька точок (11 Теліги — дві, за кілометр): міряємо до
+        # найближчої з них; кандидат — з найменшою з двох відстаней-до-сусіда
+        dd = lambda q, xs: min(spread_km([(q[0], q[1]), (y[0], y[1])]) for y in xs)
+        x = min(c, key=lambda q: max(dd(q, a_), dd(q, b_)))
+        return x if max(dd(x, a_), dd(x, b_)) * 1000 <= DRIB_M else None
     kmda = kmda_index(streets) if KMDA_ON else {}
     borders = json.load(open(os.path.join(DATA, 'borders.json'), encoding='utf-8'))
     _dcache = {}
@@ -500,7 +482,8 @@ def main():
 
     out = []; st = collections.Counter()
     for doc, street, house, klass, px in todo:
-        ns, h = norm(street), nh(house)
+        ns, pr = KL.rozibraty(street)
+        h = nh(house)
         typ = stype(street)
         hit = None; src = 'osm'; adr = None
         if px:
@@ -521,29 +504,25 @@ def main():
             x, why = pick(kand[(ns, h)], typ, COURT_D.get(doc), ns)
             PICK[why or 'одна'] += 1
             if x:
-                hit = (x[0], x[1], 'house'); adr = pidpys(x[3])
+                hit = (x[0], x[1], 'house'); adr = pidpys(x[3]); PRAV[pr or 'як є'] += 1
                 if why and len(PRYKL) < 400:
                     PRYKL.append((street, house, why, kand[(ns, h)][0], x))
             elif len(PRYKL) < 400:
                 PRYKL.append((street, house, why, kand[(ns, h)][0], None))
         # Точний будинок КМДА — раніше за «20Б біля 20»: це сам будинок, а
         # не місце поруч.
-        elif h and (skey(street), h) in kmda:
-            x, why = pick(kmda[(skey(street), h)], typ, COURT_D.get(doc))
+        elif h and (ns, h) in kmda:
+            x, why = pick(kmda[(ns, h)], typ, COURT_D.get(doc))
             PICK['КМДА: ' + (why or 'одна')] += 1
             # підпис КМДА не беремо: там «бульвар Шевченка Тараса» — прізвищем наперед
-            if x: hit = (x[0], x[1], 'house'); src = 'kmda'
-        elif h and klass == 'B' and (near := nearby(ns, h, exact, nums)):
-            hit = near
+            if x: hit = (x[0], x[1], 'house'); src = 'kmda'; PRAV[pr or 'як є'] += 1
+        elif DRIB and h.isdigit() and (x := drib(ns, h)):
+            # кутовий будинок: суд пише «Теліги, 13», в OSM — «13/14» (S-А.4)
+            hit = (x[0], x[1], 'house'); adr = pidpys(x[3]); PRAV['дріб (N → N/M)'] += 1
         elif typ and (ns, typ) in centro_t:
             hit = (*centro_t[(ns, typ)], 'street')
         elif ns in centro:
             hit = (*centro[ns], 'street')
-        else:
-            cand = tail.get(ns.split()[-1], []) if ns else []
-            if len(cand) == 1:
-                k = cand[0]
-                hit = (*(exact.get((k, h)) or centro[k]), 'house' if (k, h) in exact else 'street')
         if hit:
             out.append((doc, hit[0], hit[1], hit[2], src, adr))
             st[hit[2] + (' (КМДА)' if src == 'kmda' else '')] += 1
@@ -554,6 +533,8 @@ def main():
     for k, v in st.most_common():
         print(f'  {k:14} {v:8,}  {100*v/max(len(todo),1):5.1f}%')
     print('перехрестя: ' + ', '.join(f'{k} {v:,}' for k, v in PXST.most_common()))
+    # Скільки точок «будинок» дало кожне правило ключа (ZAVDANNYA-39, А.1)
+    print('точки будинку за правилом ключа: ' + ', '.join(f'{k} {v:,}' for k, v in PRAV.most_common()))
     # Журнал однойменних (2.1): скільки вирішено типом, районом суду, скільки
     # без точки, і приклади «було (перший кандидат) -> стало»
     print('однойменні адреси: ' + ', '.join(f'{k} {v:,}' for k, v in PICK.most_common()))
