@@ -68,7 +68,29 @@ TESTY = {
     'pai_ryzyku': '4а. Шари ризику: PAI ≥ 3',
     'specyfikatsiia': '0. Специфікація ↔ тести',
     'dzherelo_tochky': '4в. Точки карти: «база» й «між сусідами» — 0',
+    'zahlushky': '4г. Фабули в показі: заглушок 0, шапок і посилань ≤1%',
 }
+
+# Фабули на сайті (S-П.8; 36.19.1–3): що бачить слухач — site/spravy/*.json
+ZAHLUSHKY = re.compile(r'ОСОБА_\d|ІНФОРМАЦІЯ_\d|НОМЕР_\d|АДРЕСА_\d')
+SHAPKA_POKAZ = re.compile(r'^\s*(?:У\s+протокол|У\s+відповідності|Відповідно\s+до\s+висунутого|'
+                          r'Складеного\s+відносно|З\s+огляду\s+на\s+викладене|Згідно\s+(?:з\s+)?протокол)', re.I)
+PRAVO_POKAZ = re.compile(r'(?:в|у)\s+порушення\s+(?:вимог\w*\s+)?(?:п\.\s*п\.|пп\.|п\.|пункт)|'
+                         r'всупереч\s+вимогам\s+(?:ст|статт)', re.I)
+
+
+def fabuly_saitu(d):
+    """(фабул, із заглушками, з шапкою, з юридичним посиланням) у site/spravy"""
+    import glob as _g
+    n = z = s = p = 0
+    for f in _g.glob(os.path.join(d, '*.json')):
+        txt = open(f, encoding='utf-8').read()
+        # фабули — рядки JSON довші за 60 знаків з кириличним текстом
+        for m in re.finditer(r'"((?:[^"\\]|\\.){60,})"', txt):
+            t = m.group(1)
+            if not re.search(r'[а-яіїєґ]{4}', t): continue
+            n += 1; z += bool(ZAHLUSHKY.search(t)); s += bool(SHAPKA_POKAZ.match(t)); p += bool(PRAVO_POKAZ.search(t))
+    return n, z, s, p
 
 
 def tochky_karty(html_path):
@@ -349,6 +371,18 @@ def main(save=False):
             print(f'   ПОМИЛКА точок «база» (3) / «між сусідами» (4): {pogani}')
             return 1
         print(f'   точок {sum(tk.values()):,}: ' + ', '.join(f'{k}: {v:,}' for k, v in sorted(tk.items())))
+
+    print('4г. Фабули в показі (S-П.8): заглушок 0, шапок і посилань ≤1%')
+    sd = os.path.join(ROOT, 'site', 'spravy')
+    if not os.path.isdir(sd):
+        print('   site/spravy немає — пропущено')
+    else:
+        n, z, s, p = fabuly_saitu(sd)
+        print(f'   фабул {n:,}: із заглушками {z:,}, з шапкою {s:,} ({100 * s / max(n, 1):.2f}%), '
+              f'з юридичним посиланням {p:,} ({100 * p / max(n, 1):.2f}%)')
+        if z or s > 0.01 * n or p > 0.01 * n:
+            print('   ПОМИЛКА фабули в показі не відповідають S-П.8')
+            return 1
 
     print('4а. Шари ризику: PAI на довжину ≥ 3')
     # Шар, гірший за втричі від навмання, на карту не йде (ZAVDANNYA-30, ч. 5).

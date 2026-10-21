@@ -197,7 +197,7 @@ def vybir(c, print=print):
         tk = TKD.get(r[0])
         f = fab.get(r[0], '')
         kl = tk['klass'] if tk else PD.addr_class(f, r[5])
-        potv[r[0]] = (PD.is_event(r[0], f, formy), kl == 'B')
+        potv[r[0]] = (PD.is_event(r[0], f, formy, tk), kl == 'B')
     excl = detect_institutional(rows, load_excl(), potv)
     # «20Б» біля будинку 20 стоїть на BESIDE північніше — для перевірки за
     # точкою беремо сам будинок: «пл. Вокзальна, 1В» біля вокзалу, що в
@@ -219,7 +219,8 @@ def vybir(c, print=print):
     # Подією справи може бути лише рішення по суті, а подія одна на (справа,
     # вид подій) — правило спільне з моделлю й звітами, src/podii.py.
     # Ухвали лишаються серед паперів справи, представником не стають.
-    isev = {r[0]: PD.is_event(r[0], fab.get(r[0], ''), formy) for r in rows}
+    # процесуальна постанова з формою «постанова» — теж не подія (S-П.4)
+    isev = {r[0]: PD.is_event(r[0], fab.get(r[0], ''), formy, TKD.get(r[0])) for r in rows}
     nproc = sum(1 for v in isev.values() if not v)
     print(f'   процесуальних документів (ухвали): {nproc:,} з {len(rows):,}; '
           f'форма з дампу є для {sum(1 for d in isev if formy.get(d)):,}')
