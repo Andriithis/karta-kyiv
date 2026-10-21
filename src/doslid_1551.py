@@ -38,7 +38,8 @@ import vidrizky as VR
 
 ROOT = E.ROOT
 DATA = E.DATA
-TXT = os.path.join(ROOT, 'ZVIT-1551-ZAKONOMIRNOSTI.md')
+# серед досліджень, не в корені (S-Н.7)
+TXT = os.path.join(ROOT, 'doslidzhennya', 'ZVIT-1551-ZAKONOMIRNOSTI.md')
 
 VIKNO = ['2025-08', '2025-09', '2025-10', '2025-11', '2025-12', '2026-01']
 ISTORIIA = [f'2025-{m:02d}' for m in range(2, 13)] + ['2026-01']

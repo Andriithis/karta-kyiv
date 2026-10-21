@@ -18,7 +18,7 @@
 виміряне й «як перевірити на місці». Слів «ризик», «прогноз», «причина»
 немає — шар зветься «Схожі умови».
 """
-import os, sys, json, math, collections, datetime as dt
+import os, sys, json, gzip, math, collections, datetime as dt
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import labels as L
 import mech as M
@@ -144,8 +144,9 @@ def dani():
     D['dnames'] = meta.get('dnames', [])
     def js(n):
         pth = os.path.join(DATA, n)
-        return json.load(open(pth, encoding='utf-8')) if os.path.exists(pth) else {}
-    D['PR'] = js('problems_report.json')
+        if not os.path.exists(pth): return {}
+        return json.load(gzip.open(pth, 'rt', encoding='utf-8') if n.endswith('.gz') else open(pth, encoding='utf-8'))
+    D['PR'] = js('problems_report.json.gz')
     D['RAD'] = js('radiusy.json')
     D['POPJ'] = js('population.json')
     D['BORD'] = js('borders.json')

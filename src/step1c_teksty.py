@@ -850,7 +850,7 @@ def rozbir(text, cat):
     poch = tt[m0.start() if m0 else 0:]
     mr = PD.REZOLUTYVNA.search(poch)
     opys = bool(full) and any(is_event_sentence(s) for s in _sentences(full))
-    if PD.PROC_POSTANOVA.search(poch[:min(mr.start() if mr else 1500, 1500)]) and not event_time(full) and not opys:
+    if PD.proc_oznaka(poch[:min(mr.start() if mr else 1500, 1500)]) and not event_time(full) and not opys:
         # постанова по суті, що заодно об'єднує справи («суд вважає за необхідне
         # об'єднати справи»), має опис події — вона подія
         v = 'процесуальна'
@@ -907,7 +907,8 @@ REESTR = 'https://od.reyestr.court.gov.ua/files/'
 # бюджетом MAX_DOCS за ніч.
 # v4d (20.10, ZAVDANNYA-39, А.3): v4 + виправлені описки в датах і позначка
 # «процесуальна». Повторно беруться лише документи v4 без фабули (≈4,3 тис.:
-# описки в датах, процесуальні постанови); решта v4 лишається зробленою —
+# описки в датах, процесуальні постанови) і з ознакою ухвали у фабулі (≈0,65
+# тис., peregliad); решта v4 лишається зробленою —
 # перекачувати 156 тис. заради цього не треба (RULE_SUMISNI).
 RULE = 'v4d'
 RULE_SUMISNI = ('v4',)
@@ -994,8 +995,12 @@ def load_done(strict=False):
 def peregliad(r):
     """Рядок сумісного правила, який треба розібрати ще раз: фабули немає —
     кінець опису не знайдено (описка в даті) або це процесуальна постанова,
-    яку v4 не розпізнавав (≈4,3 тис.: одна ніч)."""
-    return not r.get('fab') and r.get('end_found') != '1'
+    яку v4 не розпізнавав (≈4,3 тис.: одна ніч). І постанова з фабулою, де
+    вже видно ознаку ухвали (≈0,9 тис.): серед них третина процесуальних з
+    датою попереднього рішення (VIDPOVID-39 від 21.10, п. 2)."""
+    if r.get('fab'):
+        return bool(PD.PROC_POSTANOVA.search(r['fab']))
+    return r.get('end_found') != '1'
 
 
 def queue_docs():
@@ -1083,9 +1088,36 @@ def main_pererakhuvaty():
         if n: print(f'   {k}: {n:,}')
 
 
+def main_ushchilnyty():
+    """Одна частина з тим, що бере load_done, замість усіх (S-Н.6, 36.30.1):
+    щоденні частини тримали кожну версію документа (v1–v4 — 351 тис. рядків
+    на 156 тис. документів), і кожен запуск читав їх усі. Історія — у git.
+    Запобіжник: load_done з strict і без — той самий хеш до й після; інакше
+    старі частини лишаються."""
+    global TEKSTY
+    xesh = lambda d: hashlib.sha256(json.dumps(sorted(d.items()), ensure_ascii=False).encode()).hexdigest()
+    do, do_s = load_done(), load_done(strict=True)
+    stari = sorted(glob.glob(os.path.join(TEKSTY, '*.csv.gz')))
+    tmp = os.path.join(TEKSTY, '_ushchilnennia')
+    fp = os.path.join(tmp, f'{datetime.date.today().isoformat()}-00.csv.gz')
+    os.makedirs(tmp, exist_ok=True)
+    # рядки — як прочитано; NUL прибирає _write, але в частинах його вже немає
+    _write(fp, do)
+    TEKSTY, osn = tmp, TEKSTY
+    pislia, pislia_s = load_done(), load_done(strict=True)
+    TEKSTY = osn
+    if (xesh(do), xesh(do_s)) != (xesh(pislia), xesh(pislia_s)):
+        print('хеш не збігся — частини не чіпаю'); sys.exit(1)
+    for p in stari: os.remove(p)
+    os.replace(fp, os.path.join(TEKSTY, os.path.basename(fp))); os.rmdir(tmp)
+    print(f'частин {len(stari)} -> 1; документів {len(do):,} (strict {len(do_s):,}); хеш {xesh(do)[:12]}')
+
+
 def main():
     if '--pererakhuvaty' in sys.argv:
         return main_pererakhuvaty()
+    if '--ushchilnyty' in sys.argv:
+        return main_ushchilnyty()
     budget = int(os.environ.get('MAX_DOCS', '30000') or 0)
     done = load_done(strict=True)
     reps, refs = queue_docs()

@@ -47,7 +47,8 @@ RAW  = os.path.join(DATA, 'osm_risks_raw.json')
 OUT  = os.path.join(DATA, 'engine_report.json')
 RISK = os.path.join(DATA, 'risk.json')
 RADF = os.path.join(DATA, 'radiusy.json')
-TXT  = os.path.join(ROOT, 'ZVIT-KROK7.md')
+# Звіт моделі — серед досліджень, не в корені: у корені лише чинні документи (S-Н.7)
+TXT  = os.path.join(ROOT, 'doslidzhennya', 'ZVIT-KROK7.md')
 
 SNAP_M  = 120     # подія прив'язується до вулиці в цьому радіусі
 RADII   = (50, 100, 150, 250, 400, 500)      # PLAN-KROK7, розд. 3

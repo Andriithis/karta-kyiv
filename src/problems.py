@@ -19,7 +19,7 @@
   * «формується» — рахується й зберігається, на карту не йде (розд. 3.2);
   * golos — скарги 1551 того ж виду проти рівня району (розд. 5.1).
 
-Запуск окремо: py -3 src/problems.py (пише data/problems_report.json).
+Запуск окремо: py -3 src/problems.py (пише data/problems_report.json.gz).
 Карта кличе run() сама — step3_map.
 """
 import os, sys, re, glob, json, math, gzip, csv, collections, datetime as dt
@@ -31,7 +31,8 @@ import vidrizky as VR
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
-REPORT = os.path.join(DATA, 'problems_report.json')
+# Стиснений (S-Н.6): нестиснений важив 3 МБ і щотижня йшов у git цілим.
+REPORT = os.path.join(DATA, 'problems_report.json.gz')
 D1551 = os.path.join(DATA, '1551')
 
 PRAVYLA = 'В1 з поправками 29–30.09.2026 (SPECYFIKATSIYA, S-ПР; RISHENNYA, розд. 32–33)'
@@ -799,7 +800,7 @@ def zvit_1551_md(res, path):
 
 
 def run(V=None, log=print, FACT=None):
-    """Увесь відбір. Повертає звіт і пише data/problems_report.json."""
+    """Увесь відбір. Повертає звіт і пише data/problems_report.json.gz."""
     if V is None:
         import sqlite3, step3_map as S3
         V = S3.vybir(sqlite3.connect(os.path.join(DATA, 'events.db')), print=lambda *a, **k: None)
@@ -1133,13 +1134,15 @@ def run(V=None, log=print, FACT=None):
         rep['skhozhi_1551'] = skhozhi_1551(G, dmap, log)
     except Exception as e:                       # перевірка — не привід зупиняти карту
         log(f'   1551 на «Схожих умовах» не пораховано: {e}')
-    json.dump(rep, open(REPORT, 'w', encoding='utf-8'), ensure_ascii=False, indent=1, default=list)
+    # mtime=0: та сама збірка — той самий файл (S-Р.11, однаковий хеш)
+    with open(REPORT, 'wb') as raw, gzip.GzipFile(filename='', mode='wb', fileobj=raw, mtime=0) as gz:
+        gz.write(json.dumps(rep, ensure_ascii=False, indent=1, default=list).encode('utf-8'))
     for k, v in funnel.items():
         log(f'   {k}: ' + ', '.join(f'{a} {b:,}' for a, b in v.items()))
     log(f'   проблем {len(problemy)} (з них ліній {rep["linii"]}, ділянок {rep["dilianok"]}, '
         f'«фіксує поліція» {rep["fiksuie_politsiia"]}, карток виду {kartky}); '
         f'дорожніх ділянок {len(dilianky)}; формується {len(formue)}; '
-        f'без мешканців {rep["bez_meshkantsiv"]} -> data/problems_report.json')
+        f'без мешканців {rep["bez_meshkantsiv"]} -> data/problems_report.json.gz')
     return rep
 
 
