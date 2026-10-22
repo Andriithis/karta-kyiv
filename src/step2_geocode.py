@@ -51,6 +51,12 @@ R_ODNA = 0.5            # км: далі — це вже різні місця �
 # розташуванням частини» — навпаки, не вона.
 VCH = re.compile(r"територі\w*\s+(?:\w+\s+)?(?:військов\w+\s+)?частин|\bППД\b|"
                  r"пункт\w*\s+постійної\s+дислокації|(?<!поза\s)розташуванн\w*\s+(?:військов\w+\s+)?частин", re.I)
+# Ст.390-1 КК про непроходження програми для кривдників: адреса — центр, де
+# програму проводять (просп. Науки, 18 — 9 «домашніх насильств»), тобто адреса
+# ролі, а не події (S-А.1, 36.37). Порушення обмежувального припису за тією ж
+# статтею — подія на місці, його не чіпаємо.
+CAT_390_1 = '12589'
+PROGRAMA = re.compile(r'програм\w*\s+для\s+кривдник|непроходженн\w*\s+програм|ухил\w+\s+від\s+(?:проходження\s+)?програм', re.I)
 # «Берестейське шосе, 20 км» — кілометр, а не будинок 20 (S-А.8): розбір брав його
 # номером, і подія ставала на чужий будинок.
 def km_ne_budynok(house, sent):
@@ -396,7 +402,7 @@ def main():
     from map_problems import COURTS
     for doc, court in conn.execute("SELECT doc_id, court FROM events"):
         COURT_D[doc] = COURTS.get(court)      # лише районні суди; решта — None
-    for doc, street, house in conn.execute("SELECT doc_id, street, house FROM events"):
+    for doc, street, house, cat in conn.execute("SELECT doc_id, street, house, cat FROM events"):
         r = tk.get(doc)
         if r is not None:
             street, house = r['street'] or None, r['house'] or None
@@ -405,6 +411,8 @@ def main():
         if r is not None and h2:
             if VCH.search(r['addr_sentence'] or ''): h2 = None; BEZ_NOMERA['військова частина'] += 1
             elif km_ne_budynok(h2, r['addr_sentence']): h2 = None; BEZ_NOMERA['кілометр'] += 1
+            elif cat == CAT_390_1 and PROGRAMA.search(f"{r['fab'] or ''} {r['addr_sentence'] or ''}"):
+                h2 = None; BEZ_NOMERA['ст.390-1 — адреса програми'] += 1
             t2 = typ_pislia(street, r['addr_sentence'])
             if t2 and stype(street) in TYPE_LOOSE and t2 not in TYPE_LOOSE: TYP_TEKST[doc] = t2
         # Подія без номера будинку — шукаємо у фабулі перехрестя двох вулиць
@@ -418,7 +426,7 @@ def main():
         elif street:
             todo.append((doc, street, h2, r['klass'] if r else '', None))
     print(f'   номер без прилиплого прийменника («1/5У» -> «1/5»): {n_unglued:,}')
-    print('   номер знято (S-А.11, S-А.8): ' + ', '.join(f'{k} {v:,}' for k, v in BEZ_NOMERA.items()))
+    print('   номер знято (S-А.11, S-А.8, S-А.1): ' + ', '.join(f'{k} {v:,}' for k, v in BEZ_NOMERA.items()))
     print(f'   тип зі слова після назви (S-А.5): {len(TYP_TEKST):,} — '
           + ', '.join(f'{k} {v:,}' for k, v in collections.Counter(TYP_TEKST.values()).most_common()))
     print(f'2) зіставлення заново: {len(todo):,} записів (з проходу по текстах: {len(tk):,})')

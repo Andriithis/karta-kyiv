@@ -418,7 +418,8 @@ def podii(V, log):
         out.append(dict(doc=r[0], cat=r[2], th=th, sim=M.simgroup(r[2]), date=ed[:10],
                         otsinna=otsinna, klas=tk.get('klass') or '', p=(r[7], r[8]),
                         adr=f'{r[5] or ""}, {r[6] or ""}'.strip(', '), dec=r[3] or '',
-                        zayavna=r[2] != CAT_ST51 and not M.is_proactive_event(r[2], f), fab=(f or '').lower()))
+                        zayavna=r[2] != CAT_ST51 and not M.is_proactive_event(r[2], f), fab=(f or '').lower(),
+                        time=tk.get('time') or '', fab0=f or ''))
     log(f'   подій на точному будинку: {len(out):,} (дата оцінна: {n_ots:,})')
     return out
 
@@ -524,6 +525,69 @@ def zlyty_adresy(cnt, pts=None):
         else:
             gr.append([a, n, k[1], sl])
     return sorted(((g[0], g[1]) for g in gr), key=lambda x: -x[1])
+
+
+# Кандидати для щомісячного аналізу фабул (36.37): сито — програма, проблему
+# визначає аналіз. Пише «Оновлення карти» щотижня в main; аналіз у хмарі
+# читає лише цей файл. Межа — 20 МБ (check_build).
+KANDYDATY = os.path.join(DATA, 'kandydaty.json.gz')
+FAB_KANDYDATA = 600
+# Мітки маневру ДТП — щоб аналіз бачив сценарій («лівий поворот на Сумську»)
+MANEVR = [('лівий поворот', r'лів\w*\s+поворот|поверта\w*\s+ліворуч|поворот\w*\s+ліворуч'),
+          ('розворот', r'розворот|розверта'), ('задній хід', r'задн\w+\s+ход|заднім\s+ходом'),
+          ('перестроювання', r'перестро'), ('виїзд з прилеглої', r'прилегл\w+\s+територ'),
+          ('дистанція', r'дистанці'), ('другорядна', r'другорядн'), ('кругов', r'кругов|кільц\w+\s+рух'),
+          ('пішохід', r'пішохід|пішоход'), ('паркування', r'паркув|стоянк|припаркован')]
+MANEVR = [(m, re.compile(rx, re.I)) for m, rx in MANEVR]
+
+
+def kandydaty(zapysy, ev, log=print):
+    """data/kandydaty.json.gz: кожна пара сита (місце × механізм, разом з
+    ДОР_ДТП), що проходить Р3 (≥MIN_POD подій у ≥MIN_KV кварталах), — з
+    подіями й показом фабул (36.19: без заглушок, до FAB_KANDYDATA знаків)."""
+    import step1c_teksty as T1
+    po_doc = {e['doc']: e for e in ev}
+    out = []
+    for r in zapysy:
+        g = r.get('vorota') or {}
+        if r.get('riven') not in ('точка', 'дорожні ділянки') or not (g.get('R3_podii') and g.get('R3_kvartaly')): continue
+        pod = []
+        for d in r.get('docs', []):
+            e = po_doc.get(d)
+            if not e: continue
+            f = T1.pokaz(e['fab0'], T1.kodeks(e['cat']))[:FAB_KANDYDATA]
+            x = dict(doc=d, date=e['date'], time=e['time'], cat=e['cat'], adr=e['adr'], fab=f)
+            if e['sim'] == 'ДОР_ДТП' or M.simtheme(e['sim']) == 'ДТП':
+                x['manevr'] = [m for m, rx in MANEVR if rx.search(e['fab0'])]
+            pod.append(x)
+        out.append(dict(adresy=r.get('adresy', []), lat=r['p'][0], lon=r['p'][1], sim=r['sim'], vyd=r['vyd'],
+                        status=r.get('status'), podii=pod))
+    with open(KANDYDATY, 'wb') as raw, gzip.GzipFile(filename='', mode='wb', fileobj=raw, mtime=0) as gz:
+        gz.write(json.dumps(out, ensure_ascii=False, separators=(',', ':')).encode('utf-8'))
+    log(f'   кандидати для аналізу (36.37): {len(out):,} пар, {sum(len(x["podii"]) for x in out):,} подій '
+        f'-> data/kandydaty.json.gz ({os.path.getsize(KANDYDATY) / 1048576:.1f} МБ)')
+
+
+# Перелік проблем щомісячного аналізу фабул (36.37) — пише аналіз, збірка лише
+# читає. Є записи — проблеми з нього; порожньо — ворота 36.36.
+ANALITYK = os.path.join(DATA, 'problemy_analityk.json')
+
+
+def z_analityka(log=print):
+    """записи аналізу в стані «діє» -> записи переліку в форматі відбору; [] —
+    аналізу ще не було"""
+    if not os.path.exists(ANALITYK): return []
+    try: zap = json.load(open(ANALITYK, encoding='utf-8'))
+    except ValueError: log('   problemy_analityk.json не читається — ворота 36.36'); return []
+    out = []
+    for z in zap:
+        if z.get('stan') != 'діє': continue
+        out.append(dict(riven='точка', sim=z.get('sim') or z.get('vyd'), vyd=z.get('vyd'), mekhanizm=z.get('mekhanizm'),
+                        status='хронічна', p=[z['lat'], z['lon']], adresy=z.get('adresy', []), docs=z.get('docs', []),
+                        podii=z.get('n_usikh', 0), za_2roky=z.get('n_stsenariju', 0), za_4kv=z.get('n_stsenariju', 0),
+                        stsenarij=z.get('stsenarij'), analityk=z.get('id'), rozbory=z.get('rozbory', [])))
+    log(f'   перелік аналізу фабул: {len(zap)} записів, діє {len(out)}')
+    return out
 
 
 def chyslo_problem(rep):
@@ -1192,6 +1256,13 @@ def run(V=None, log=print, FACT=None):
     problemy = sorted([r for r in zapysy if r['status'] in PROBLEMA and r['riven'] != 'дорожні ділянки'],
                       key=lambda r: (r['status'] != 'хронічна', -r['za_4kv'], -r['podii']))
     dilianky = [r for r in zapysy if r['status'] == 'хронічна' and r['riven'] == 'дорожні ділянки']
+    # сито — для аналізу фабул; перелік аналізу, якщо він уже є, заміщає ворота (36.37)
+    try:
+        kandydaty(zapysy, ev, log)
+    except Exception as e:                       # файл для аналізу — не привід зупиняти карту
+        log(f'   кандидати для аналізу не записано: {e}')
+    an = z_analityka(log)
+    if an: problemy = an
     gz = collections.Counter((r['vyd'], r['golos']['stan']) for r in problemy if r.get('golos'))
     rep = dict(
         # без дати складання: дві збірки на тих самих даних — той самий файл (S-Р.11)

@@ -72,6 +72,7 @@ TESTY = {
     'zhakkar': '4д. Стабільність ризику: спільних ліній з попередньою збіркою ≥0,7',
     'chyslo_problem': '4е. Число проблем: карта = «Проблеми» = problems_report',
     'uzhodzhenist': '7. Узгодженість у браузері: підказка = картка = сума видів',
+    'kandydaty': '4ж. Кандидати для аналізу фабул: файл є, непорожній, ≤20 МБ',
     'poshuk_143': '8. Пошук: 143 запити Е12б — першим ≥131',
     'poshuk_opysky': '8. Пошук: описки — у перших п\'яти ≥12 з 13',
     'poshuk_andrii': '8. Пошук: запити Андрія — вулиця в перших трьох, ≤100 мс на телефоні',
@@ -320,6 +321,7 @@ def main(save=False):
     import problems
     problems.REPORT = os.path.join(tmp, 'problems_report.json.gz')
     problems.SKHOZHI = os.path.join(tmp, 'skhozhi_1551.json')
+    problems.KANDYDATY = os.path.join(tmp, 'kandydaty.json.gz')
 
     CASES = [('міська', dict(district=None)),
              ('районна', dict(district='Деснянський'))]
@@ -477,6 +479,15 @@ def main(save=False):
         if na_karti != ch or (os.path.exists(pp_) and not v_zvity):
             print('   ПОМИЛКА число проблем розходиться між картою, «Проблемами» й звітом')
             return 1
+    print('4ж. Кандидати для аналізу фабул (36.37): data/kandydaty.json.gz є, непорожній, ≤20 МБ')
+    kp_ = os.path.join(DATA, 'kandydaty.json.gz')
+    if not os.path.exists(kp_):
+        print('   ПОМИЛКА data/kandydaty.json.gz немає — аналізу в хмарі нічого читати'); return 1
+    mb_ = os.path.getsize(kp_) / 1048576
+    n_ = len(json.load(gzip.open(kp_, 'rt', encoding='utf-8')))
+    print(f'   {n_:,} пар, {mb_:.1f} МБ')
+    if not n_ or mb_ > 20:
+        print('   ПОМИЛКА файл кандидатів порожній чи понад 20 МБ'); return 1
     print('5. Розмітка і JavaScript')
     if problems:
         for p in problems:

@@ -219,7 +219,7 @@ jobs:
         run: |
           git config user.name  "karta-bot"
           git config user.email "actions@github.com"
-          for f in data/events.csv.gz data/formy.csv.gz data/formy_dovidnyk.csv data/ustanovy.json data/network.json data/vykluchennya.txt data/borders.json data/engine_report.json data/risk.json data/radiusy.json data/problems_report.json.gz doslidzhennya/ZVIT-KROK7.md doslidzhennya/ZVIT-1551-ZAKONOMIRNOSTI.md; do
+          for f in data/events.csv.gz data/formy.csv.gz data/formy_dovidnyk.csv data/ustanovy.json data/network.json data/vykluchennya.txt data/borders.json data/engine_report.json data/risk.json data/radiusy.json data/problems_report.json.gz data/kandydaty.json.gz doslidzhennya/ZVIT-KROK7.md doslidzhennya/ZVIT-1551-ZAKONOMIRNOSTI.md; do
             [ -f "$f" ] && git add -f "$f" && echo "додано $f"
           done
           # нестиснений звіт проблем прибрано з main 21.10 (S-Н.6)
