@@ -36,13 +36,17 @@ REPORT = os.path.join(DATA, 'problems_report.json.gz')
 SKHOZHI = os.path.join(DATA, 'skhozhi_1551.json')
 D1551 = os.path.join(DATA, '1551')
 
-PRAVYLA = 'В1 з поправками 29–30.09.2026 (SPECYFIKATSIYA, S-ПР; RISHENNYA, розд. 32–33)'
+PRAVYLA = 'В1 з поправками 29–30.09.2026 і 22.10.2026 (SPECYFIKATSIYA, S-ПР; RISHENNYA, розд. 32–33, 36.36)'
 R_MISCE = 30          # м: адреси з тим самим механізмом ближче — одне місце
-# Р3 (RISHENNYA 32, затверджено 29.09): 5–6 подій за 3 роки — збіг, а не
-# проблема. ≥12 подій за останні 2 роки — у середньому раз на два місяці — і
-# ≥5 різних кварталів з 8.
-MIN_POD = 12          # Р3: окремих подій за останні KV_VIKNO кварталів
-MIN_KV = 5            # Р3: різних кварталів з останніх 8
+# Р3 (36.36, змагання Е7, 22.10): ≥5 подій за 8 кварталів у ≥3 різних
+# кварталах. Прогноз ×6,4 від навмання (межа ×3) і стабільність 86–90% (межа
+# 80%); колишні 12/5 давали 67–90% і пропускали місця з одним сценарієм.
+MIN_POD = 5           # Р3: окремих подій за останні KV_VIKNO кварталів
+MIN_KV = 3            # Р3: різних кварталів з останніх 8
+# Ст.51 КУпАП (дрібне викрадення) — проактивна (36.36): число протоколів міряє
+# охорону магазину. Місця лише зі ст.51 мають наступного року кримінальних
+# крадіжок ×1,1 від звичайного, з ≥3 ст.185 — ×9,9 (Е7).
+CAT_ST51 = '40956'
 KV_VIKNO = 8
 # Ділянка (завдання 29, п. 4): точки-проблеми одного механізму на тій самій
 # вулиці ближче R_DILIANKA — одна проблема; ланцюжком, але не довша за
@@ -414,7 +418,7 @@ def podii(V, log):
         out.append(dict(doc=r[0], cat=r[2], th=th, sim=M.simgroup(r[2]), date=ed[:10],
                         otsinna=otsinna, klas=tk.get('klass') or '', p=(r[7], r[8]),
                         adr=f'{r[5] or ""}, {r[6] or ""}'.strip(', '), dec=r[3] or '',
-                        zayavna=not M.is_proactive_event(r[2], f), fab=(f or '').lower()))
+                        zayavna=r[2] != CAT_ST51 and not M.is_proactive_event(r[2], f), fab=(f or '').lower()))
     log(f'   подій на точному будинку: {len(out):,} (дата оцінна: {n_ots:,})')
     return out
 
@@ -468,7 +472,9 @@ def vorota(evs, S, kind_q, sim=''):
     g['R3_kvartaly'] = len(qs) >= MIN_KV
     g['R3_svizhist'] = (dt.date.fromisoformat(S) - dt.date.fromisoformat(last)).days <= SVIZHIST_DNIV
     r3 = g['R3_podii'] and g['R3_svizhist'] and g['R3_kvartaly']
-    if not g['R2']: st = 'фіксує поліція' if (r3 and mozhe_fiksuvaty(sim)) else 'проактивна'
+    # скупчення, де більшість — ст.51, не стає «фіксує поліція» (36.36), як НАР і ДОР
+    st51 = sum(e['cat'] == CAT_ST51 for e in u) * 2 > len(u)
+    if not g['R2']: st = 'фіксує поліція' if (r3 and mozhe_fiksuvaty(sim) and not st51) else 'проактивна'
     elif not g['R3_podii']: st = 'мало'
     elif not g['R3_svizhist']: st = 'згасла'
     elif not g['R3_kvartaly']: st = 'гостра'
