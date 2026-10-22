@@ -390,6 +390,7 @@ function addrReady(){
  ringColors(); ADDR_VIS=null; ringsReady();
  draw();
 }
+let ADDR_F=[];   // кола адрес, як пішли на карту — для перевірки кольору (window.KT)
 function draw(){
  // «Лише проблеми» (ONLYP) — computeVis лишає самі адреси з проблемами.
  const st=computeVis(); LASTST=st;
@@ -401,11 +402,11 @@ function draw(){
  // Картка місця йде за фільтром і періодом так само, як карта.
  if(PLACE) renderPlace();
  const vis=st.vis, mx=vis.length?vis[0][1]:1;
- map.getSource('k-addr').setData({type:'FeatureCollection',features:vis.map(([p,n,th,_bp,_c,thM])=>({
+ map.getSource('k-addr').setData({type:'FeatureCollection',features:ADDR_F=vis.map(([p,n,th])=>({
   type:'Feature',geometry:{type:'Point',coordinates:[p[1],p[0]]},
-  // колір — найчисленніший вид адреси (7.5), не вид проблеми: проблему
-  // позначає контур (7.7)
-  properties:{i:PIDX.get(p),c:PALA[(thM??th)%PALA.length],n,r0:r0Of(n,mx),
+  // колір — те саме правило, що в соти й картки (S-К.6, 36.34, kolirMisca);
+  // проблему ще й позначає контур (7.7)
+  properties:{i:PIDX.get(p),c:PALA[th%PALA.length],n,r0:r0Of(n,mx),
    pr:probsOf(p).some(q=>q.thi===undefined||q.thi<0||st.GVIS.has(q.thi))?1:0,
    k:(probsOf(p).length?1e6:0)-n}}))});
  // Відрізки ліній-проблем — там, де видно ромби проблем
@@ -486,10 +487,11 @@ function probMore(pr){
  else if(pr.riven==='ділянка') h+=`<div class="tt">Ділянка вулиці — ${ad.length} ${pl(ad.length,'адреса','адреси','адрес')}: ${esc(ad.join('; '))}</div>`;
  else if(ad.length>1) h+=`<div class="tt">Одне місце, ${ad.length} ${pl(ad.length,'адреса','адреси','адрес')}: ${esc(ad.join('; '))}</div>`;
  const g=pr.golos;
- if(g&&g.stan){
+ // Рядок — лише коли 1551 вимірює цей вид (S-ПР.12, 36.23.5): «не
+ // вимірюється» й «даних немає» не кажуть слухачеві нічого про місце.
+ if(g&&(g.stan==='підтверджують'||g.stan==='мовчать')){
   const t=g.stan==='підтверджують'?`підтверджують — ${g.skarg} ${pl(g.skarg,'скарга','скарги','скарг')} 1551 за рік`+(g.vidnoshennia?`, ×${String(g.vidnoshennia).replace('.',',')} до району`:'')
-   :g.stan==='мовчать'?`мовчать — ${g.skarg||0} ${pl(g.skarg||0,'скарга','скарги','скарг')} 1551 за рік`
-   :g.stan==='не вимірюється'?(g.chomu&&g.chomu!=='вид'?`не вимірюється (${esc(g.chomu==='житла в 50 м немає'?'без житла':g.chomu)})`:'не вимірюється'):'даних 1551 немає';
+   :`мовчать — ${g.skarg||0} ${pl(g.skarg||0,'скарга','скарги','скарг')} 1551 за рік`;
   h+=`<div class="tt">Голос мешканців: ${t}</div>`}
  return h}
 function oglHTML(d){
@@ -501,9 +503,8 @@ function oglHTML(d){
    <div class="tt">${pr.n} ${pl(pr.n,'однорідна подія','однорідні події','однорідних подій')} за ${pr.years.length} ${pl(pr.years.length,'рік','роки','років')} (${pr.years.join(', ')})</div>${probMore(pr)}</div>`;
  }
  h+=placeArts(p,evs)+placeHist(p,evs);
- // Модель — одним рядком, без пояснень, яких немає в даних (CLAUDE.md).
- if(pr) h+=`<div class="tt kp-mod">${pr.analysis?`Ризик: вулиця в переліку (${esc(lc(pr.theme))})`
-   :'Ризик: вулиці в переліку немає'}</div>`;
+ // Ризик — тим самим правилом, що й у картці соти (S-К.15): лінії в 50 м
+ h+=rizykRiadok(rizykPoruch(p[0],p[1],50));
  return h;
 }
 function rishHTML(d,cs){
@@ -763,7 +764,7 @@ function ringSums(st){
   // проблема за прихованим видом для цього вигляду не проблема.
   const pr=probsOf(P[pi]).filter(q=>q.thi===undefined||q.thi<0||st.GVIS.has(q.thi));
   // Колір ромба — вид проблеми, як колір крапки-проблеми (computeVis).
-  const pt=v[3]?v[2]:((pr.find(q=>q.thi>=0)||{}).thi??v[2]);
+  const pt=v[3]?v[6]:((pr.find(q=>q.thi>=0)||{}).thi??v[2]);
   if(pr.length){NP[NL][k]=pr.length; PT[NL][k]=pt; PTN[NL][k]=v[1]; PROBK.push(k)}
   return {n:v[1], th:v[2], np:pr.length, pt, r0:r0Of(v[1],mx)}});
  for(let i=NL;i>=1;i--){const s=SUM[i],t=TOT[i],a=ACT[i],o=ONE[i],ps=SUM[i-1],pt=TOT[i-1],pa=ACT[i-1],po=ONE[i-1];
@@ -1137,10 +1138,15 @@ map.on('mousemove',e=>{ if(!RINGS_ON) return;
 // Перевірка з консолі (розд. 23, перевірка п. 3): для кожного видимого
 // кільця — число на ньому і сума подій його адрес за фільтром, порахована
 // окремо, прямо з computeVis, а не з дерева.
-window.kartaKilcia=()=>{const vm=new Map(LASTST.vis.map(v=>[v[0],v[1]]));
+// vsi=N — не лише видимі, а до N вузлів усіх рівнів з подіями (без малювання:
+// так їх перевіряє test_uzhodzhenist за одне відкриття сторінки).
+window.kartaKilcia=(vsi)=>{const vm=new Map(LASTST.vis.map(v=>[v[0],v[1]]));
  // Діти вузла рівня i — ті вузли рівня i+1 (або адреси), чий LV[i].of — він.
  const CH=LV.map((l,i)=>{const c=Array.from({length:nOf(i)},()=>[]); l.of.forEach((p,k)=>c[p].push(k)); return c});
- return VIS.filter(o=>!o.dot).map(o=>{let s=0, a=0;
+ const vuzly=vsi?(()=>{const o=[]; for(let i=0;i<NL;i++) for(let j=0;j<TOT[i].length;j++) if(TOT[i][j]) o.push({i,j,n:TOT[i][j],lon:0,lat:0});
+   const krok=Math.max(1,Math.floor(o.length/vsi)); return o.filter((_x,k)=>k%krok===0).slice(0,vsi)})()
+  :VIS.filter(o=>!o.dot);
+ return vuzly.map(o=>{let s=0, a=0;
   const walk=(i,j)=>{ if(i===NL){const n=vm.get(P[LEAF[j]]); if(n){s+=n;a++} return}
    for(const c of CH[i][j]) walk(i+1,c)};
   walk(o.i,o.j); return {na_kilci:o.n, suma_adres:s, adres:a, lon:o.lon, lat:o.lat}})};
@@ -1502,6 +1508,11 @@ function simPopup(f,ll){
  keepClear(POPUP,[ll.lng,ll.lat],0);
 }
 const simIds=()=>SIMK.map(gi=>'k-sim-'+gi).filter(id=>map.getLayer(id)&&map.getLayoutProperty(id,'visibility')==='visible');
+// Підказка над адресою — окремою функцією: її ж викликає перевірка
+// узгодженості (window.KT), тож тест бачить рівно те, що людина.
+function pidkazkaAdresy(ai){
+ const av=LASTST&&LASTST.vis.find(x=>x[0]===P[ai]); if(!av) return '';
+ return `<b>${esc(P[ai][2])}</b><span>${fmt(av[1])} ${pl(av[1],'подія','події','подій')}${probsOf(P[ai]).length?' · проблема':''}</span>`}
 function ctxEvents(){
  // Підказка при наведенні — як sticky tooltip у Leaflet.
  const TIP=new maplibregl.Popup({closeButton:false,closeOnClick:false,className:'k-tip',offset:14,maxWidth:'280px'});
@@ -1525,9 +1536,8 @@ function ctxEvents(){
    // Над точкою — лише коротка підказка: адреса й скільки подій (розд. 30);
    // усе інше — у картці місця за кліком.
    const ai=o&&o.dot?LEAF[o.k]:!RINGS_ON?(addrAt(e.point)||{properties:{}}).properties.i:undefined;
-   const av=ai!==undefined&&LASTST&&LASTST.vis.find(x=>x[0]===P[ai]);
-   if(av) tip(e,`<b>${esc(P[ai][2])}</b><span>${fmt(av[1])} ${pl(av[1],'подія','події','подій')}${probsOf(P[ai]).length?' · проблема':''}</span>`);
-   else TIP.remove();
+   const h_=ai!==undefined?pidkazkaAdresy(ai):'';
+   if(h_) tip(e,h_); else TIP.remove();
    // Над кільцем курсор ставить обробник кілець; над адресою — тут.
    if(!RINGS_ON) map.getCanvas().style.cursor='pointer'; return}
   const s=near(e.point,simIds())[0];
@@ -1637,13 +1647,13 @@ const STEPS=[['all','Усі'],['year','Рік'],['quarter','Квартал'],['m
 function todSet(i){TOD=i; document.querySelectorAll('#hr [data-p]').forEach(b=>swSet(b,i<0||+b.dataset.p===i)); paintStrip(); draw()}
 const todName=()=>TOD<0?'уся доба':`${PERIODS[TOD][0]} ${PERIODS[TOD][1]}`;
 function paintStrip(){const s=$('#kstrip'); if(!s) return;
- const r=perRange(), incomplete=r&&r[1]>=MON_LAST-1;
+ // Позначки «неповний» немає (36.20.1, S-К.9): «і так ясно, що рік не повний».
+ const r=perRange();
  s.querySelectorAll('[data-st]').forEach(b=>swSet(b,b.dataset.st===STEP));
  s.querySelector('.ks-per').hidden=STEP==='all';
  s.querySelector('[data-nav="-1"]').disabled=!r||r[0]<=0;
  s.querySelector('[data-nav="1"]').disabled=!r||r[1]>=MON_LAST;
- s.querySelector('.ks-val').innerHTML=r?`${perLabel()}${incomplete?'<small>неповний</small>':''}`:'';
- s.querySelector('.ks-val').classList.toggle('inc',!!incomplete);
+ s.querySelector('.ks-val').textContent=r?perLabel():'';
  s.querySelector('.ks-tod').textContent='🕘 '+todName();
  const th=s.querySelector('.ks-theme'); th.textContent=THEME==='temna'?'☀':'☾';
  th.title=THEME==='temna'?'Світла тема':'Темна тема'; th.setAttribute('aria-label',th.title);

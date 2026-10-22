@@ -100,8 +100,6 @@ html .tsw button{min-height:32px;display:inline-flex;align-items:center}
 .kstrip .ks-per[hidden]{display:none}
 .kstrip .ks-per button{color:var(--ink);font-size:15px}
 .kstrip .ks-val{min-width:112px;text-align:center;font-weight:600;line-height:1.1}
-.kstrip .ks-val small{display:block;font-weight:400;font-size:10px;color:var(--faint)}
-.kstrip .ks-val.inc{color:var(--dim)}
 .kstrip .ks-sep{width:1px;height:18px;background:var(--rule);margin:0 3px}
 .kstrip .ks-theme{font-size:15px;color:var(--ink)}
 .kstrip .ks-menu{position:absolute;top:34px;left:0;z-index:5;min-width:150px;padding:4px;background:var(--card);

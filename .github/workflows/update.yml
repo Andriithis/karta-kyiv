@@ -196,7 +196,10 @@ jobs:
       # запускаються. Раніше перевірка йшла після збереження, і зламані risk.json
       # чи engine_report.json встигали потрапити в main (ZVIT-33, А4).
       - name: Перевірка збірки
-        run: python src/check_build.py
+        run: |
+          # Playwright — для кроку 7 (узгодженість підказки, картки й карти в браузері, S-К.14)
+          pip install --quiet playwright && python -m playwright install --with-deps chromium > /dev/null
+          python src/check_build.py
 
       # Перевірка впала — у main нічого не йде, але звіт моделі після годин
       # перенавчання лишається артефактом запуску, щоб розібратися без повтору

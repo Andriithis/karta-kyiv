@@ -27,25 +27,18 @@ function hexPoly(cx,cy,R,k=1){const out=[];
  out.push(out[0]); return [out]}
 let HEXB={L:new Map(),S:new Map()};   // ключ -> {n, g[], ad[], pr, cx, cy}
 function binHex(st){
- const NG_=M.groups.length, cityG=new Array(NG_).fill(0); let cityN=0;
- for(const v of st.vis){ if(!v[0][3]) continue; for(const g in v[4]){cityG[g]+=v[4][g]; cityN+=v[4][g]}}
+ const NG_=M.groups.length;
  for(const G of HEXG){const B=new Map();
   for(const v of st.vis){const p=v[0]; if(!p[3]) continue;
    const [k,cx,cy]=hexAt(p[0],p[1],G.R);
    let b=B.get(k); if(!b){b={n:0,g:new Array(NG_).fill(0),ad:[],pr:0,cx,cy,k}; B.set(k,b)}
    b.n+=v[1]; b.ad.push(PIDX.get(p)); for(const g in v[4]) b.g[g]+=v[4][g];
    if(probsOf(p).some(q=>q.thi===undefined||q.thi<0||st.GVIS.has(q.thi))) b.pr=1}
-  // Колір — вид, якого тут БІЛЬШЕ, НІЖ У СЕРЕДНЬОМУ ПО МІСТУ (35.6): найбільше
-  // (частка в соті) / (частка в місті) серед видів з ≥ max(3, 10% соти) подій —
-  // щоб одна подія не фарбувала соту. Раніше ще й поріг 1,5 і запасний
-  // «найчисленніший вид» — і майже все було зелене, ДТП (33, В2). Найчисленніший
-  // лишився лише для соти, де жоден вид не набрав мінімуму.
+  // Колір — та сама функція, що в кола адреси (S-К.6, 36.34; kolirMisca): вид,
+  // якого тут більше, ніж у середньому по місту; проблема — лише контуром.
   const bs=[...B.values()].sort((a,b)=>a.n-b.n), L_=bs.length;
-  bs.forEach((b,i)=>{let gi=b.g.indexOf(Math.max(...b.g)), best=0;
-   const min=Math.max(3,.1*b.n);
-   for(let g=0;g<NG_;g++){ if(b.g[g]<min||!cityG[g]) continue;
-    const r=(b.g[g]/b.n)/(cityG[g]/cityN); if(r>best){best=r; gi=g}}
-   b.gi=gi; const rank=L_>1?i/(L_-1):1;
+  bs.forEach((b,i)=>{
+   b.gi=kolirMisca(b.g,st.MG,st.tot); const rank=L_>1?i/(L_-1):1;
    b.a=isDark()?Math.min(.7,.12+.7*rank*rank):Math.min(.6,.05+.6*rank*rank);
    // контур проблеми на майже прозорій соті виглядав би порожнім
    if(b.pr) b.a=Math.max(b.a,.45);
@@ -144,6 +137,14 @@ const RSEG=[], RPT=[];
    // «кафе_є_150м» -> «кафе в 150 м»: назва ознаки моделі -> людська
    const lyud=f=>String(f).replace(/_є_(\d+)м$/,' в $1 м').replace(/_(\d+)м$/,' в $1 м').replace(/_/g,' ');
    s.kinds.push({k,gi:v.theme|0,title:v.title,pct:x[4],mu:x[5],n2:x[3]|0,fx:(x[6]||[]).map(f=>[lyud(f)])})})});}
+// Ризик у картці — одне правило для адреси й соти (S-К.15, 36.23.4): лінії
+// ризику ввімкнених видів, що заходять у коло R м навколо місця (адреса — 50 м,
+// сота — її радіус). Нуль — рядка немає: «вулиці в переліку немає» було
+// пояснювальним реченням (36.2).
+function rizykPoruch(la,lo,R_){ if(!RSEG.length) return 0;
+ const cx=lo*MX_, cy=la*MY_;
+ return RSEG.filter(s=>s.kinds.some(x=>typeOn(x.gi))&&s.g.some(q=>{const dx=q[1]*MX_-cx,dy=q[0]*MY_-cy; return dx*dx+dy*dy<=R_*R_})).length}
+const rizykRiadok=kr=>kr?`<div class="tt kc-risk"><i></i>Ризик: ${kr} ${pl(kr,'вулиця','вулиці','вулиць')} поруч</div>`:'';
 function riskData(){
  const on=s=>s.kinds.filter(x=>typeOn(x.gi));
  const val=x=>x.pct==null?50:Math.max(0,100-x.pct);
@@ -320,9 +321,7 @@ function renderCell(){
    (CELL.open===gi?`<div class="kc-art">${(()=>{const c={}; evs.forEach(r=>{const e=EVR(r); if(CATTH[e[1]]===gi) c[e[1]]=(c[e[1]]||0)+1});
     return Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([a,k])=>`<div>${esc(splitArt(M.cats[a])[0])} <b>${k}</b></div>`).join('')})()}</div>`:''):'').join('')}</div>`;
   body+=placeHist(null,evs);
-  if(RSEG.length&&CELL.hex){const [cx,cy,R_]=CELL.hex;
-   const kr=RSEG.filter(s=>s.kinds.some(x=>typeOn(x.gi))&&s.g.some(q=>{const dx=q[1]*MX_-cx,dy=q[0]*MY_-cy; return dx*dx+dy*dy<=R_*R_})).length;
-   if(kr) body+=`<div class="tt kc-risk"><i></i>Ризик: ${kr} ${pl(kr,'вулиця','вулиці','вулиць')}</div>`}
+  if(CELL.hex){const [cx,cy,R_]=CELL.hex; body+=rizykRiadok(rizykPoruch(cy/MY_,cx/MX_,R_))}
   body+=`<button class="pbtn2" data-cz="1">Наблизити</button><button class="pbtn2" data-ca="1">Показати адреси</button>`+
    `<button class="pbtn2" data-link="1">Посилання</button>`;
  } else {
@@ -454,12 +453,13 @@ map.on('mousemove',e=>{
   VTIP.setLngLat(e.lngLat).setHTML(riskTip(rk)).addTo(map); return}
  const h=hexHit(e.point);
  if(h){map.getCanvas().style.cursor='pointer';
-  const a=new Set(h.b.ad).size;
-  // над стовпчиком — лише він сам: скільки подій і чий колір (33, В6)
-  VTIP.setLngLat(e.lngLat).setHTML(MODE==='stovp'
-   ?`<b>${fmt(h.b.n)} ${pl(h.b.n,'подія','події','подій')} · ${esc(lc(shortOf(h.b.gi)))}</b>`
-   :`<b>${fmt(h.b.n)} ${pl(h.b.n,'подія','події','подій')} · ${fmt(a)} ${pl(a,'адреса','адреси','адрес')}</b>`).addTo(map); return}
+  VTIP.setLngLat(e.lngLat).setHTML(pidkazkaSoty(h.b)).addTo(map); return}
  VTIP.remove()});
+// над стовпчиком — лише він сам: скільки подій і чий колір (33, В6); окремою
+// функцією — її ж викликає перевірка узгодженості (window.KT)
+function pidkazkaSoty(b){const a=new Set(b.ad).size;
+ return MODE==='stovp'?`<b>${fmt(b.n)} ${pl(b.n,'подія','події','подій')} · ${esc(lc(shortOf(b.gi)))}</b>`
+  :`<b>${fmt(b.n)} ${pl(b.n,'подія','події','подій')} · ${fmt(a)} ${pl(a,'адреса','адреси','адрес')}</b>`}
 const VTIP=new maplibregl.Popup({closeButton:false,closeOnClick:false,className:'k-tip',offset:14,maxWidth:'320px'});
 map.on('mouseout',()=>VTIP.remove());
 // ---- готовність стилю: власні шари й перефарбування в кольори теми ----
@@ -471,4 +471,25 @@ function vyhReady(){ hexReady(); addrProbReady(); riskReady();
  draw();
  if(!ZPOS){ZPOS=true; setTimeout(zPosylannia,400)}}
 window.addEventListener('hashchange',()=>{if(/^#(m|c)=/.test(location.hash)) zPosylannia()});
+// Місток для автоматичної перевірки узгодженості (test_uzhodzhenist.py, S-К.14):
+// скрипт — модуль, і ззовні його змінних не видно. Лише читання й ті самі дії,
+// що й кліки людини; на вигляд карти не впливає.
+// Картки будуються тими самими renderPlace / renderCell, але без зсуву карти
+// (openAt підсуває точку з-під картки, а переліт у браузері без відеокарти
+// коштує секунди) — так 300 місць перевіряються за одне відкриття сторінки.
+const ktNum=s=>{const m=/\d[\d\s  ]*/.exec(s||''); return m?+m[0].replace(/\D/g,''):null};
+window.KT={get ready(){return STYLE_OK&&!!LASTST}, get st(){return LASTST}, map, P, PIDX,
+ pala:g=>PALA[g%PALA.length], probsOf, setView, openAt, closePlace, closeCell, hexb:id=>HEXB[id], MX_, MY_,
+ kolirMisca, pidkazkaAdresy, pidkazkaSoty, kolaAdres:()=>ADDR_F, soty:id=>hexData(HEXG.find(G=>G.id===id),false).features,
+ kartkaAdresy(i,pi=0){PLACE={i,tab:'ogl',open:-1,pi,allArts:true,near:[],hl:0}; renderPlace();
+  const el=placeEl(), r={sum:ktNum(el.querySelector('.kp-sum')?.textContent),
+   statti:[...el.querySelectorAll('.kp-body .bd td b')].map(b=>ktNum(b.textContent)),
+   ryzyk:ktNum(el.querySelector('.kc-risk')?.textContent)??0, badge:el.querySelector('.kp-badge')?.textContent||''};
+  PLACE=null; renderPlace(); return r},
+ kartkaSoty(b,R){openCell('СОТА',b.ad,[b.cx,b.cy,R],null); const el=placeEl();
+  const r={sum:ktNum(el.querySelector('.kp-sum')?.textContent),
+   vydy:[...el.querySelectorAll('.kc-vydy button b')].map(x=>ktNum(x.textContent)),
+   ryzyk:ktNum(el.querySelector('.kc-risk')?.textContent)??0};
+  closeCell(); return r},
+ rizykPoruch};
 """

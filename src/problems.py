@@ -33,6 +33,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
 # Стиснений (S-Н.6): нестиснений важив 3 МБ і щотижня йшов у git цілим.
 REPORT = os.path.join(DATA, 'problems_report.json.gz')
+SKHOZHI = os.path.join(DATA, 'skhozhi_1551.json')
 D1551 = os.path.join(DATA, '1551')
 
 PRAVYLA = 'В1 з поправками 29–30.09.2026 (SPECYFIKATSIYA, S-ПР; RISHENNYA, розд. 32–33)'
@@ -519,6 +520,60 @@ def zlyty_adresy(cnt, pts=None):
     return sorted(((g[0], g[1]) for g in gr), key=lambda x: -x[1])
 
 
+def chyslo_problem(rep):
+    """Число проблем — одне джерело для карти, «Проблем» і змісту (S-ПР.14,
+    36.28.2): місця, лінії й ділянки вулиць окремо; дорожні ділянки — не в
+    переліку. «53 проблеми» звіту 19.10 складалися з 7 місць, 1 лінії й 45
+    дорожніх ділянок (E9) — одне число вводило в оману."""
+    pr = rep.get('perelik') or []
+    return dict(mists=sum(1 for r in pr if r.get('riven') == 'точка'), linii=sum(1 for r in pr if r.get('riven') == 'лінія'),
+                dilianok=sum(1 for r in pr if r.get('riven') == 'ділянка'), dorozhnikh=rep.get('dorozhnikh_dilianok', 0))
+
+
+def chyslo_tekst(c):
+    """«12 місць · 1 лінія · 2 ділянки вулиць» — нульові частини не пишемо"""
+    pl = lambda n, a, b, c_: a if n % 10 == 1 and n % 100 != 11 else b if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14 else c_
+    ch = [(c['mists'], 'місце', 'місця', 'місць'), (c['linii'], 'лінія', 'лінії', 'ліній'),
+          (c['dilianok'], 'ділянка вулиці', 'ділянки вулиць', 'ділянок вулиць')]
+    return ' · '.join(f'{n} {pl(n, a, b, c_)}' for n, a, b, c_ in ch if n) or '0 проблем'
+
+
+POROH_HIST = .8      # S-ПР.13: нижче 80% порогу дві збірки поспіль — проблема зникає
+
+
+def histerezys(zapysy, S, log=print):
+    """id(запису) -> стан гістерезису для точок, що були проблемою минулої
+    збірки, а цього разу не пройшли ворота. Минула збірка — той самий файл
+    звіту в main. Лічильник «нижче 80%» росте лише з новими даними (інший
+    знімок S): дві збірки на тих самих даних дають той самий перелік (S-Р.11)."""
+    pop = {}
+    for f, op in ((REPORT, gzip.open), (REPORT[:-3], open)):
+        if os.path.exists(f):
+            try: pop = json.load(op(f, 'rt', encoding='utf-8')); break
+            except (OSError, ValueError): pass
+    S0 = (pop.get('versiia') or {}).get('podii_do')
+    k_pop = [(h['sim'], tuple(h['p']), h['nyzhche_80']) for h in pop.get('histerezys', [])]
+    buly = []
+    for x in pop.get('perelik', []):
+        if x.get('riven') == 'лінія' or x.get('status') != 'хронічна': continue
+        sims = [y['sim'] for y in x.get('rozbyvka') or [] if y.get('status') in ('хронічна', None)] or [x['sim']]
+        for s in sims:
+            for c in x.get('chastyny') or [x]:
+                buly.append((s, tuple(c['p'])))
+    out = {}
+    for r in zapysy:
+        if r['riven'] != 'точка' or r['status'] not in ('мало', 'гостра', 'випадкова'): continue
+        if not any(s == r['sim'] and dist(p, r['p']) <= R_MISCE for s, p in buly): continue
+        k0 = max([k for s, p, k in k_pop if s == r['sim'] and dist(p, r['p']) <= R_MISCE] or [0])
+        sylna = r.get('za_2roky', 0) >= POROH_HIST * MIN_POD
+        k = k0 if S0 == S else (0 if sylna else k0 + 1)
+        if k >= 2: continue
+        out[id(r)] = dict(nyzhche_80=k, za_2roky=r.get('za_2roky', 0), porih=MIN_POD)
+    log(f'   гістерезис: минула збірка {S0 or "—"}, проблем-точок тоді {len(buly)}, '
+        f'лишились за гістерезисом {len(out)} (з них нижче 80% порогу {sum(1 for v in out.values() if v["nyzhche_80"])})')
+    return out
+
+
 def formuietsia(u, kind_q, n_last=2, n_prev=6, min_n=3):
     """Р3.2: останні n_last кварталів проти попередніх n_prev, тест Пуассона.
     До попередніх додаємо одну подію, щоб місце без історії не отримувало
@@ -769,8 +824,7 @@ def skhozhi_1551(G, dmap, log, seed=31):
             f"проти {mean:.1f} на випадкових (p {pv:.3f}); на км {out[th]['na_km']} проти {out[th]['vypadkovo_na_km']} "
             f"(p {out[th]['p_na_km']}); тихих зі скаргами {len(tykhi)} з {len(lay.get('quiet', []))}")
     res = dict(do=G['last'], vid=lo, n_vypadk=N_VYPADK, radius_m=R_VULYTSIA, vydy=out)
-    json.dump(res, open(os.path.join(DATA, 'skhozhi_1551.json'), 'w', encoding='utf-8'),
-              ensure_ascii=False, indent=1)
+    json.dump(res, open(SKHOZHI, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     return res
 
 
@@ -812,6 +866,18 @@ def run(V=None, log=print, FACT=None):
     if not ev: return None
     S = max(e['dec'][:10] for e in ev if e['dec'])          # знімок даних — останнє рішення
     kind_q = kv(S)
+    # «Формується» порівнює останні квартали з попередніми — це розрахунок
+    # «після», тож «останні» закінчуються на останньому кварталі, усі місяці
+    # якого мають повноту виду ≥90% (S-Р.9); інакше свіжий квартал виглядає
+    # спадом і місце, що росте, не видно.
+    import povnota as PV
+    mezha, ost = PV.z_vybir(V)
+    KV_POVNYI = {}
+    for th_ in mezha if ost else ():
+        m_ = PV.ostannii_povnyi(th_, mezha, ost)
+        q_ = kv(m_ + '-01')
+        KV_POVNYI[th_] = q_ if int(m_[5:7]) % 3 == 0 else q_ - 1
+    log('   «формується» — до повного кварталу: ' + ', '.join(f'{k} {v - kind_q:+d} кв.' for k, v in sorted(KV_POVNYI.items())))
 
     # райони — для рівня 1551 і для карти
     import map_problems as MP
@@ -898,7 +964,7 @@ def run(V=None, log=print, FACT=None):
             if st in PROBLEMA:
                 is_problem_ev.update(id(e) for e in evs)
             elif not dor:
-                ok, fz = formuietsia(u, kind_q)
+                ok, fz = formuietsia(u, KV_POVNYI.get(th, kind_q))
                 if ok:
                     formue.append(dict(riven=track, sim=sim, vyd=th, p=list(rep), adresy=rec['adresy'],
                                        dzherelo='ЄДРСР', prymitka='судові дані запізнюються', **fz,
@@ -926,6 +992,18 @@ def run(V=None, log=print, FACT=None):
     for r in zapysy:
         if r['status'] in PROBLEMA and r['riven'] == 'точка' and r['vorota'].get('R8') is False:
             vidpalo_r8(r, 'точка', pary_ev.get(id(r), ()))
+
+    # ---- гістерезис (S-ПР.13, 36.24.1; тимчасово, до П7 змагання Е7) ----
+    # Проблема минулої збірки, що цього разу не пройшла (мало подій, кварталів
+    # чи Р8), лишається, доки дві збірки поспіль має менше 80% порогу подій:
+    # місце біля межі не мигає. Лише рівень «точка»; поліцейські — ні.
+    HIST = histerezys(zapysy, S, log)
+    for r in zapysy:
+        if id(r) in HIST:
+            if r['status'] == 'випадкова': funnel['точка']['відпало: Р8 не густіше за випадок'] -= 1
+            r['status'] = 'хронічна'; r['histerezys'] = HIST[id(r)]
+            funnel['точка']['лишились за гістерезисом'] += 1
+            is_problem_ev.update(id(e) for e in pary_ev.get(id(r), ()))
 
     # ---- рівень «ділянка» (завдання 29, п. 4) ----
     # Точки-проблеми одного механізму й статусу на тій самій вулиці ближче
@@ -1110,8 +1188,8 @@ def run(V=None, log=print, FACT=None):
     dilianky = [r for r in zapysy if r['status'] == 'хронічна' and r['riven'] == 'дорожні ділянки']
     gz = collections.Counter((r['vyd'], r['golos']['stan']) for r in problemy if r.get('golos'))
     rep = dict(
-        versiia=dict(pravyla=PRAVYLA, podii_do=S, **({'1551_do': G['last']} if G else {}),
-                     skladeno=dt.date.today().isoformat()),
+        # без дати складання: дві збірки на тих самих даних — той самий файл (S-Р.11)
+        versiia=dict(pravyla=PRAVYLA, podii_do=S, **({'1551_do': G['last']} if G else {})),
         voronka={k: dict(v) for k, v in funnel.items()},
         problem=len(problemy), linii=sum(1 for r in problemy if r['riven'] == 'лінія'),
         dilianok=sum(1 for r in problemy if r['riven'] == 'ділянка'),
@@ -1128,6 +1206,9 @@ def run(V=None, log=print, FACT=None):
         golos={f'{L.THEMES.get(t, t)} — {s}': n for (t, s), n in sorted(gz.items())},
         r8={M.simname(k): v for k, v in r8.items()},
         perelik=problemy, dorozhni_dilianky=dilianky, formuietsia_perelik=formue,
+        # стан гістерезису для наступної збірки (S-ПР.13)
+        histerezys=[dict(sim=r['sim'], p=list(r['p']), nyzhche_80=r['histerezys']['nyzhche_80'])
+                    for r in zapysy if r.get('histerezys')],
         inshi=[{k: v for k, v in r.items() if k not in ('statti', 'docs')} for r in zapysy
                if r['status'] not in PROBLEMA and r['status'] != 'не перевірена адреса'][:3000])
     try:

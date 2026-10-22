@@ -475,10 +475,9 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
     meta = dict(courts=[COURTS.get(x, x) for x in ck], cats=[k[1] for k in labels],
                 counts=[cnt[k] for k in labels], groups=groups, years=ykeys, law=law)
     # Межі періоду для смуги часу: з якого місяця рахуються події (mon0) і
-    # скільки місяців у даних (mon_n). Останні два місяці карта позначає
-    # «неповними» — затримка публікації рішень (розд. 17). Позначку в першій
-    # хвилі прибрати (RISHENNYA 36.20: «і так ясно, що рік не повний»);
-    # межа неповних місяців лишається лише в розрахунках «після».
+    # скільки місяців у даних (mon_n). Позначки «неповний» на смузі немає
+    # (36.20.1: «і так ясно, що рік не повний»); межа неповних місяців — лише в
+    # розрахунках «після» (S-Р.9).
     meta['mon0'] = MIN_EVENT_DATE[:7]
     meta['mon_n'] = 1 + max((e[5] for p in P for e in p[4]), default=0)
 

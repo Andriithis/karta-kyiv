@@ -315,6 +315,9 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
 
     meta['skew'] = skew_txt
     meta['n_problems'] = len(problems)
+    # число з problems_report — місця, лінії, ділянки окремо (S-ПР.14)
+    import problems as PR_
+    if _PR: meta['chyslo'] = PR_.chyslo_problem(_PR)
 
     # ---- ДАНІ ДЛЯ ПЕРЕХОДУ ПО РАЙОНАХ У МЕЖАХ ОДНОГО ФАЙЛУ ----
     # Міська карта несе межі всіх районів, їхні переліки проблем і короткі

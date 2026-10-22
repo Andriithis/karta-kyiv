@@ -71,6 +71,9 @@ MIN_PAI = 3.0
 # механізми (сп'яніння, документи, розпивання…) окремих моделей не
 # отримують — вони лишаються у своїх видах (RISHENNYA 33.1).
 MEKH = ('ГП_хуліг', 'ДОР_залишення_місця', 'МАЙ_крадіжка', 'ДОР_ДТП_дорога', 'ДОР_ДТП_двір')
+# Точки, де середовище вгадує краще за історію понад похибку (36.21.1, Е8):
+# лише хуліганство. АЛК, НАР, залишення місця — перевірити знову через рік (36.21.4).
+SEREDOVYSHCHE_TOCHKY = ('ГП_хуліг',)
 # Точне місце — будинок або перехрестя двох названих вулиць (RISHENNYA 33.2.3)
 TOCHNE = {'house', 'cross'}
 
@@ -213,7 +216,16 @@ def podii(log):
                         street=r[5] or '', fab=f, vul=vul))
     log(f'   подій на карті: {len(V["rows"]):,}; клас B на точному місці: {len(out):,}; '
         f'ДТП з майном: ' + ', '.join(f'{M.simname(k)} {v:,}' for k, v in n_dtp.items()))
+    # Повнота останніх місяців за видами (S-Р.9) — для цілей перевірки нижче
+    import povnota as PV
+    mezha, ost = PV.z_vybir(V)
+    POVNI.clear(); POVNI.update({th: PV.ostannii_povnyi(th, mezha, ost) for th in mezha} if ost else {})
+    log('   ціль перевірки — місяці з повнотою ≥90%, до: ' + ', '.join(f'{k} {v}' for k, v in sorted(POVNI.items())))
     return out, drop
+
+
+# вид -> останній місяць з повнотою ≥90% (S-Р.9); заповнює podii()
+POVNI = {}
 
 
 def oznaky_tochok(raw, T, SEG, byid, log=print):
@@ -568,6 +580,15 @@ def main():
             if a is not None: v += a
         return v
     def rik(y): return [f'{y}-{m:02d}' for m in range(1, 13)]
+    # Рік як ціль перевірки «після» — без місяців, де повнота виду нижча за 90%
+    # (S-Р.9): свіжі місяці ще не мають більшості рішень і показували б спад,
+    # якого немає. Історія (ознаки) береться повністю.
+    def cil(y, th): return [m for m in rik(y) if m <= POVNI.get(th, '9999')]
+    # Історія R1_24 (36.21, S-Р.2–3): події 24 місяців до m_end, кожен місяць з
+    # вагою 0,5^(вік/12) — торішня подія важить удвічі менше за нинішню.
+    def zgasannia(cnt_f, m_end):
+        y, m = int(m_end[:4]), int(m_end[5:7])
+        return sum(0.5 ** (j / 12) * cnt_f([mshift(y, m, -j)]) for j in range(24))
     log(f'   остання дата події {last}; вікно карти {MAPW[0]} — {MAPW[-1]}')
 
     # райони відрізків — для перехресної перевірки блоками (3.3)
@@ -758,22 +779,34 @@ def main():
                 a = YP.get((key, m))
                 if a is not None: v += a
             return v
-        p24, p25, p26 = cntp(rik(2024)), cntp(rik(2025)), cntp(rik(2026))
+        # ціль — лише повні місяці виду (S-Р.9); p25 як історія — увесь рік
+        p24, p25, p26 = cntp(rik(2024)), cntp(rik(2025)), cntp(cil(2026, th))
+        p25c = cntp(cil(2025, th))
         if p25.sum() >= 50 and p26.sum() >= 20:
-            hP, muP, sdP = hst(p24); hP2, _a, _b = hst(p25, muP, sdP); hPm, _a, _b = hst(cntp(MAPW), muP, sdP)
+            # 36.21 (S-Р.3): середовище — лише там, де вгадує краще за саму
+            # історію понад похибку, тобто для хуліганства (R6). Решта видів —
+            # історія 24 місяців зі згасанням (піврозпад 12, R1_24), як на лініях:
+            # одна методика простіша й чесніше пояснюється.
             one = np.ones(NP_)
-            AP = lambda H, cols: np.column_stack([H, XPL, XP[:, cols]] if cols else [H, XPL])
-            sP = rtm.stijkist(XP[:, CANDP], p25, one, [ctypP[j] for j in CANDP], H=np.column_stack([hP, XPL]),
-                              folds=foldP, runs=max(20, rtm.N_STAB // 2), log=log)
-            colsP = [CANDP[c] for c in sP['cols']]
-            fP, _ = rtm.nb_fit(AP(hP, colsP), p25, one)
-            PAI_P = RT.pai(rtm.nb_predict(fP, AP(hP2, colsP), one), p26)
+            colsP, fP = [], None
+            if key in SEREDOVYSHCHE_TOCHKY:
+                AP = lambda cols: np.column_stack([XPL, XP[:, cols]] if cols else [XPL])
+                sP = rtm.stijkist(XP[:, CANDP], p25c, one, [ctypP[j] for j in CANDP], H=XPL,
+                                  folds=foldP, runs=max(20, rtm.N_STAB // 2), log=log)
+                colsP = [CANDP[c] for c in sP['cols']]
+                fP, _ = rtm.nb_fit(AP(colsP), p25c, one)
+                # середовище не міняється в часі: оцінка перевірки й карти та сама
+                pP = pmP = rtm.nb_predict(fP, AP(colsP), one)
+                metod = 'R6 — середовище'
+            else:
+                pP, pmP = zgasannia(cntp, '2025-12'), zgasannia(cntp, MAPW[-1])
+                metod = 'R1_24 — історія зі згасанням'
+            PAI_P = RT.pai(pP, p26)
             PAI_PH = RT.pai(p25, p26)
-            pmP = rtm.nb_predict(fP, AP(hPm, colsP), one)
             info = dict(PAI=round(PAI_P, 2), PAI_історія=round(PAI_PH, 2), подій_навчання=int(p25.sum()),
-                              на_карті=PAI_P >= RT.MIN_PAI,
+                              на_карті=PAI_P >= RT.MIN_PAI, метод=metod,
                               чинники=[cnameP[j] for j in colsP])
-            log(f'   точки: PAI на верхніх 5% точок {PAI_P:.2f} (історія {PAI_PH:.2f}); '
+            log(f'   точки ({metod}): PAI на верхніх 5% точок {PAI_P:.2f} (історія року {PAI_PH:.2f}); '
                 + ('на карті' if PAI_P >= RT.MIN_PAI else 'СХОВАНО'))
             if PAI_P >= RT.MIN_PAI:
                 oP = np.argsort(-pmP, kind='stable'); pctP = np.empty(NP_); pctP[oP] = 100 * (np.arange(NP_) + 1) / NP_
@@ -781,7 +814,8 @@ def main():
                 kP = min(300, max(20, NP_ // 100))
                 def facP(i):
                     rows = []
-                    for k_, j in enumerate(colsP, start=1 + 1 + XPL.shape[1]):
+                    # без константи: перші — стовпці людей XPL, далі середовище
+                    for k_, j in enumerate(colsP, start=1 + XPL.shape[1]):
                         c = float(fP.params[k_]) * (XP[i, j] - XP[:, j].mean())
                         if c > 0 and ctypP[j]: rows.append((c, cnameP[j]))
                     return [r for _c, r in sorted(rows, reverse=True)[:3]]
@@ -802,7 +836,9 @@ def main():
                           проактивних=round(pr, 3), позначка=mark,
                           відсіяно={k[1]: v for k, v in drop.items() if k[0] == key})
         YSRC[0] = Y
-        y24, y25, y26 = cnt(key, rik(2024)), cnt(key, rik(2025)), cnt(key, rik(2026))
+        # ціль — лише повні місяці виду (S-Р.9); y25 як історія перевірки — увесь рік
+        y24, y25, y26 = cnt(key, rik(2024)), cnt(key, rik(2025)), cnt(key, cil(2026, th))
+        y25c = cnt(key, cil(2025, th))
         vsi_podii = False; tp_gotovo = None
         if y25.sum() < MIN_EV or y26.sum() < 50:
             # Події відійшли точкам (бар, магазин, перехрестя) — тоді ризик
@@ -816,7 +852,8 @@ def main():
                                    позначка=mark, точки=tp)
                 continue
             YSRC[0] = YV; tp_gotovo = tp      # точки вже пораховано — вдруге не треба
-            y24, y25, y26 = cnt(key, rik(2024)), cnt(key, rik(2025)), cnt(key, rik(2026))
+            y24, y25, y26 = cnt(key, rik(2024)), cnt(key, rik(2025)), cnt(key, cil(2026, th))
+            y25c = cnt(key, cil(2025, th))
             log(f'   точок замало ({(tp or {}).get("причина") or "PAI нижче порогу"}) — лінії на всіх подіях виду: '
                 f'{int(y25.sum())} у 2025, {int(y26.sum())} у 2026')
             if y25.sum() < MIN_EV or y26.sum() < 50:
@@ -833,18 +870,18 @@ def main():
             f'перевірка: 2025 -> 2026 ({int(y26.sum())})')
         # разом: історія + люди (без штрафу) + середовище (відбір стійкості)
         HL = np.column_stack([Htr, XL])
-        sT = vidbir(y25, HL)
-        fT, famT = rtm.nb_fit(A_(Htr, sT['cols']), y25, expo)
+        sT = vidbir(y25c, HL)
+        fT, famT = rtm.nb_fit(A_(Htr, sT['cols']), y25c, expo)
         pT = rtm.nb_predict(fT, A_(Hte, sT['cols']), expo)
         K0 = 1 + XL.shape[1]
         # ДО поправки на людей — як до 06.10, для звіту (5.1): люди — кандидати
-        s0 = rtm.stijkist(X, y25, expo, ctyp, H=Htr, folds=fold, runs=max(20, rtm.N_STAB // 5), log=log)
-        f0, _f0 = rtm.nb_fit(np.column_stack([Htr, X[:, s0['cols']]]), y25, expo)
+        s0 = rtm.stijkist(X, y25c, expo, ctyp, H=Htr, folds=fold, runs=max(20, rtm.N_STAB // 5), log=log)
+        f0, _f0 = rtm.nb_fit(np.column_stack([Htr, X[:, s0['cols']]]), y25c, expo)
         p0 = rtm.nb_predict(f0, np.column_stack([Hte, X[:, s0['cols']]]), expo)
         PAI_0, _h0 = pai(p0 / slen, y26)
         # лише середовище (з поправкою на людей) — для порівняння у звіті
-        sE = vidbir(y25, XL if XL.shape[1] else None)
-        fE, _fe = rtm.nb_fit(np.column_stack([XL, stovp(sE['cols'])]), y25, expo)
+        sE = vidbir(y25c, XL if XL.shape[1] else None)
+        fE, _fe = rtm.nb_fit(np.column_stack([XL, stovp(sE['cols'])]), y25c, expo)
         pE = rtm.nb_predict(fE, np.column_stack([XL, stovp(sE['cols'])]), expo)
         # щільність — оцінка ÷ довжина: ранг, колір, відбір і PAI (3.4)
         dT, dE, dH = pT / slen, pE / slen, y25 / slen
@@ -854,10 +891,10 @@ def main():
                     історія=round(rtm.hit_rate(y25, y26) / 0.10, 2))
         # захід -> схід: відбір і коефіцієнти — лише на заході
         PAI_G = hG = None
-        if y25[west].sum() > 60 and y26[east].sum() > 30:
+        if y25c[west].sum() > 60 and y26[east].sum() > 30:
             log('   перенесення захід -> схід:')
-            sG = vidbir(y25[west], np.column_stack([Htr[west], XL[west]]), rows=west, runs=max(20, rtm.N_STAB // 2))
-            fG, _fg = rtm.nb_fit(A_(Htr[west], sG['cols'], rows=west), y25[west], expo[west])
+            sG = vidbir(y25c[west], np.column_stack([Htr[west], XL[west]]), rows=west, runs=max(20, rtm.N_STAB // 2))
+            fG, _fg = rtm.nb_fit(A_(Htr[west], sG['cols'], rows=west), y25c[west], expo[west])
             pG = rtm.nb_predict(fG, A_(Hte[east], sG['cols'], rows=east), expo[east])
             PAI_G, hG = rtm.pai_dovzhyna(pG / slen[east], y26[east], slen[east])
         # стійкість між роками (6.3): та сама модель, навчена на 2025 -> 2026

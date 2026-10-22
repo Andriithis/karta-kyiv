@@ -69,7 +69,42 @@ TESTY = {
     'specyfikatsiia': '0. Специфікація ↔ тести',
     'dzherelo_tochky': '4в. Точки карти: «база» й «між сусідами» — 0',
     'zahlushky': '4г. Фабули в показі: заглушок 0, шапок і посилань ≤1%',
+    'zhakkar': '4д. Стабільність ризику: спільних ліній з попередньою збіркою ≥0,7',
+    'chyslo_problem': '4е. Число проблем: карта = «Проблеми» = problems_report',
+    'uzhodzhenist': '7. Узгодженість у браузері: підказка = картка = сума видів',
 }
+
+# S-Р.11, 36.24.2: менше — жовта збірка (публікується, але з переліком і причиною)
+ZHAKKAR_MIN = .7
+
+
+def ryzyk_klyuchi(r):
+    """шар -> множина показаних ліній (назва + кінці) і точок (координати)"""
+    out = {}
+    for k, v in (r.get('layers') or {}).items():
+        out['лінії ' + k] = {(x[1], tuple(x[0][0]), tuple(x[0][-1])) for x in v.get('items', []) if x and x[0]}
+    for k, v in (r.get('tochky') or {}).items():
+        out['точки ' + k] = {(x[0], x[1]) for x in v.get('items', [])}
+    return out
+
+
+def zhakkar(rp):
+    """[(шар, частка, зникло, з'явилось)] проти data/risk.json з HEAD; None —
+    попередньої немає чи файл не мінявся (тиждень без перенавчання)."""
+    import subprocess
+    try:
+        old = subprocess.run(['git', 'show', 'HEAD:data/risk.json'], cwd=ROOT, capture_output=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if old.returncode or not old.stdout: return None
+    new = open(rp, 'rb').read()
+    if new == old.stdout: return []
+    a, b = ryzyk_klyuchi(json.loads(old.stdout.decode('utf-8'))), ryzyk_klyuchi(json.loads(new.decode('utf-8')))
+    res = []
+    for k in sorted(set(a) | set(b)):
+        x, y = a.get(k, set()), b.get(k, set())
+        res.append((k, len(x & y) / max(len(x | y), 1), len(x - y), len(y - x)))
+    return res
 
 # Фабули на сайті (S-П.8; 36.19.1–3): що бачить слухач — site/spravy/*.json
 ZAHLUSHKY = re.compile(r'ОСОБА_\d|ІНФОРМАЦІЯ_\d|НОМЕР_\d|АДРЕСА_\d')
@@ -275,6 +310,13 @@ def main(save=False):
     tmp = tempfile.mkdtemp(prefix='karta_check_')
     map_excl.EXCL = os.path.join(tmp, 'vykluchennya.txt')
     map_excl.REVIEW = os.path.join(tmp, 'top100.txt')
+    # Те саме зі звітом проблем: перевірка на тестовій базі (події до 08.2026)
+    # переписувала data/problems_report.json, і в main ішов він, а не звіт
+    # живої збірки (19.10: у main 7 проблем, на карті 53). Гістерезис читає
+    # саме цей файл як минулу збірку.
+    import problems
+    problems.REPORT = os.path.join(tmp, 'problems_report.json.gz')
+    problems.SKHOZHI = os.path.join(tmp, 'skhozhi_1551.json')
 
     CASES = [('міська', dict(district=None)),
              ('районна', dict(district='Деснянський'))]
@@ -398,12 +440,60 @@ def main(save=False):
         if bez: print(f'   попередження: {len(bez)} шарів старого формату без PAI на довжину — перенавчіть модель')
         if slabki: return 1
         if not bez: print(f'   усі {len(lay)} шарів — PAI ≥ 3')
+
+    print('4д. Стабільність ризику (S-Р.11): спільних ліній з попередньою збіркою ≥0,7')
+    zh = zhakkar(rp) if os.path.exists(rp) else None
+    if zh is None:
+        print('   попередньої risk.json немає (git недоступний чи файла в HEAD немає) — пропущено')
+    elif not zh:
+        print('   risk.json не змінився — модель цього разу не перенавчали')
+    else:
+        slabki = [z for z in zh if z[1] < ZHAKKAR_MIN]
+        print('   ' + '; '.join(f'{k} {c:.2f}' for k, c, _z, _n in zh))
+        for k, c, zn, no in slabki:
+            # жовта, а не червона: перенавчання законно міняє перелік, але
+            # людина має бачити, скільки й чому (36.24.2)
+            print(f'::warning::ЖОВТА: {k} — спільних {c:.2f} < {ZHAKKAR_MIN}; зникло {zn}, з\'явилось {no}. '
+                  'Причина: перенавчання, нові дані чи зміна методики — див. ZMINY-METODYKY.md')
+
+    print('4е. Число проблем (S-ПР.14): карта = «Проблеми» = problems_report')
+    # На живій збірці: site/index.html (M.chyslo) і site/problemy.html проти
+    # data/problems_report.json.gz — одне джерело, окремо місця, лінії, ділянки
+    import problems as PRB_
+    rpp = os.path.join(DATA, 'problems_report.json.gz')
+    sp_, pp_ = os.path.join(ROOT, 'site', 'index.html'), os.path.join(ROOT, 'site', 'problemy.html')
+    if not (os.path.exists(rpp) and os.path.exists(sp_)):
+        print('   звіту проблем чи site/index.html немає — пропущено')
+    else:
+        ch = PRB_.chyslo_problem(json.load(gzip.open(rpp, 'rt', encoding='utf-8')))
+        mm = re.search(r'"chyslo":\s*(\{[^}]*\})', open(sp_, encoding='utf-8').read())
+        na_karti = json.loads(mm.group(1)) if mm else None
+        tekst = PRB_.chyslo_tekst(ch)
+        v_zvity = os.path.exists(pp_) and tekst in open(pp_, encoding='utf-8').read()
+        print(f'   звіт: {tekst} (+ {ch["dorozhnikh"]} дорожніх ділянок); на карті: {na_karti}; у «Проблемах»: {"так" if v_zvity else "НІ"}')
+        if na_karti != ch or (os.path.exists(pp_) and not v_zvity):
+            print('   ПОМИЛКА число проблем розходиться між картою, «Проблемами» й звітом')
+            return 1
     print('5. Розмітка і JavaScript')
     if problems:
         for p in problems:
             print('   ПОМИЛКА', p)
         return 1
     print('   чисто')
+
+    print('7. Узгодженість у браузері (S-К.14, 36.23.6): підказка = картка = сума видів, колір, кільця')
+    # Справжній браузер на живій збірці: число й колір рахує JS, і лише так
+    # видно, чи підказка, картка й карта кажуть одне. Playwright ставить workflow.
+    try:
+        import test_uzhodzhenist as TU
+        import playwright  # noqa: F401
+    except ImportError:
+        TU = None
+    if TU is None or not os.path.exists(os.path.join(ROOT, 'site', 'index.html')):
+        print('   Playwright чи site/index.html немає — пропущено')
+    elif TU.main(int(os.environ.get('N_UZHODZH', '300'))):
+        print('   ПОМИЛКА підказка, картка й карта розходяться')
+        return 1
 
     shutil.rmtree(tmp, ignore_errors=True)
 

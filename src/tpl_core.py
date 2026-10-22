@@ -368,6 +368,29 @@ window.__downloadPassport=downloadPassport;
 // Чиста частина малювання: які адреси показувати, скільки на них подій за
 // фільтром і якого кольору кожна крапка. Жодного звертання до карти — цим
 // користуються обидві збірки, щоб правило кольору лишалося одне на дві.
+// Колір місця — одне правило для кола адреси, соти й стовпчика (S-К.6, 36.34,
+// повертає 35.6): вид, якого тут БІЛЬШЕ, НІЖ У СЕРЕДНЬОМУ ПО МІСТУ — найбільше
+// (частка тут) / (частка в місті) серед видів з ≥ max(3, 10%) подій місця, щоб
+// одна подія не фарбувала. Жоден вид не набрав мінімуму — найчисленніший.
+// «Найчисленніший» для всіх (36.23.3) робив майже всі соти ДТП, і не було
+// видно, куди перехил (В2). Проблема колір не перебиває — вона лише контур (S-К.7).
+// g — події за видами (масив чи об'єкт gi -> n), mg/mn — події міста за видами
+// й усього за тим самим фільтром.
+function kolirMisca(g,mg,mn){
+ let best=null,bn=0,n=0;
+ for(let gi=0;gi<M.groups.length;gi++){const v=g[gi]||0; n+=v; if(v>bn){bn=v;best=gi}}
+ if(!mg||!mn) return best;
+ const min=Math.max(3,.1*n); let br=0;
+ for(let gi=0;gi<M.groups.length;gi++){const v=g[gi]||0; if(v<min||!mg[gi]) continue;
+  const r=(v/n)/(mg[gi]/mn); if(r>br){br=r;best=gi}}
+ return best}
+// Вид проблеми місця — тема, за якою епізодів проблем більше; рахується з самих
+// проблем, тож фільтри його не зрушують.
+function vydProblemy(probs){ if(!probs.length) return null;
+ const byTheme=new Array(M.groups.length).fill(0);
+ for(const pr of probs) if(pr.thi>=0) byTheme[pr.thi]+=pr.n;
+ let best=null,bn=0; for(let gi=0;gi<byTheme.length;gi++) if(byTheme[gi]>bn){bn=byTheme[gi];best=gi}
+ return best}
 function computeVis(){
  syncThemes();
  const C=sel('c'),A=sel('a'),Y=sel('y');
@@ -395,35 +418,25 @@ function computeVis(){
   for(const e of p[4]) if(evOn(e,C,A,Y,H)){
    n++;const t_=CATTH[e[1]];cnt[t_]=(cnt[t_]||0)+1}
   if(!n) continue;
-  // Напрямок адреси-проблеми: тема, за якою епізодів більше. Рахується з
-  // самих проблем, тому фільтри його не зрушують — Володимирська лишається
-  // майновою, хоч би які галочки знімали.
-  // Рівність в обох виборах нижче віддає першій темі за порядком M.groups:
-  // сіре вже означає «центр вулиці», і нічия не має виглядати так само.
-  let thProblem=null;
-  if(ownProbs.length){
-   const byTheme=new Array(M.groups.length).fill(0);
-   for(const pr of ownProbs) if(pr.thi>=0) byTheme[pr.thi]+=pr.n;
-   let bestN=0;
-   for(let gi=0;gi<byTheme.length;gi++) if(byTheme[gi]>bestN){bestN=byTheme[gi];thProblem=gi}
-  }
-  // Переважна тема серед ПОКАЗАНОГО, за кількістю. Доти колір брався з першої
-  // події в масиві — звідси й синя Борщагівська, де найбільше ДТП. Рахується
-  // окремо від кольору, бо йде ще й у рядок частки у вікні.
-  let thMaj=null,bestC=0;
-  for(let gi=0;gi<M.groups.length;gi++) if((cnt[gi]||0)>bestC){bestC=cnt[gi];thMaj=gi}
-  // Колір описує саме цю намальовану крапку, тож перевіряємо не галочку теми,
-  // а чи є події напрямку за фільтром, з роком і часом доби: інакше точка
-  // світилася б темою, якої за обраний рік на ній немає.
+  // Напрямок адреси-проблеми — Володимирська лишається майновою, хоч би які
+  // галочки знімали. Колір — тим самим правилом, що й сота (kolirMisca):
+  // вид проблеми, лише якщо його події є за фільтром, з роком і часом доби.
+  const thProblem=vydProblemy(ownProbs);
+  const thMaj=kolirMisca(cnt);
   const byProblem=thProblem!==null&&cnt[thProblem]>0;
-  const th=byProblem?thProblem:thMaj;
-  tot+=n;vis.push([p,n,th,byProblem,cnt,thMaj])}
+  tot+=n;vis.push([p,n,thProblem,byProblem,cnt,thMaj])}
+ // Перехил рахується від міста за тим самим фільтром — тож колір другим
+ // проходом, коли суми міста вже відомі. Вид проблеми лишається в v[6] — для
+ // ромбів кілець, що позначають саму проблему.
+ const MG=new Array(M.groups.length).fill(0);
+ for(const v of vis) for(const g in v[4]) MG[g]+=v[4][g];
+ for(const v of vis){v[6]=v[2]; v[2]=kolirMisca(v[4],MG,tot)}
  vis.sort((a,b)=>b[1]-a[1]);
  // Чисел панель більше не показує (RISHENNYA, розд. 18) — ні подій, ні адрес,
  // ні проблем. tot і vis лишаються в результаті: з них кільце у вікні й
  // перевірки паритету.
  refreshPanel();
- return {vis,tot,C,A,Y,H,GVIS,CF};
+ return {vis,tot,C,A,Y,H,GVIS,CF,MG};
 }
 // ---- ВІКНО АДРЕСИ ----
 // Готовий вузол DOM: склад подій, розклад доби, картки проблем, кнопки.

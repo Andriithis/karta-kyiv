@@ -866,8 +866,11 @@ def build(outdir):
              'з перевіркою на роках і частині міста, яких модель не бачила.', ''.join(b), script))
     made.append('skhozhi-umovy.html')
     b, npr = problemy(D)
+    # число — з problems_report, окремо місця, лінії й ділянки (S-ПР.14)
+    import problems as PRB
+    chyslo = PRB.chyslo_tekst(PRB.chyslo_problem(D['PR'])) if D.get('PR') else f'{npr} {pl(npr, "проблема", "проблеми", "проблем")}'
     open(os.path.join(outdir, 'problemy.html'), 'w', encoding='utf-8').write(
-        page('problemy.html', 'Проблеми', f'{npr} {pl(npr, "проблема", "проблеми", "проблем")} — з чого почати на місці. '
+        page('problemy.html', 'Проблеми', f'{chyslo} — з чого почати на місці. '
              'Сторінка на кожну; друкується на A4.', ''.join(b)))
     made.append('problemy.html')
     open(os.path.join(outdir, 'metodyka.html'), 'w', encoding='utf-8').write(
