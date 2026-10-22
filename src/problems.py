@@ -43,6 +43,10 @@ R_MISCE = 30          # м: адреси з тим самим механізмо
 # 80%); колишні 12/5 давали 67–90% і пропускали місця з одним сценарієм.
 MIN_POD = 5           # Р3: окремих подій за останні KV_VIKNO кварталів
 MIN_KV = 3            # Р3: різних кварталів з останніх 8
+# Дорожні ділянки (Р4, ДТП з майновою шкодою) лишаються на 12/5 (36.36.3):
+# змагання Е7 міряло місця й лінії, а не ДТП — на ділянках 5/3 не перевірено.
+# Кандидати для аналізу фабул беруть 5/3 для всіх, і ДТП теж.
+DOR_POD, DOR_KV = 12, 5
 # Ст.51 КУпАП (дрібне викрадення) — проактивна (36.36): число протоколів міряє
 # охорону магазину. Місця лише зі ст.51 мають наступного року кримінальних
 # крадіжок ×1,1 від звичайного, з ≥3 ст.185 — ×9,9 (Е7).
@@ -452,9 +456,10 @@ def mozhe_fiksuvaty(sim):
     return M.simtheme(sim) not in NE_FIKSUIE and sim not in NE_FIKSUIE_SIM
 
 
-def vorota(evs, S, kind_q, sim=''):
+def vorota(evs, S, kind_q, sim='', porih=(MIN_POD, MIN_KV)):
     """Ворота Р1–Р3 для набору подій однієї пари. Повертає (прапорці,
-    статус, підсумки). Порядок воріт — як у воронці."""
+    статус, підсумки). Порядок воріт — як у воронці. porih — (подій,
+    кварталів) Р3 свого класу; sito в підсумках — 5/3 для кандидатів."""
     b = [e for e in evs if e['klas'] == 'B']
     g = dict(R1=bool(b))
     if not b: return g, 'не перевірена адреса', {}
@@ -469,8 +474,8 @@ def vorota(evs, S, kind_q, sim=''):
     u8 = [e for e in u if kv(e['date']) > kind_q - KV_VIKNO]
     qs = {kv(e['date']) for e in u8}
     last = max(e['date'] for e in u)
-    g['R3_podii'] = len(u8) >= MIN_POD
-    g['R3_kvartaly'] = len(qs) >= MIN_KV
+    g['R3_podii'] = len(u8) >= porih[0]
+    g['R3_kvartaly'] = len(qs) >= porih[1]
     g['R3_svizhist'] = (dt.date.fromisoformat(S) - dt.date.fromisoformat(last)).days <= SVIZHIST_DNIV
     r3 = g['R3_podii'] and g['R3_svizhist'] and g['R3_kvartaly']
     # скупчення, де більшість — ст.51, не стає «фіксує поліція» (36.36), як НАР і ДОР
@@ -488,7 +493,8 @@ def vorota(evs, S, kind_q, sim=''):
                        otsinnykh=sum(e['otsinna'] for e in u),
                        # Шкода — поле, не сортує (Р6): частка кримінальних
                        # проступків, поки ваги шкоди не перевірені юристом
-                       shkoda_kk=round(kk / len(u), 2), evs=u)
+                       shkoda_kk=round(kk / len(u), 2), evs=u,
+                       sito=len(u8) >= MIN_POD and len(qs) >= MIN_KV)
 
 
 PROBLEMA = ('хронічна', 'фіксує поліція')       # статуси, що йдуть у перелік
@@ -532,25 +538,26 @@ def zlyty_adresy(cnt, pts=None):
 # читає лише цей файл. Межа — 20 МБ (check_build).
 KANDYDATY = os.path.join(DATA, 'kandydaty.json.gz')
 FAB_KANDYDATA = 600
-# Мітки маневру ДТП — щоб аналіз бачив сценарій («лівий поворот на Сумську»)
-MANEVR = [('лівий поворот', r'лів\w*\s+поворот|поверта\w*\s+ліворуч|поворот\w*\s+ліворуч'),
-          ('розворот', r'розворот|розверта'), ('задній хід', r'задн\w+\s+ход|заднім\s+ходом'),
-          ('перестроювання', r'перестро'), ('виїзд з прилеглої', r'прилегл\w+\s+територ'),
-          ('дистанція', r'дистанці'), ('другорядна', r'другорядн'), ('кругов', r'кругов|кільц\w+\s+рух'),
-          ('пішохід', r'пішохід|пішоход'), ('паркування', r'паркув|стоянк|припаркован')]
-MANEVR = [(m, re.compile(rx, re.I)) for m, rx in MANEVR]
+# Мітки ДТП — щоб аналіз бачив сценарій («лівий поворот на Сумську»).
+# Вирази — дослівно з VIDPOVID-39 від 22.10 (36.37): аналіз звіряє мітки з ними.
+MITKY = [('лівий поворот', r'поворот\w* ліворуч|лівий поворот'), ('розворот', r'розворот'),
+         ('задній хід', r'задн\w+ ход'), ('перестроювання', r'перестро|перелаштув|зміні смуги|зміні напрямку'),
+         ('виїзд з прилеглої', r'прилегл|з двору|виїжджа'), ('дистанція', r'дистанц|попереду'),
+         ('другорядна', r'другорядн|не надав\w* (перевагу|дорогу)'), ('круговий рух', r'кругов'),
+         ('пішохід', r'пішохід|пішоход'), ('паркування', r'паркув|стоянц|парковц|припаркован')]
+MITKY = [(m, re.compile(rx, re.I)) for m, rx in MITKY]
 
 
 def kandydaty(zapysy, ev, log=print):
     """data/kandydaty.json.gz: кожна пара сита (місце × механізм, разом з
-    ДОР_ДТП), що проходить Р3 (≥MIN_POD подій у ≥MIN_KV кварталах), — з
-    подіями й показом фабул (36.19: без заглушок, до FAB_KANDYDATA знаків)."""
+    ДОР_ДТП), що проходить сито 5/3 (≥MIN_POD подій у ≥MIN_KV кварталах,
+    і ДТП теж — 36.36.3), — з подіями й показом фабул (36.19: без заглушок,
+    до FAB_KANDYDATA знаків)."""
     import step1c_teksty as T1
     po_doc = {e['doc']: e for e in ev}
     out = []
     for r in zapysy:
-        g = r.get('vorota') or {}
-        if r.get('riven') not in ('точка', 'дорожні ділянки') or not (g.get('R3_podii') and g.get('R3_kvartaly')): continue
+        if r.get('riven') not in ('точка', 'дорожні ділянки') or not r.get('sito'): continue
         pod = []
         for d in r.get('docs', []):
             e = po_doc.get(d)
@@ -558,7 +565,7 @@ def kandydaty(zapysy, ev, log=print):
             f = T1.pokaz(e['fab0'], T1.kodeks(e['cat']))[:FAB_KANDYDATA]
             x = dict(doc=d, date=e['date'], time=e['time'], cat=e['cat'], adr=e['adr'], fab=f)
             if e['sim'] == 'ДОР_ДТП' or M.simtheme(e['sim']) == 'ДТП':
-                x['manevr'] = [m for m, rx in MANEVR if rx.search(e['fab0'])]
+                x['mitky'] = [m for m, rx in MITKY if rx.search(e['fab0'])]
             pod.append(x)
         out.append(dict(adresy=r.get('adresy', []), lat=r['p'][0], lon=r['p'][1], sim=r['sim'], vyd=r['vyd'],
                         status=r.get('status'), podii=pod))
@@ -977,14 +984,15 @@ def run(V=None, log=print, FACT=None):
     funnel = {'точка': collections.Counter(), 'лінія': collections.Counter(),
               'дорожні ділянки': collections.Counter()}
     zapysy, formue, is_problem_ev = [], [], set()
-    GATES = (('R1', 'Р1 клас B'), ('R2', 'Р2 заявні ≥50%'), ('R3_podii', f'Р3 ≥{MIN_POD} подій за 2 роки'),
-             ('R3_svizhist', 'Р3 остання ≤12 міс.'), ('R3_kvartaly', f'Р3 ≥{MIN_KV} кварталів з 8'))
+    GATES = lambda n, k: (('R1', 'Р1 клас B'), ('R2', 'Р2 заявні ≥50%'), ('R3_podii', f'Р3 ≥{n} подій за 2 роки'),
+                          ('R3_svizhist', 'Р3 остання ≤12 міс.'), ('R3_kvartaly', f'Р3 ≥{k} кварталів з 8'))
     POLICE = 'пройшли Р3 як проактивні: «фіксує поліція»'
 
     def zbir(sim, evs, riven, pts, rep):
         """запис місця × механізму з підсумками воріт — без воронки"""
         th = M.simtheme(sim)
-        g, st, s = vorota(evs, S, kind_q, sim)
+        g, st, s = vorota(evs, S, kind_q, sim,
+                          (DOR_POD, DOR_KV) if riven == 'дорожні ділянки' else (MIN_POD, MIN_KV))
         u = s.pop('evs', [])
         ap = {}
         for e in u: ap.setdefault(e['adr'], tuple(e['p']))
@@ -1023,7 +1031,7 @@ def run(V=None, log=print, FACT=None):
         rec, u = zbir(sim, evs, track, pts, rep)
         g, st = rec['vorota'], rec['status']
         f = funnel[track]; f['пар на вході'] += 1
-        for gk, lab in GATES:
+        for gk, lab in GATES(*((DOR_POD, DOR_KV) if dor else (MIN_POD, MIN_KV))):
             if gk not in g: break
             if not g[gk]:
                 f['відпало: ' + lab] += 1; break

@@ -73,7 +73,7 @@ TESTY = {
     'chyslo_problem': '4е. Число проблем: карта = «Проблеми» = problems_report',
     'uzhodzhenist': '7. Узгодженість у браузері: підказка = картка = сума видів',
     'telefon': '7. Телефон 375×812: точка й +/− над шторкою, одна висота, 14 px, 44 px',
-    'kandydaty': '4ж. Кандидати для аналізу фабул: файл є, непорожній, ≤20 МБ',
+    'kandydaty': '4ж. Кандидати для аналізу фабул: файл є, непорожній, ≤20 МБ, ДТП з полем mitky',
     'atrybutsiia': '4з. Атрибуція: п\'ять джерел і умови OSM на карті, у звітах і файлах адрес',
     'poshuk_143': '8. Пошук: 143 запити Е12б — першим ≥131',
     'poshuk_opysky': '8. Пошук: описки — у перших п\'яти ≥12 з 13',
@@ -153,10 +153,11 @@ def spec_testy():
         return [f'немає {os.path.basename(SPEC)}'], {}
     import collections
     st = collections.Counter(); bad = []
-    # ≤ 40 КБ (36.31.1): файл читається цілком на початку кожної роботи
+    # ≤ 50 КБ (36.31.1, 36.38.2): файл читається цілком на початку кожної
+    # роботи; 40 змушувало стискати правила до неясності
     kb = os.path.getsize(SPEC) / 1024
     st['КБ'] = round(kb, 1)
-    if kb > 40: bad.append(f'{os.path.basename(SPEC)} — {kb:.1f} КБ, межа 40')
+    if kb > 50: bad.append(f'{os.path.basename(SPEC)} — {kb:.1f} КБ, межа 50')
     for ln in open(SPEC, encoding='utf-8'):
         m = re.match(r'^\| (S-[^\s|]+) \|(.*)\|\s*$', ln)
         if not m: continue
@@ -481,15 +482,19 @@ def main(save=False):
         if na_karti != ch or (os.path.exists(pp_) and not v_zvity):
             print('   ПОМИЛКА число проблем розходиться між картою, «Проблемами» й звітом')
             return 1
-    print('4ж. Кандидати для аналізу фабул (36.37): data/kandydaty.json.gz є, непорожній, ≤20 МБ')
+    print('4ж. Кандидати для аналізу фабул (36.37): data/kandydaty.json.gz є, непорожній, ≤20 МБ, ДТП з mitky')
     kp_ = os.path.join(DATA, 'kandydaty.json.gz')
     if not os.path.exists(kp_):
         print('   ПОМИЛКА data/kandydaty.json.gz немає — аналізу в хмарі нічого читати'); return 1
     mb_ = os.path.getsize(kp_) / 1048576
-    n_ = len(json.load(gzip.open(kp_, 'rt', encoding='utf-8')))
-    print(f'   {n_:,} пар, {mb_:.1f} МБ')
-    if not n_ or mb_ > 20:
-        print('   ПОМИЛКА файл кандидатів порожній чи понад 20 МБ'); return 1
+    kd_ = json.load(gzip.open(kp_, 'rt', encoding='utf-8'))
+    n_ = len(kd_)
+    # аналіз фабул групує ДТП за полем mitky (S-ПР.15) — без нього сценарію не видно
+    dtp_ = [x for k in kd_ if k['sim'] == 'ДОР_ДТП' for x in k['podii']]
+    bez_m = sum('mitky' not in x for x in dtp_)
+    print(f'   {n_:,} пар, {mb_:.1f} МБ; ДТП {len(dtp_):,}, з мітками {sum(bool(x.get("mitky")) for x in dtp_):,}')
+    if not n_ or mb_ > 20 or bez_m or not dtp_:
+        print(f'   ПОМИЛКА файл кандидатів порожній, понад 20 МБ чи ДТП без поля mitky ({bez_m})'); return 1
     print('4з. Атрибуція (S-К.20, S-З.7, S-Б.7): п\'ять джерел і умови OSM')
     import atrybutsiia as ATR_
     bez = []
