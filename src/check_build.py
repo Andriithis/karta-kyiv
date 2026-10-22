@@ -72,6 +72,9 @@ TESTY = {
     'zhakkar': '4д. Стабільність ризику: спільних ліній з попередньою збіркою ≥0,7',
     'chyslo_problem': '4е. Число проблем: карта = «Проблеми» = problems_report',
     'uzhodzhenist': '7. Узгодженість у браузері: підказка = картка = сума видів',
+    'poshuk_143': '8. Пошук: 143 запити Е12б — першим ≥131',
+    'poshuk_opysky': '8. Пошук: описки — у перших п\'яти ≥12 з 13',
+    'poshuk_andrii': '8. Пошук: запити Андрія — вулиця в перших трьох, ≤100 мс на телефоні',
 }
 
 # S-Р.11, 36.24.2: менше — жовта збірка (публікується, але з переліком і причиною)
@@ -494,6 +497,15 @@ def main(save=False):
     elif TU.main(int(os.environ.get('N_UZHODZH', '300'))):
         print('   ПОМИЛКА підказка, картка й карта розходяться')
         return 1
+
+    print('8. Пошук (S-Ш.1, S-Ш.2, S-Ш.5): 143 запити, описки, запити Андрія, час')
+    if TU is None or not os.path.exists(os.path.join(ROOT, 'site', 'poshuk.json')):
+        print('   Playwright чи site/poshuk.json немає — пропущено')
+    else:
+        import test_poshuk as TP
+        if TP.main():
+            print('   ПОМИЛКА пошук не дотягує до меж S-Ш')
+            return 1
 
     shutil.rmtree(tmp, ignore_errors=True)
 

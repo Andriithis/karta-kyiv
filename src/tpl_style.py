@@ -278,6 +278,12 @@ aside#side{position:absolute;top:14px;right:14px;z-index:1100;width:292px;
 .sugg[hidden]{display:none}
 .sugg button{background:none;border:0;padding:6px 9px;text-align:left;font:400 12.5px var(--sans);color:var(--ink);cursor:pointer}
 .sugg button:hover{background:var(--sunk)}
+/* пошук 36.35: назва як в OSM, праворуч сірим число подій; збіг — жирним */
+.sugg button{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.sugg button b{font-weight:600}
+.sugg button .n{color:var(--dim);font-variant-numeric:tabular-nums;flex:none}
+.sugg button[aria-selected="true"]{background:var(--sunk)}
+@media (max-width:700px){.sugg button,.sugg .sgnone{min-height:44px;font-size:14px;align-items:center}}
 .modes{display:flex;gap:16px;border-bottom:1px solid var(--rule)}
 .modes button{background:none;border:0;padding:0 0 7px;font:400 13.5px var(--sans);color:var(--dim);
  cursor:pointer;border-bottom:1.5px solid transparent;margin-bottom:-1px}

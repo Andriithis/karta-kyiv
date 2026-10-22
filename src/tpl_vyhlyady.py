@@ -513,6 +513,120 @@ placeEl().addEventListener('click',e=>{ if(!PORO) return;
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePorozhnia()});
 map.on('click',e=>{ if(CLICK_TAKEN||iconAt(e.point)||addrAt(e.point)) return;
  const a=porozhniaAt(e.point); if(a){CLICK_TAKEN=true; openPorozhnia(a)}});
+// ==== ПОШУК (S-Ш.1–5, RISHENNYA 36.18.5, 36.18.7, 36.35) ====
+// Індекс — poshuk.json (map_poshuk.py): слова назв рахує той самий adr_kliuch,
+// що й геокодер; тут запит чиститься тим самим виразом типів (tw) і слова
+// порівнюються з допуском на відмінок і описку. Файл тягнемо при першому
+// введенні — перше завантаження карти не росте.
+let PSH=null, PSH_P=null;
+function poshukIndeks(){
+ if(!PSH_P) PSH_P=fetch('poshuk.json').then(r=>r.ok?r.json():null).catch(()=>null).then(d=>{
+  if(!d) return PSH=false;
+  d.re=new RegExp(d.tw,'g'); d.w=d.s.map(x=>x[1].split(' ').filter(Boolean));
+  d.alt=d.s.map(x=>x[2].map(a=>a.split(' ').filter(Boolean)));
+  d.adr=new Map(); d.ps.forEach((sid,i)=>{ if(sid>=0&&P[i][3]) (d.adr.get(sid)||d.adr.set(sid,[]).get(sid)).push(i)});
+  return PSH=d});
+ return PSH_P}
+// так само, як adr_kliuch.norm і nh
+const pNorm=s=>s.toLowerCase().replace(/[’`ʼ]/g,"'").replace(PSH.re,' ').replace(/[^а-яіїєґ0-9' \-]/g,' ')
+ .replace(/-/g,' ').replace(/'/g,'').replace(/\s+/g,' ').trim();
+const pNh=h=>(h||'').toUpperCase().replace(/[^0-9A-ZА-ЯІЇЄҐ/]/g,'');
+// номер будинку в кінці запиту: «22», «12-а», «19 б», «34 / 2», «30-32»
+const P_NOMER=/(?:^|[\s,])(\d{1,4}(?:\s*-\s*\d{1,4})?(?:\s*-?\s*[а-яіїєґa-z](?![а-яіїєґa-z']))?(?:\s*\/\s*\d{1,4}(?:\s*-?\s*[а-яіїєґ](?![а-яіїєґ']))?)?)\s*$/i;
+// Дамерау–Левенштейн з межею: далі межі — m+1
+function pDl(a,b,m){ if(Math.abs(a.length-b.length)>m) return m+1;
+ let p2=null,p=Array.from({length:b.length+1},(_,j)=>j);
+ for(let i=1;i<=a.length;i++){const c=[i]; let mn=i;
+  for(let j=1;j<=b.length;j++){let v=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));
+   if(p2&&i>1&&j>1&&a[i-1]===b[j-2]&&a[i-2]===b[j-1]) v=Math.min(v,p2[j-2]+1);
+   c.push(v); if(v<mn) mn=v}
+  if(mn>m) return m+1; p2=p; p=c}
+ return p[b.length]}
+// Слово запиту проти слова назви: збіг, початок, відмінок, описка (S-Ш.2:
+// до 3 літер — точно, 4–7 — одна помилка, від 8 — дві). null — не те слово.
+function pSlovo(w,x,vilno){
+ if(x===w) return 0;
+ if(x.startsWith(w)) return w.length<=2?.05:.1;
+ if(w.length<=2) return null;
+ if(w.length>=4&&x.length>=4){let c=0; while(c<w.length&&c<x.length&&w[c]===x[c]) c++;
+  if(c>=Math.max(4,x.length-2)&&c>=w.length-3&&Math.abs(w.length-x.length)<=3) return .3}
+ const lim=(w.length<=3?0:w.length<=7?1:2)+(vilno?1:0); if(!lim) return null;
+ // дешевий відсів до відстані редагування: літер, яких у слові назви немає
+ // зовсім, не може бути більше за допуск (S-Ш.5: ≤100 мс на телефоні)
+ let chuzhi=0; for(const ch of w) if(x.indexOf(ch)<0&&++chuzhi>lim) return null;
+ const d=Math.min(pDl(w,x,lim),x.length>w.length?pDl(w,x.slice(0,w.length),lim):lim+1);
+ return d<=lim?d:null}
+// Тип із запиту (як step2_geocode.stype) — підказка порядку: «Вокзальна площа 1»
+// — спершу площа, «вул.» суди й люди пишуть про будь-що, тож вона важить мало
+const P_TYPY=[[/просп|пр-т|пр\./,'просп'],[/бульв|б-р/,'бульв'],[/пров/,'пров'],[/пл\.|площ|майдан/,'пл'],
+ [/(^|\s)наб/,'наб'],[/шосе/,'шосе'],[/узв/,'узвіз'],[/проїзд/,'проїзд'],[/алея|алеї/,'алея'],[/вул/,'вул']];
+const pTyp=q=>{q=(q||'').toLowerCase(); for(const [re,t] of P_TYPY) if(re.test(q)) return t; return ''};
+function pVulytsi(slova,vilno,typ){const out=[];
+ PSH.s.forEach((v,sid)=>{let best=null;
+  for(const ws of [PSH.w[sid],...PSH.alt[sid]]){let sum=0;
+   for(const w of slova){let b=null; for(const x of ws){const s_=pSlovo(w,x,vilno); if(s_!==null&&(b===null||s_<b)) b=s_}
+    if(b===null){sum=null; break} sum+=b}
+   if(sum!==null&&(best===null||sum<best)) best=sum}
+  if(best===null) return;
+  const t=v[4]||'';
+  if(typ&&typ!=='вул'&&t!==typ) best+=.5;
+  else if(typ==='вул'&&(t==='пров'||t==='пл')) best+=.2;
+  out.push([best,sid])});
+ return out.sort((a,b)=>a[0]-b[0]||PSH.s[b[1]][3]-PSH.s[a[1]][3])}
+// Рядки підказки: [{t:'v'|'a'|'p'|'m'|'0', підпис, n, …}]
+function poshuk(q){
+ if(!PSH) return [];
+ q=(q||'').trim(); if(q.replace(/\s/g,'').length<3) return [];
+ let dim='', m=P_NOMER.exec(q);
+ // «40 жовтня річчя» — число в назві, а не номер: номер лише після слів назви
+ if(m&&q.slice(0,m.index).replace(/[\s,]/g,'')){dim=pNh(m[1]); q=q.slice(0,m.index)}
+ const slova=pNorm(q).split(' ').filter(Boolean); if(!slova.length) return [];
+ const typ=pTyp(q); let vs=pVulytsi(slova,false,typ), mozh=false;
+ if(!vs.length){vs=pVulytsi(slova,true,typ); mozh=true}
+ if(!vs.length) return [{t:'0',pidpys:'Нічого не знайдено'}];
+ if(mozh) return [{t:'m',pidpys:'Можливо:'}].concat(vs.slice(0,3).map(([s_,sid])=>({t:'v',sid,pidpys:PSH.s[sid][0],n:PSH.s[sid][3],slova})));
+ if(dim){const out=[];
+  for(const [sc,sid] of vs.slice(0,6)){
+   for(const i of PSH.adr.get(sid)||[]){const h=pNh(P[i][2].split(', ').pop());
+    if(h.startsWith(dim)) out.push({t:'a',i,pidpys:P[i][2],n:P[i][4].length,k:[h===dim?0:1,sc,-P[i][4].length,h.length]})}
+   for(const a of PSH.a[sid]||[]){const h=pNh(a[0]);
+    if(h.startsWith(dim)) out.push({t:'p',a,pidpys:PSH.s[sid][0]+', '+a[0],n:0,k:[h===dim?0:1,sc,0,h.length]})}}
+  out.sort((x,y)=>{for(let j=0;j<4;j++) if(x.k[j]!==y.k[j]) return x.k[j]-y.k[j]; return 0});
+  if(out.length) return out.slice(0,5)}
+ return vs.slice(0,5).map(([s_,sid])=>({t:'v',sid,pidpys:PSH.s[sid][0],n:PSH.s[sid][3],slova}))}
+// Збіг з набраним — жирним: слова підпису, що починаються як слова запиту
+function pZhyrno(pidpys,q){const ws=pNorm(q.replace(P_NOMER,'')).split(' ').filter(w=>w.length>=2);
+ return esc(pidpys).replace(/[А-Яа-яІіЇїЄєҐґ'’ʼ\-]+/g,s=>ws.some(w=>s.toLowerCase().replace(/['’ʼ]/g,'').startsWith(w.slice(0,Math.max(2,Math.min(w.length,4)))))?`<b>${s}</b>`:s)}
+let PRY=[], PACT=0;
+function pPokazaty(){const q=qEl.value;
+ if(!PSH){ if(q.trim().length>=3&&PSH!==false) poshukIndeks().then(()=>pPokazaty()); PRY=[]; sg.hidden=true; return}
+ PRY=poshuk(q); PACT=0;
+ sg.innerHTML=PRY.map((r,k)=>r.t==='m'||r.t==='0'?`<div class="sgnone">${esc(r.pidpys)}</div>`
+  :`<button data-k="${k}" role="option" aria-selected="${k===PACT||(PRY[0].t==='m'&&k===1)}"><span>${pZhyrno(r.pidpys,q)}</span><span class="n">${fmt(r.n)}</span></button>`).join('');
+ if(PRY.length&&PRY[0].t==='m') PACT=1;
+ sg.hidden=!PRY.length}
+function pVybraty(r){ if(!r||r.t==='m'||r.t==='0') return;
+ sg.hidden=true; qEl.value=r.pidpys; qEl.blur();
+ if(r.t==='a') return focusAddress(r.i);
+ if(r.t==='p'){const la=r.a[1]/1e5, lo=r.a[2]/1e5, kk=adresyKl(la,lo);
+  setView('addr'); map.flyTo({center:[lo,la],zoom:17.5});
+  // картка — з тієї самої клітинки, що й клік: з її скаргами
+  return fetch('adresy/'+kk+'.json').then(x=>x.ok?x.json():[]).catch(()=>[]).then(xs=>{
+   const a=xs.find(x=>x[0]===r.a[1]&&x[1]===r.a[2]); openPorozhnia(a?[a[0]/1e5,a[1]/1e5,a[2],a[3]]:[la,lo,r.pidpys,[]])})}
+ const pts=(PSH.adr.get(r.sid)||[]).map(i=>[P[i][0],P[i][1]]).concat((PSH.a[r.sid]||[]).map(a=>[a[1]/1e5,a[2]/1e5]));
+ if(pts.length) focusBounds(pts)}
+qEl.removeEventListener('input',suggest);
+qEl.addEventListener('input',pPokazaty);
+qEl.addEventListener('focus',()=>{poshukIndeks(); if(qEl.value) pPokazaty()});
+qEl.addEventListener('keydown',e=>{ if(sg.hidden) return;
+ const ok=PRY.map((r,k)=>r.t==='m'||r.t==='0'?-1:k).filter(k=>k>=0); if(!ok.length) return;
+ if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();
+  const j=ok.indexOf(PACT), n=ok[(j+(e.key==='ArrowDown'?1:ok.length-1))%ok.length]; PACT=n;
+  sg.querySelectorAll('[data-k]').forEach(b=>b.setAttribute('aria-selected',+b.dataset.k===n?'true':'false'))}
+ if(e.key==='Enter'){e.preventDefault(); e.stopImmediatePropagation(); pVybraty(PRY[PACT])}
+ if(e.key==='Escape'){sg.hidden=true}},true);
+sg.onclick=e=>{const b=e.target.closest('[data-k]'); if(b) pVybraty(PRY[+b.dataset.k])};
+document.addEventListener('click',e=>{ if(!e.target.closest('.search')&&!e.target.closest('#sugg')) sg.hidden=true});
 // Місток для автоматичної перевірки узгодженості (test_uzhodzhenist.py, S-К.14):
 // скрипт — модуль, і ззовні його змінних не видно. Лише читання й ті самі дії,
 // що й кліки людини; на вигляд карти не впливає.
@@ -522,7 +636,7 @@ map.on('click',e=>{ if(CLICK_TAKEN||iconAt(e.point)||addrAt(e.point)) return;
 const ktNum=s=>{const m=/\d[\d\s  ]*/.exec(s||''); return m?+m[0].replace(/\D/g,''):null};
 window.KT={get ready(){return STYLE_OK&&!!LASTST}, get st(){return LASTST}, map, P, PIDX,
  pala:g=>PALA[g%PALA.length], probsOf, setView, openAt, closePlace, closeCell, hexb:id=>HEXB[id], MX_, MY_,
- kolirMisca, pidkazkaAdresy, pidkazkaSoty, kolaAdres:()=>ADDR_F, soty:id=>hexData(HEXG.find(G=>G.id===id),false).features,
+ kolirMisca, pidkazkaAdresy, pidkazkaSoty, poshuk, poshukIndeks, kolaAdres:()=>ADDR_F, soty:id=>hexData(HEXG.find(G=>G.id===id),false).features,
  kartkaAdresy(i,pi=null){PLACE={i,tab:'ogl',open:-1,pi:pi??0,prob:pi!==null,allArts:true,near:[],hl:0}; renderPlace();
   const el=placeEl(), r={sum:ktNum(el.querySelector('.kp-sum')?.textContent),
    statti:[...el.querySelectorAll('.kp-body .bd td b')].map(b=>ktNum(b.textContent)),

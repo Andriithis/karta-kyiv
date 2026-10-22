@@ -18,6 +18,10 @@ DATA = os.path.join(ROOT, 'data')
 KLITYNKA = (0.018, 0.028)      # градуси ≈ 2 × 2 км на широті Києва
 
 
+# адреси без подій останньої збірки: (ключ, шир, довг, підпис) — бере map_poshuk
+PORO = []
+
+
 def kl(la, lo):
     """ключ клітинки — однаковий у Python і JS (tpl_vyhlyady, adresyKl)"""
     return f'{int(la // KLITYNKA[0])}_{int(lo // KLITYNKA[1])}'
@@ -52,8 +56,10 @@ def zibraty(P, dst_dir, log=print):
     sk = getattr(MS, 'PO_KL', None) or {}
     kl_sk = lambda lab: MS.kliuch(*lab.rsplit(', ', 1)) if ', ' in lab else None
     out = collections.defaultdict(list); n_sk = 0
+    PORO.clear()
     for k, (la, lo, lab) in adr.items():
         if k in na_karti: continue
+        PORO.append((k, la, lo, lab))
         js = sk.get(kl_sk(lab)) or []
         n_sk += bool(js)
         out[kl(la, lo)].append([round(la * 1e5), round(lo * 1e5), lab, js])

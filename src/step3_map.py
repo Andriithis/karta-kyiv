@@ -539,6 +539,9 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
         # будь-яка адреса Києва клікабельна (36.18.4) — після скарг: ключі ті самі
         import map_adresy
         map_adresy.zibraty(P, os.path.dirname(dst) or '.')
+        # індекс пошуку — після адрес: «Ярославів Вал, 13» без подій теж шукається
+        import map_poshuk
+        map_poshuk.zibraty(P, os.path.dirname(dst) or '.')
 
     open(dst, 'w', encoding='utf-8').write(html)
     print(f'готово: {os.path.basename(dst)} ({os.path.getsize(dst)/1048576:.1f} МБ)')
