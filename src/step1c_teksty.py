@@ -340,18 +340,30 @@ DATY_OPYSKY = [
     (re.compile(r'(?<!\d)(0?[1-9]|[12]\d|3[01])\.(0[1-9]|1[0-2])(20\d{2})(?!\d)'), r'\1.\2.\3'),
     (re.compile(r'(?<!\d)(0?[1-9]|[12]\d|3[01])\.(0?[1-9]|1[0-2])\.{2,}(20\d{2})(?!\d)'), r'\1.\2.\3'),
     (re.compile(r'(?<!\d)(0?[1-9]|[12]\d|3[01])\.(0?[1-9]|1[0-2])\.\d(20[12]\d)(?!\d)'), r'\1.\2.\3'),
+    # «0907.2024» — пропущена крапка між днем і місяцем (VIDPOVID-39 від 22.10)
+    (re.compile(r'(?<![\d.])(0[1-9]|[12]\d|3[01])(0[1-9]|1[0-2])\.(20\d{2})(?!\d)'), r'\1.\2.\3'),
 ]
+# «08.12.12», «23.03.24» — рік двома цифрами. 20РР — лише якщо така дата не
+# пізніша за саме рішення (як ev_date): подія не стається після суду.
+DATA_RR = re.compile(r'(?<![\d.])(0?[1-9]|[12]\d|3[01])\.(0[1-9]|1[0-2])\.(\d{2})(?![\d.]\d|\d)')
 
 
-def vypravyty_daty(text):
+def vypravyty_daty(text, rishennia=''):
     for rx, rep in DATY_OPYSKY:
         text = rx.sub(rep, text)
-    return text
+    def rr(m):
+        # «п. 12.10.15», «ст. 2.3.12» — номери пунктів і статей, а не дати
+        if re.search(r'(?:\bп|\bпп|\bст|\bч|пункт\w*|підпункт\w*)\.?\s*$', m.string[max(0, m.start() - 12):m.start()], re.I):
+            return m.group(0)
+        d = f'20{m.group(3)}-{m.group(2)}-{int(m.group(1)):02d}'
+        return f'{m.group(1)}.{m.group(2)}.20{m.group(3)}' if rishennia and d <= rishennia[:10] else m.group(0)
+    return DATA_RR.sub(rr, text)
 
 
-def fabula(text):
-    """Фабула з логічними межами, без стелі: (текст, чи знайдено кінець)."""
-    text = vypravyty_daty(text)
+def fabula(text, rishennia=''):
+    """Фабула з логічними межами, без стелі: (текст, чи знайдено кінець).
+    rishennia — дата рішення ('РРРР-ММ-ДД'): потрібна для року двома цифрами."""
+    text = vypravyty_daty(text, rishennia)
     # «\~», «\*» — залишки RTF, які rtf_to_text не прибрав
     body = re.sub(r'\s+', ' ', re.sub(r'\\[~*\-]', ' ', text[_start(text):])).strip()
     if SHORT_VERDICT.search(body[:400]):
@@ -837,15 +849,15 @@ def adresa(fab, text='', nar=False, zhytlo=False):
     return res, sent
 
 
-def rozbir(text, cat):
-    """Усе, що прохід бере з одного тексту рішення."""
-    full, found = fabula(text)
+def rozbir(text, cat, rishennia=''):
+    """Усе, що прохід бере з одного тексту рішення. rishennia — дата рішення."""
+    full, found = fabula(text, rishennia)
     full, v = mend(full, found)
     # Процесуальна постанова (S-П.4): ознака ухвали в тексті до резолютивної
     # частини і немає часу події. Дату тут не беремо до уваги: у таких текстах
     # це дата попереднього рішення («Постановою … від 25.02.2025»), і прохід
     # ставив її датою події (ZAVDANNYA-39, А.3).
-    tt = re.sub(r'\s+', ' ', vypravyty_daty(text))
+    tt = re.sub(r'\s+', ' ', vypravyty_daty(text, rishennia))
     m0 = re.search(r'встанови\w*|установи\w*', tt, re.I)
     poch = tt[m0.start() if m0 else 0:]
     mr = PD.REZOLUTYVNA.search(poch)
@@ -910,12 +922,15 @@ REESTR = 'https://od.reyestr.court.gov.ua/files/'
 # описки в датах, процесуальні постанови) і з ознакою ухвали у фабулі (≈0,65
 # тис., peregliad); решта v4 лишається зробленою —
 # перекачувати 156 тис. заради цього не треба (RULE_SUMISNI).
-RULE = 'v4d'
-RULE_SUMISNI = ('v4',)
+# v4e (22.10, VIDPOVID-39): ще дві описки — «0907.2024» і рік двома цифрами
+# («08.12.12», лише не пізніше за рішення). Повторно — документи v4 і v4d без
+# фабули й без знайденого кінця опису (≈520, одна ніч); решта лишається.
+RULE = 'v4e'
+RULE_SUMISNI = ('v4', 'v4d')
 # Правила, частини яких карта бере, доки документ не пройшов чинне: без цього
 # від зміни правила до кінця нового проходу карта лишалася б без фабул і
 # класів адрес. Черга (main) рахує зробленим лише RULE.
-RULE_ZAPAS = ('v3', 'v4')
+RULE_ZAPAS = ('v3', 'v4', 'v4d')
 # Сім видів: колишнє «Середовище» розійшлося в ГП і МАЙ (розд. 18), ДТП
 # окремо від порушень на дорозі (34.3).
 ORDER = ['МАЙ', 'НАР', 'НАС', 'ГП', 'АЛК', 'ДТП', 'ДОР']
@@ -998,6 +1013,10 @@ def peregliad(r):
     яку v4 не розпізнавав (≈4,3 тис.: одна ніч). І постанова з фабулою, де
     вже видно ознаку ухвали (≈0,9 тис.): серед них третина процесуальних з
     датою попереднього рішення (VIDPOVID-39 від 21.10, п. 2)."""
+    if r.get('rule') == 'v4d':
+        # v4d уже бачив ознаки ухвали; ще раз — лише ті, де кінця опису не
+        # знайдено (описки в датах), і не процесуальні
+        return not r.get('fab') and r.get('end_found') != '1' and r.get('vada') != 'процесуальна'
     if r.get('fab'):
         return bool(PD.PROC_POSTANOVA.search(r['fab']))
     return r.get('end_found') != '1'
@@ -1157,7 +1176,7 @@ def main():
                     rq = urllib.request.Request(url, headers={'User-Agent': UA})
                     with urllib.request.urlopen(rq, timeout=45) as resp:
                         text = rtf_to_text(resp.read())
-                    res = rozbir(text, r['cat'])
+                    res = rozbir(text, r['cat'], r.get('date') or '')
                     break
                 except urllib.error.HTTPError as e:
                     why = f'HTTP {e.code}'; time.sleep(1.5 * (attempt + 1))
@@ -1170,7 +1189,7 @@ def main():
                 try:
                     text = review_text(r['doc_id'])
                     if text:
-                        res = rozbir(text, r['cat']); ref = ref or 'review'
+                        res = rozbir(text, r['cat'], r.get('date') or ''); ref = ref or 'review'
                 except Exception as e:
                     why += f'; сторінка: {type(e).__name__}'
             with lock:
