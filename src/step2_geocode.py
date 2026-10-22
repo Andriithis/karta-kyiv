@@ -56,6 +56,19 @@ VCH = re.compile(r"територі\w*\s+(?:\w+\s+)?(?:військов\w+\s+)?�
 def km_ne_budynok(house, sent):
     return bool(house and re.search(rf'(?<!\d){re.escape(house)}\s*(?:км\b|кілометр)', sent or ''))
 
+# «по вулиці Одеська площа, 1» — розбір бере «вул. Одеська», і подія ставала на
+# вулицю Одеську замість площі (11 подій, VIDPOVID-39 від 21.10, п. 3). Тип —
+# зі слова одразу після назви в реченні адреси; «вул.» перед назвою не важить
+# (S-А.5, 36.33.4).
+TYP_PISLIA = r'(площ\w*|проспект\w*|бульвар\w*|провул\w*|узвіз|узвоз\w*|шосе)\b'
+def typ_pislia(street, sent):
+    slova = re.findall(r"[А-ЯІЇЄҐа-яіїєґ'’`]+", street or '')
+    if not slova or not sent: return ''
+    # основа останнього слова назви: «Одеська» -> «Одеськ» ловить і «Одеській площі»
+    osn = slova[-1][:-2] if len(slova[-1]) > 4 else slova[-1]
+    m = re.search(rf"\b{re.escape(osn)}\w*\s+{TYP_PISLIA}", sent)
+    return stype(m.group(1)) if m else ''
+
 
 def stype(s):
     """Тип вулиці з назви OSM чи з адреси рішення; '' — не названо."""
@@ -378,7 +391,7 @@ def main():
     # «1/5У», «11 в м.Києві» -> «11В»), знімаємо тут, за текстом, з якого
     # взято адресу, — тим самим addr.unglue, що й підпис точки в step3_map.
     fab = PD.load_fab(conn)
-    todo = []; n_unglued = 0; BEZ_NOMERA = collections.Counter()
+    todo = []; n_unglued = 0; BEZ_NOMERA = collections.Counter(); TYP_TEKST = {}
     COURT_D = {}
     from map_problems import COURTS
     for doc, court in conn.execute("SELECT doc_id, court FROM events"):
@@ -392,6 +405,8 @@ def main():
         if r is not None and h2:
             if VCH.search(r['addr_sentence'] or ''): h2 = None; BEZ_NOMERA['військова частина'] += 1
             elif km_ne_budynok(h2, r['addr_sentence']): h2 = None; BEZ_NOMERA['кілометр'] += 1
+            t2 = typ_pislia(street, r['addr_sentence'])
+            if t2 and stype(street) in TYPE_LOOSE and t2 not in TYPE_LOOSE: TYP_TEKST[doc] = t2
         # Подія без номера будинку — шукаємо у фабулі перехрестя двох вулиць
         # (завдання 30, 4.1): «на перехресті вул. X та вул. Y», «на розі …»
         px = None
@@ -404,6 +419,8 @@ def main():
             todo.append((doc, street, h2, r['klass'] if r else '', None))
     print(f'   номер без прилиплого прийменника («1/5У» -> «1/5»): {n_unglued:,}')
     print('   номер знято (S-А.11, S-А.8): ' + ', '.join(f'{k} {v:,}' for k, v in BEZ_NOMERA.items()))
+    print(f'   тип зі слова після назви (S-А.5): {len(TYP_TEKST):,} — '
+          + ', '.join(f'{k} {v:,}' for k, v in collections.Counter(TYP_TEKST.values()).most_common()))
     print(f'2) зіставлення заново: {len(todo):,} записів (з проходу по текстах: {len(tk):,})')
 
     # Назва з тексту -> ключ довідника тим самим модулем, що й карта й пошук
@@ -420,26 +437,38 @@ def main():
     # Номер без дробу, якого в довіднику немає, — кутовий будинок «N/M» тієї
     # самої вулиці: суди пишуть «Олени Теліги, 13», в OSM — «13/14». Це сам
     # будинок, а не точка між сусідами. Лише коли окремого «13» немає ні в OSM,
-    # ні в КМДА (сюди доходимо тільки тоді) і кутовий «13/…» на вулиці один:
-    # «13/2» і «13/40» на одній вулиці — вгадування, краще без точки
-    # (VIDPOVID-39 від 21.10, п. 1; S-А.16).
-    DRIB = True
+    # ні в КМДА (сюди доходимо тільки тоді). Кутовий «13/…» один — він; кілька —
+    # той, що в DRIB_M і від N−2, і від N+2 (є лише один сусід — від нього); такий
+    # має бути рівно один, інакше точки немає. «Теліги, 13»: «13/14» — між 11 і 15,
+    # «13/54» — лише в OSM, між 17 і 21, вада OSM (S-А.16, 36.33.1, 36.33.3).
+    DRIB, DRIB_M = True, 200
     po_drobu = collections.defaultdict(dict)   # (вулиця, N) -> {«N/M»: кандидати}
     for (k, hh), c in kand.items():
-        if '/' in hh and hh.split('/')[0].isdigit(): po_drobu[(k, hh.split('/')[0])][hh] = c
+        # лише кутовий «N/M» (літера до M можлива): «2/10К14» — корпус комплексу, не ріг
+        if re.fullmatch(r'\d+/\d+[А-ЯІЇЄҐа-яіїєґ]?', hh): po_drobu[(k, hh.split('/')[0])][hh] = c
     DRIBPR = []                                # для 20 зіставлень очима
+    DRIBST = collections.Counter()
+    dd = lambda q, xs: min(spread_km([(q[0], q[1]), (y[0], y[1])]) for y in xs) * 1000
     def drib(ns_, h_, typ_):
         d = po_drobu.get((ns_, h_))
-        if not d or len(d) != 1: return None
-        c = next(iter(d.values()))
+        if not d: return None
         # Тип теж має збігтися: «пл. Одеська, 1» ставала на «Одеська вулиця, 1/20»,
         # «просп. Голосіївський, 1» — на провулок (перші 20 очима, 21.10). «вул.»
         # суди пишуть і про проспект, тож вона не відсікає нічого, крім провулка й площі.
-        if typ_ not in TYPE_LOOSE: c = [x for x in c if x[2] == typ_]
-        else: c = [x for x in c if x[2] not in ('пров', 'пл')]
-        if not c: return None
+        ok = lambda x: x[2] == typ_ if typ_ not in TYPE_LOOSE else x[2] not in ('пров', 'пл')
         # одна адреса «N/M» у кількох місцях міста — однойменні вулиці, не одна будівля
-        return c[0] if spread_km([(a, b) for a, b, _t, _s in c]) <= R_ODNA / 5 else None
+        vs = [c for c in ([x for x in c if ok(x)] for c in d.values())
+              if c and spread_km([(a, b) for a, b, _t, _s in c]) <= R_ODNA / 5]
+        if len(vs) == 1: return vs[0][0]
+        if not vs: return None
+        DRIBST['подій з кількома кутовими'] += 1
+        n = int(h_)
+        sus = [s for s in (kand.get((ns_, str(n - 2))), kand.get((ns_, str(n + 2)))) if s]
+        if not sus: DRIBST['без сусідів — без точки'] += 1; return None
+        bl = [c[0] for c in vs if all(dd(c[0], s) <= DRIB_M for s in sus)]
+        if len(bl) != 1: DRIBST['не рівно один біля сусідів — без точки'] += 1; return None
+        DRIBST['вибрано за сусідами'] += 1
+        return bl[0]
     kmda = kmda_index(streets) if KMDA_ON else {}
     borders = json.load(open(os.path.join(DATA, 'borders.json'), encoding='utf-8'))
     _dcache = {}
@@ -456,6 +485,14 @@ def main():
         кінці міста). -> (кандидат | None, як вирішено)"""
         spread = lambda xs: spread_km([(a, b) for a, b, _t, _s in xs])
         if not c: return None, ''
+        # Конкретний тип з тексту звіряємо й тоді, коли місце одне: «Лисогірський
+        # узвіз, 20» ставало на провулок (36.33.4). Але лише якщо вулиця названого
+        # типу з цією назвою в Києві є (Голосіївський проспект і провулок): суди
+        # часто плутають тип єдиної вулиці — «бульв. Воскресенський» про
+        # проспект, «просп. Міхновського» про бульвар (20 очима, 21.10).
+        if (typ and typ not in TYPE_LOOSE and ns and (ns, typ) in streets_t
+                and not any(x[2] == typ or x[2] in TYPE_LOOSE for x in c)):
+            return None, 'тип не збігся'
         if spread(c) <= R_ODNA: return c[0], ''
         def odna(xs):
             """усі на одній зв'язній вулиці -> центральний кандидат"""
@@ -505,7 +542,7 @@ def main():
     for doc, street, house, klass, px in todo:
         ns, pr = KL.rozibraty(street)
         h = nh(house)
-        typ = stype(street)
+        typ = TYP_TEKST.get(doc) or stype(street)
         hit = None; src = 'osm'; adr = None
         if px:
             # перехрестя: точка перетину ліній OSM або нічого (4.2)
@@ -533,14 +570,15 @@ def main():
         # Точний будинок КМДА — раніше за «20Б біля 20»: це сам будинок, а
         # не місце поруч.
         elif h and (ns, h) in kmda:
-            x, why = pick(kmda[(ns, h)], typ, COURT_D.get(doc))
+            x, why = pick(kmda[(ns, h)], typ, COURT_D.get(doc), ns)
             PICK['КМДА: ' + (why or 'одна')] += 1
             # підпис КМДА не беремо: там «бульвар Шевченка Тараса» — прізвищем наперед
             if x: hit = (x[0], x[1], 'house'); src = 'kmda'; PRAV[pr or 'як є'] += 1
         elif DRIB and h.isdigit() and (x := drib(ns, h, typ)):
             # кутовий будинок: суд пише «Теліги, 13», в OSM — «13/14» (S-А.16)
             hit = (x[0], x[1], 'house'); adr = pidpys(x[3]); PRAV['дріб (N → N/M)'] += 1
-            DRIBPR.append((doc, street, house, next(iter(po_drobu[(ns, h)])), x))
+            vv = po_drobu[(ns, h)]
+            DRIBPR.append((doc, street, house, next(k for k, c in vv.items() if x in c), x, len(vv) > 1))
         elif typ and (ns, typ) in centro_t:
             hit = (*centro_t[(ns, typ)], 'street')
         elif ns in centro:
@@ -565,9 +603,12 @@ def main():
         print(f'   {s_}, {h_}: {why}; було {was[3]} ({was[0]:.4f}, {was[1]:.4f}) -> '
               + (f'{now[3]} ({now[0]:.4f}, {now[1]:.4f})' if now else 'без точки'))
     # 20 випадкових зіставлень «N → N/M» для перевірки очима (S-А.16)
-    print('дріб, 20 випадкових:')
-    for doc, s_, h_, hh, x in random.Random(40).sample(DRIBPR, min(20, len(DRIBPR))):
-        print(f'   {doc}  {s_}, {h_}  ->  {x[3]}, {hh}  ({x[0]:.5f}, {x[1]:.5f})')
+    print('дріб: ' + ', '.join(f'{k} {v:,}' for k, v in DRIBST.items())
+          + f'; адрес «N» з кількома «N/…» у довіднику: {sum(len(v) > 1 for v in po_drobu.values()):,}')
+    for nazva, xs in (('дріб, 20 випадкових', DRIBPR), ('дріб, кілька кутових — 20 випадкових', [x for x in DRIBPR if x[5]])):
+        print(nazva + ':')
+        for doc, s_, h_, hh, x, _k in random.Random(40).sample(xs, min(20, len(xs))):
+            print(f'   {doc}  {s_}, {h_}  ->  {x[3]}, {hh}  ({x[0]:.5f}, {x[1]:.5f})')
     # 20 випадкових для ручної перевірки (адреса з фабули -> точка)
     for doc, px, la, lo in random.Random(30).sample(PXPR, min(20, len(PXPR))):
         print(f'   {doc}  {PX.adresa(*px)}  ->  {la}, {lo}')
