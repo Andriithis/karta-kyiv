@@ -289,7 +289,7 @@ function cellEvs(ad){const st=LASTST||computeVis(), out=[];
   p[4].forEach((e,k)=>{if(evOn(e,st.C,st.A,st.Y,st.H)) out.push([i,k])})}
  return out.sort((a,b)=>(EVR(b)[5]??-1)-(EVR(a)[5]??-1))}
 function openCell(kind,ad,hex,ll){
- if(POPUP) POPUP.remove(); closePlace();
+ if(POPUP) POPUP.remove(); closePlace(); PORO=null;
  CELL={kind,ad,tab:'ogl',open:-1,page:1,hex,ll};
  // у стовпчиках контуру на землі немає — вибраний стовпчик світліший (33, В6)
  if(hex&&MODE==='stovp'){const k=hexAt(hex[1]/MY_,hex[0]/MX_,hex[2])[0];
@@ -391,7 +391,8 @@ function zPosylannia(){
   const j=best>=0&&bd<=30&&mech?probsOf(P[best]).findIndex(q=>q.mech===mech):0;
   // адреси чи проблеми після оновлення немає — те саме місце, без картки
   if(best<0||bd>30||j<0) return map.jumpTo({center:[lo,la],zoom:16});
-  afterMove(()=>{openAt(best); if(j>0){PLACE.pi=j; renderPlace()}});
+  // посилання на проблему відкриває саме її картку (S-К.23); без механізму — адресу
+  afterMove(()=>{openAt(best); if(mech){PLACE.pi=j; PLACE.prob=true; renderPlace()}});
   const w=placeEl().offsetWidth||396;
   map.flyTo({center:[P[best][1],P[best][0]],zoom:16,offset:[window.innerWidth>700?w/2:0,0]}); return}
  m=/^c=(\d+),(-?[\d.]+),(-?[\d.]+)$/.exec(h);
@@ -471,6 +472,47 @@ function vyhReady(){ hexReady(); addrProbReady(); riskReady();
  draw();
  if(!ZPOS){ZPOS=true; setTimeout(zPosylannia,400)}}
 window.addEventListener('hashchange',()=>{if(/^#(m|c)=/.test(location.hash)) zPosylannia()});
+// ==== БУДЬ-ЯКА АДРЕСА КИЄВА КЛІКАБЕЛЬНА (S-А.15, RISHENNYA 36.18.4) ====
+// Адреси без подій — файлами adresy/<клітинка>.json (map_adresy.py), лише з
+// z15 і лише видимі клітинки: перше завантаження не росте. На карті їх не
+// видно — клік у вигляді «Адреси» по будинку без подій відкриває картку
+// «0 подій» з вкладкою «Скарги», якщо мешканці скаржились на цей будинок.
+const ADR_Z=15, ADR_KL=[0.018,0.028], ADRESY=new Map();
+const adresyKl=(la,lo)=>Math.floor(la/ADR_KL[0])+'_'+Math.floor(lo/ADR_KL[1]);
+function adresyZavantazhyty(){ if(map.getZoom()<ADR_Z) return;
+ const b=map.getBounds();
+ for(let la=Math.floor(b.getSouth()/ADR_KL[0]);la<=Math.floor(b.getNorth()/ADR_KL[0]);la++)
+  for(let lo=Math.floor(b.getWest()/ADR_KL[1]);lo<=Math.floor(b.getEast()/ADR_KL[1]);lo++){const k=la+'_'+lo;
+   if(ADRESY.has(k)) continue; ADRESY.set(k,null);
+   fetch('adresy/'+k+'.json').then(r=>r.ok?r.json():[]).catch(()=>[]).then(xs=>ADRESY.set(k,xs.map(x=>[x[0]/1e5,x[1]/1e5,x[2],x[3]])))}}
+map.on('moveend',adresyZavantazhyty);
+// найближча порожня адреса в 14 px від кліку
+function porozhniaAt(pt){ if(MODE!=='addr'||map.getZoom()<ADR_Z) return null;
+ const ll=map.unproject(pt), k=adresyKl(ll.lat,ll.lng); let best=null,bd=14;
+ for(const [kk,xs] of ADRESY){ if(!xs) continue; const [a,b]=kk.split('_').map(Number), [c,d]=k.split('_').map(Number);
+  if(Math.abs(a-c)>1||Math.abs(b-d)>1) continue;
+  for(const x of xs){const q=map.project([x[1],x[0]]), dd=Math.hypot(q.x-pt.x,q.y-pt.y); if(dd<bd){bd=dd;best=x}}}
+ return best}
+let PORO=null;   // {a:[шир, довг, підпис, [скарги]], tab}
+function openPorozhnia(a){ if(POPUP) POPUP.remove(); closePlace(); closeCell(); PORO={a,tab:'ogl'}; renderPorozhnia()}
+function renderPorozhnia(){const el=placeEl(); if(!PORO) return;
+ const [la,lo,lab,js]=PORO.a, sk=js.length&&skargy()?js:[];
+ if(js.length&&!SKG&&SKG_P) SKG_P.then(()=>{if(PORO&&PORO.a[2]===lab) renderPorozhnia()});
+ if(PORO.tab==='skarg'&&!sk.length) PORO.tab='ogl';
+ el.innerHTML=`<div class="kp-head"><b class="kp-title">${esc(lab)}</b><div class="kp-sum">0 подій</div>
+  <button class="kp-x" data-kp="close" aria-label="Закрити (Esc)" title="Закрити (Esc)">×</button></div>
+  <div class="kp-tabs" role="tablist"><button role="tab" data-pt="ogl" aria-selected="${PORO.tab==='ogl'}">Огляд</button>`+
+  (sk.length?`<button role="tab" data-pt="skarg" aria-selected="${PORO.tab==='skarg'}">Скарги (${fmt(sk.length)})</button>`:'')+`</div>
+  <div class="kp-body">${PORO.tab==='skarg'?skHTML(sk,SK_LIM):rizykRiadok(rizykPoruch(la,lo,50))}</div>`;
+ el.hidden=false; el.classList.remove('kp-cell','kp-tall'); document.body.classList.add('kp-open')}
+function closePorozhnia(){ if(!PORO) return; PORO=null; const el=placeEl();
+ if(!PLACE&&!CELL){el.hidden=true; document.body.classList.remove('kp-open')}}
+placeEl().addEventListener('click',e=>{ if(!PORO) return;
+ const t=e.target.closest('[data-pt]'); if(t){PORO.tab=t.dataset.pt; SK_LIM=50; return renderPorozhnia()}
+ if(e.target.closest('[data-kp="close"]')){e.stopImmediatePropagation(); closePorozhnia()}},true);
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePorozhnia()});
+map.on('click',e=>{ if(CLICK_TAKEN||iconAt(e.point)||addrAt(e.point)) return;
+ const a=porozhniaAt(e.point); if(a){CLICK_TAKEN=true; openPorozhnia(a)}});
 // Місток для автоматичної перевірки узгодженості (test_uzhodzhenist.py, S-К.14):
 // скрипт — модуль, і ззовні його змінних не видно. Лише читання й ті самі дії,
 // що й кліки людини; на вигляд карти не впливає.
@@ -481,7 +523,7 @@ const ktNum=s=>{const m=/\d[\d\s  ]*/.exec(s||''); return m?+m[0].replace(/\D
 window.KT={get ready(){return STYLE_OK&&!!LASTST}, get st(){return LASTST}, map, P, PIDX,
  pala:g=>PALA[g%PALA.length], probsOf, setView, openAt, closePlace, closeCell, hexb:id=>HEXB[id], MX_, MY_,
  kolirMisca, pidkazkaAdresy, pidkazkaSoty, kolaAdres:()=>ADDR_F, soty:id=>hexData(HEXG.find(G=>G.id===id),false).features,
- kartkaAdresy(i,pi=0){PLACE={i,tab:'ogl',open:-1,pi,allArts:true,near:[],hl:0}; renderPlace();
+ kartkaAdresy(i,pi=null){PLACE={i,tab:'ogl',open:-1,pi:pi??0,prob:pi!==null,allArts:true,near:[],hl:0}; renderPlace();
   const el=placeEl(), r={sum:ktNum(el.querySelector('.kp-sum')?.textContent),
    statti:[...el.querySelectorAll('.kp-body .bd td b')].map(b=>ktNum(b.textContent)),
    ryzyk:ktNum(el.querySelector('.kc-risk')?.textContent)??0, badge:el.querySelector('.kp-badge')?.textContent||''};

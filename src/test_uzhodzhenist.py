@@ -9,10 +9,9 @@
     kolirMisca; ризик у картці = rizykPoruch у 50 м;
   * сота (усі три сітки): число = підказка = картка = сума видів; колір соти =
     kolirMisca; ризик у картці = rizykPoruch у межах соти;
-  * 50 проблем: картка проблеми = число подій проблеми;
+  * 50 проблем: окрема картка проблеми = число подій проблеми; картка адреси з
+    проблемою — усі події адреси, як і в будь-якої іншої (S-К.12);
   * кільця: число на кільці = сума подій його адрес (kartaKilcia).
-Адреси з проблемою на рівність підказки й картки адреси не перевіряються:
-картка показує проблему, картка адреси з усіма подіями — етап В (S-К.12).
 
 Перельоти — лише для знімків (ZNIMKY): пл. Вокзальна, 1, Хрещатик 22, Теліги 13
 і соти Києва на z11, у vykhid/znimky. Переліт у браузері без відеокарти коштує
@@ -41,7 +40,7 @@ JS = r"""async ([N, seed]) => {
   const kol=KT.pala(KT.kolirMisca(v[4],MG,tot));
   if(F.get(i)!==kol) bad.push(`адреса ${p[2]}: колір кола ${F.get(i)} ≠ kolirMisca ${kol}`);
   const t=/<span>([^<]*)/.exec(KT.pidkazkaAdresy(i)), tip=num(t&&t[1]);
-  if(KT.probsOf(p).length){n.z_problemoiu++; continue}
+  if(KT.probsOf(p).length) n.z_problemoiu++;
   const k=KT.kartkaAdresy(i), suma=k.statti.reduce((a,b)=>a+b,0), rz=KT.rizykPoruch(p[0],p[1],50);
   if(!(v[1]===tip&&tip===k.sum&&k.sum===suma)) bad.push(`адреса ${p[2]}: карта ${v[1]}, підказка ${tip}, картка ${k.sum}, сума статей ${suma}`);
   if(k.ryzyk!==rz) bad.push(`адреса ${p[2]}: ризик у картці ${k.ryzyk}, rizykPoruch ${rz}`)}
@@ -59,7 +58,11 @@ JS = r"""async ([N, seed]) => {
  const pr=[]; KT.P.forEach((p,i)=>KT.probsOf(p).forEach((q,j)=>pr.push([i,j,q])));
  for(const [i,j,q] of vybir(pr,50)){n.problem++;
   const k=KT.kartkaAdresy(i,j), ma=(q.ev&&q.ev.length)?q.ev.length:q.n;
-  if(k.sum!==ma) bad.push(`проблема ${KT.P[i][2]} (${q.mech}): картка ${k.sum}, подій проблеми ${ma}`)}
+  if(k.sum!==ma) bad.push(`проблема ${KT.P[i][2]} (${q.mech}): картка ${k.sum}, подій проблеми ${ma}`);
+  // картка адреси тієї самої точки — усі події адреси, як у підказці
+  const v=st.vis.find(x=>x[0]===KT.P[i]); if(!v) continue;
+  const ka=KT.kartkaAdresy(i), t=/<span>([^<]*)/.exec(KT.pidkazkaAdresy(i)), tip=num(t&&t[1]);
+  if(!(v[1]===tip&&tip===ka.sum)) bad.push(`адреса проблеми ${KT.P[i][2]}: карта ${v[1]}, підказка ${tip}, картка адреси ${ka.sum}`)}
  // ---- кільця ----
  for(const k of (window.kartaKilcia?kartaKilcia(N):[])){n.kilets++;
   if(k.na_kilci!==k.suma_adres) bad.push(`кільце: на кільці ${k.na_kilci}, сума адрес ${k.suma_adres} (${k.adres} адрес)`)}
@@ -101,7 +104,7 @@ def main(n=300, seed=36, znimky=True):
         br.close()
     srv.shutdown()
     bad, c = res['bad'], res['n']
-    print(f"   адрес {c['adres']} (з проблемою — лише колір: {c['z_problemoiu']}), сот {c['sot']}, проблем {c['problem']}, "
+    print(f"   адрес {c['adres']} (з них з проблемою {c['z_problemoiu']}), сот {c['sot']}, проблем {c['problem']}, "
           f"кілець {c['kilets']}; розбіжностей {len(bad)}; {time.time() - t0:.0f} с (перевірка {t_perevirky:.0f} с)"
           + (f'; знімки — {os.path.relpath(ZNIMKY, ROOT)}' if znimky else ''))
     for b in bad[:40]: print('   ПОМИЛКА', b)

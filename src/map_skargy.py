@@ -32,10 +32,20 @@ def osobysti(*t):
     return bool(TELEFON.search(s) or POSHTA.search(s) or PIB.search(s))
 
 
+def kliuch(vul, bud):
+    """«вулиця + будинок» -> ключ, той самий для скарг, адрес карти й порожніх адрес"""
+    from step2_geocode import skey, nh
+    if not vul or not bud: return None
+    return skey(str(vul).split('(')[0]), nh(str(bud))
+
+
+# ключ будинку -> номери скарг у skargy.json; бере map_adresy для порожніх адрес
+PO_KL = {}
+
+
 def zibraty(P, dst_dir, log=print):
     """site/skargy.json; повертає (скарг, з них на адресах карти) або None"""
     import problems as PR
-    from step2_geocode import skey, nh
     fv = sorted(f for f in glob.glob(os.path.join(D1551, 'vidbir-*.tsv.gz'))
                 if os.path.basename(f)[7:14] >= POCHATOK)
     if not fv:
@@ -45,10 +55,6 @@ def zibraty(P, dst_dir, log=print):
     if not idx:
         log('   скарги 1551: немає реєстру КМДА — точок немає, вкладки не буде')
         return None
-
-    def kliuch(vul, bud):
-        if not vul or not bud: return None
-        return skey(str(vul).split('(')[0]), nh(str(bud))
 
     rows, st = [], collections.Counter()
     for f in fv:
@@ -77,6 +83,7 @@ def zibraty(P, dst_dir, log=print):
     # адреса карти — той самий будинок
     po_kl = collections.defaultdict(list)
     for j, x in enumerate(rows): po_kl[x[4]].append(j)
+    PO_KL.clear(); PO_KL.update(po_kl)
     a, na = {}, 0
     for i, p in enumerate(P):
         if not p or not p[3] or not p[2] or ', ' not in p[2]: continue

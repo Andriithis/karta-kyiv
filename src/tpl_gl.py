@@ -448,7 +448,11 @@ function placeData(){
  const i=PLACE.i, p=P[i], st=LASTST||computeVis();
  const on=r=>evOn(EVR(r),st.C,st.A,st.Y,st.H);
  const probs=p[3]?probsOf(p).filter(q=>q.thi===undefined||q.thi<0||st.GVIS.has(q.thi)):[];
- const pr=probs.length?probs[Math.min(PLACE.pi,probs.length-1)]:null;
+ // Картка адреси — усі події адреси, проблеми — блоками в ній (S-К.12,
+ // 36.18.1); окрема картка проблеми (PLACE.prob) — лише її події, з блоку.
+ // Раніше клік по адресі-проблемі одразу давав картку проблеми, і число в
+ // ній розходилося з підказкою над тією самою точкою.
+ const pr=PLACE.prob&&probs.length?probs[Math.min(PLACE.pi,probs.length-1)]:null;
  let evs, all;
  if(pr&&pr.ev&&pr.ev.length){all=pr.ev.length; evs=pr.ev.filter(on)}
  else {
@@ -495,12 +499,18 @@ function probMore(pr){
   h+=`<div class="tt">Голос мешканців: ${t}</div>`}
  return h}
 function oglHTML(d){
- const {p,pr,evs}=d;
+ const {p,pr,evs,probs}=d;
  let h='';
  if(pr){
   // «Проблема · вид» — уже в шапці картки; тут удруге не повторюємо (33, В5)
   h+=`<div class="kp-pc"><div class="kp-pct">${esc(pr.mech)}</div>
    <div class="tt">${pr.n} ${pl(pr.n,'однорідна подія','однорідні події','однорідних подій')} за ${pr.years.length} ${pl(pr.years.length,'рік','роки','років')} (${pr.years.join(', ')})</div>${probMore(pr)}</div>`;
+ } else {
+  // Проблеми адреси — блоками: вид, сценарій, «40 з 307»; клік — окрема
+  // картка проблеми з лише її подіями (S-К.12)
+  const vsi=p[4].length;
+  h+=probs.map((q,j)=>`<div class="kp-pc" role="button" tabindex="0" data-kp-prob="${j}"><div class="kp-pch">Проблема · ${esc(q.theme)}</div>`+
+   `<div class="kp-pct">${esc(q.mech)}</div><div class="tt">${fmt(q.n)} з ${fmt(vsi)} ${pl(vsi,'події','подій','подій')} адреси</div></div>`).join('');
  }
  h+=placeArts(p,evs)+placeHist(p,evs);
  // Ризик — тим самим правилом, що й у картці соти (S-К.15): лінії в 50 м
@@ -553,7 +563,7 @@ function docsForRefs(refs){
 function renderPlace(){
  const el=placeEl(); if(!PLACE){el.hidden=true; document.body.classList.remove('kp-open'); return}
  const d=placeData(), {p,pr,probs,evs}=d;
- const dkey=PLACE.i+'|'+PLACE.pi;
+ const dkey=PLACE.i+'|'+(PLACE.prob?PLACE.pi:'a');
  const body=el.querySelector('.kp-body'), top=body?body.scrollTop:0;
  const nDec=evs.length;
  // «Скарги (N)» — поруч із «Рішення» (RISHENNYA 35.10); скарг немає — вкладки немає
@@ -563,10 +573,10 @@ function renderPlace(){
  if(!tabs.some(t=>t[0]===PLACE.tab)) PLACE.tab='ogl';
  const title=p[3]?(p[2]||'адреса не визначена'):streetName(p)+' · вся вулиця';
  el.innerHTML=`<div class="kp-head">
-   ${pr?`<div class="kp-badge">Проблема · ${esc(pr.theme)}</div>`:''}
+   ${pr?`<div class="kp-badge"><button class="kp-lnk" data-kp="adresa" title="Усі події адреси">‹ адреса</button> Проблема · ${esc(pr.theme)}</div>`:''}
    <b class="kp-title">${esc(title)}</b>
    <div class="kp-sum">${pr?(evs.length===d.all?`${d.all} ${pl(d.all,'подія','події','подій')} проблеми`:`${d.all} ${pl(d.all,'подія','події','подій')} проблеми, за фільтром ${evs.length}`):esc(placeSum(p,evs))}${p[3]?'':' · без номера будинку'}</div>
-   ${probs.length>1?`<div class="kp-probs">${probs.map((q,j)=>`<button data-kp-pi="${j}" aria-pressed="${j===Math.min(PLACE.pi,probs.length-1)}">${esc(q.mech)}</button>`).join('')}</div>`:''}
+   ${pr&&probs.length>1?`<div class="kp-probs">${probs.map((q,j)=>`<button data-kp-pi="${j}" aria-pressed="${j===Math.min(PLACE.pi,probs.length-1)}">${esc(q.mech)}</button>`).join('')}</div>`:''}
    <button class="kp-x" data-kp="close" aria-label="Закрити (Esc)" title="Закрити (Esc)">×</button>
   </div>
   <div class="kp-tabs" role="tablist">${tabs.map(([k,n])=>`<button role="tab" data-kp-tab="${k}" aria-selected="${k===PLACE.tab}">${n}</button>`).join('')}</div>
@@ -579,13 +589,13 @@ function renderPlace(){
  if(PLACE.tab==='rish'&&DOCS_NOW.key!==dkey){
   // усі події картки, а не лише за фільтром: фільтр міняється без перезавантаження
   const refs=(pr&&pr.ev&&pr.ev.length)?pr.ev:[[PLACE.i,0]];
-  docsForRefs(refs).then(cs=>{DOCS_NOW={key:dkey,cs}; if(PLACE&&PLACE.i+'|'+PLACE.pi===dkey&&PLACE.tab==='rish') renderPlace()})}
+  docsForRefs(refs).then(cs=>{DOCS_NOW={key:dkey,cs}; if(PLACE&&PLACE.i+'|'+(PLACE.prob?PLACE.pi:'a')===dkey&&PLACE.tab==='rish') renderPlace()})}
 }
 function openAt(i){
- if(POPUP) POPUP.remove();
+ if(POPUP) POPUP.remove(); PORO=null;
  advOpen(false); closePanel();
  const same=PLACE&&PLACE.i===i;
- PLACE={i,tab:same?PLACE.tab:'ogl',open:-1,pi:0,allArts:false,near:P[i][3]?nearList(P[i]):[],hl:0};
+ PLACE={i,tab:same?PLACE.tab:'ogl',open:-1,pi:0,prob:false,allArts:false,near:P[i][3]?nearList(P[i]):[],hl:0};
  renderPlace(); placeKeepVisible(i);
 }
 function closePlace(){ if(!PLACE) return; PLACE=null; clearNear(); renderPlace()}
@@ -614,12 +624,16 @@ placeEl().addEventListener('click',e=>{
  if(!PLACE) return;
  const t=e.target.closest('[data-kp-tab]'); if(t){PLACE.tab=t.dataset.kpTab; PLACE.open=-1; SK_LIM=50; renderPlace(); return}
  const pi=e.target.closest('[data-kp-pi]'); if(pi){PLACE.pi=+pi.dataset.kpPi; PLACE.open=-1; renderPlace(); return}
- const k=e.target.closest('[data-kp]'); if(k){ if(k.dataset.kp==='close') closePlace(); else if(k.dataset.kp==='arts'){PLACE.allArts=true; renderPlace()} return}
+ // блок проблеми в картці адреси -> окрема картка проблеми
+ const pb=e.target.closest('[data-kp-prob]'); if(pb){PLACE.pi=+pb.dataset.kpProb; PLACE.prob=true; PLACE.tab='ogl'; PLACE.open=-1; renderPlace(); return}
+ const k=e.target.closest('[data-kp]'); if(k){ if(k.dataset.kp==='close') closePlace();
+  else if(k.dataset.kp==='arts'){PLACE.allArts=true; renderPlace()}
+  else if(k.dataset.kp==='adresa'){PLACE.prob=false; PLACE.tab='ogl'; PLACE.open=-1; renderPlace()} return}
  if(e.target.closest('a')) return;
  const dc=e.target.closest('[data-dec]'); if(dc){const n=dc.dataset.dec; PLACE.open=PLACE.open===n?-1:n; renderPlace(); return}
  const nr=e.target.closest('[data-near]'); if(nr){nearHighlight(+nr.dataset.near,true); return}
 });
-placeEl().addEventListener('keydown',e=>{const dc=e.target.closest('[data-dec]');
+placeEl().addEventListener('keydown',e=>{const dc=e.target.closest('[data-dec],[data-kp-prob]');
  if(dc&&(e.key==='Enter'||e.key===' ')){e.preventDefault(); dc.click()}});
 placeEl().addEventListener('mouseover',e=>{const nr=e.target.closest('[data-near]'); if(nr) nearHighlight(+nr.dataset.near,false)});
 // Підсвітка об'єкта «Що поруч»: у переліку й на карті одночасно; з карти —
@@ -1572,7 +1586,7 @@ function ctxEvents(){
   const s=near(e.point,simIds())[0]; if(s){TIP.remove(); return simPopup(s,e.lngLat)}
   // Клік по порожній карті закриває все, що відкрито над нею, — і панель
   // рішень теж (AUDYT-3, № 5).
-  if(POPUP) POPUP.remove(); advOpen(false); closePanel(); closePlace()});
+  if(POPUP) POPUP.remove(); advOpen(false); closePanel(); closePlace(); closePorozhnia()});
 }
 // ---- ВИГЛЯД: «Кільця · Адреси · Проблеми» (розд. 23, п. 7 і 9) ----
 // Замість «Події · Проблеми · Теплова» спільної панелі — лише в GL-збірці.
