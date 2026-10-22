@@ -1,35 +1,32 @@
 # -*- coding: utf-8 -*-
 """Карта на MapLibre GL — головна сторінка сайту (index.html) з 26.09.2026.
 
-Мета кроку 5 — паритет із Leaflet-версією: те саме, нічого більше. Цей файл
-будується комітами. У каркасі: завантаження бібліотеки, перевірка WebGL,
-підкладка OpenFreeMap і запасна CARTO, дві теми, перемикач, атрибуція,
-перехід між районами. Адреси, ризик, райони на карті й чинники — наступні
-коміти; поки що на їхньому місці заглушки з тими самими іменами, щоб
-спільні tpl_base і tpl_core працювали без жодної правки.
+Єдина збірка карти: запасну Leaflet-карту прибрано (36.8). Тут:
+завантаження бібліотеки, перевірка WebGL, підкладка OpenFreeMap і запасна
+OSM, дві теми, атрибуція, перехід між районами, позначки, кільця, ризик.
 
 JS_GL_LOAD стоїть першим у модулі, JS_GL_MAP — після tpl_base, JS_GL_DRAW —
-після tpl_core. Порядок той самий, що й у Leaflet-збірці.
+після tpl_core.
 """
-JS_GL_LOAD = r"""// Без WebGL векторна карта не намалюється зовсім — тоді одразу на
-// запасну Leaflet-збірку з тими самими параметрами адреси, щоб посилання на
-// район (#desna) не губилося. Не на kyiv.html: це тепер переадресація сюди ж,
-// і вийшло б коло.
-const ZAPAS='karta-zapasna.html';
+JS_GL_LOAD = r"""// Без WebGL векторна карта не намалюється зовсім. Запасної Leaflet-збірки
+// більше немає (36.8): друга карта вдвічі збільшувала код і розходилася з
+// головною. Тоді — один рядок замість карти, щоб не було порожнього екрана.
+function bezKarty(t){const m=document.getElementById('map');
+ if(m) m.innerHTML='<div class="k-bez">'+t+'</div>'}
 {let ok=false;
  try{const c=document.createElement('canvas');ok=!!(c.getContext('webgl2')||c.getContext('webgl'))}catch(e){}
- if(!ok){location.replace(ZAPAS+location.search+location.hash);throw new Error('немає WebGL')}}
+ if(!ok){bezKarty('Цей браузер не показує карту: потрібен WebGL.');throw new Error('немає WebGL')}}
 // MapLibre 6.x — лише ES-модуль, глобального maplibregl більше немає.
 // Точна версія: оновлення бібліотеки має бути нашим рішенням, а не сюрпризом.
 let maplibregl;
 try{const m_=await import('https://unpkg.com/maplibre-gl@6.10.0/dist/maplibre-gl.mjs');
  maplibregl=m_.default||m_}
-catch(e){location.replace(ZAPAS+location.search+location.hash);throw e}"""
+catch(e){bezKarty('Карта не завантажилася. Оновіть сторінку.');throw e}"""
 
-JS_GL_MAP = r"""// Дерево кластерів для «Кілець» рахується при збірці (map_clusters): без
-// нього браузер не знає, хто чий нащадок, і розпад кільця при наближенні
-// неможливий. Сум у дереві немає — їх складає браузер з адрес за фільтром.
-const TREE=__TREE__;
+JS_GL_MAP = r"""// Дерево кластерів для «Кілець» (TREE, файл tree — у tpl_base) рахується при
+// збірці (map_clusters): без нього браузер не знає, хто чий нащадок, і
+// розпад кільця при наближенні неможливий. Сум у дереві немає — їх складає
+// браузер з адрес за фільтром.
 // ---- ТЕМИ ----
 // Кольорову тему прибрано (RISHENNYA, розд. 18), GL-збірка одразу будується
 // на двох. Збережене «kolir» читаємо як світлу.
@@ -84,12 +81,12 @@ let USING_FALLBACK=false;
 // Оголошено тут, до першого setBase: let нижче за виклик — це помилка, а не
 // «ще не визначено», і модуль падав би цілком (той самий урок, що з FICON).
 let STYLE_OK=false;
-// Запасна підкладка — растрові плитки CARTO за нашим ключем тієї самої теми.
-// {r} MapLibre не розуміє, тож @2x підставляємо самі.
-function cartoStyle(t){
- const src=CARTO_KEY?TILES[t]:TILES.osm, r=devicePixelRatio>1?'@2x':'';
- return {version:8,sources:{base:{type:'raster',tiles:[src.u.replace('{r}',r)],
-   tileSize:256,attribution:src.a}},layers:[{id:'base',type:'raster',source:'base'}]};
+// Запасна підкладка — растрові плитки OpenStreetMap, без ключа. Ключ CARTO
+// прибрано разом із запасною картою (36.25.3): ключ у коді сторінки — секрет,
+// який бачить кожен. Плитки OSM — лише на хвилини, поки OpenFreeMap лежить.
+function osmStyle(){
+ return {version:8,sources:{base:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+   tileSize:256,maxzoom:19}},layers:[{id:'base',type:'raster',source:'base'}]};
 }
 // ---- ПРАВКИ СТИЛЮ ПІДКЛАДКИ ----
 // Стилі OpenFreeMap підписують «name:latin + name:nonlatin», і в Києві
@@ -182,7 +179,7 @@ function carry(prev,next){
 }
 // Стиль віддаємо бібліотеці адресою, а не прочитаним об'єктом: об'єкт MapLibre
 // розбирає лише в наступному кадрі анімації, адресу — одразу, як прийде.
-// Не прийшов за 8 секунд або прийшов з помилкою — растрові плитки CARTO.
+// Не прийшов за 8 секунд або прийшов з помилкою — растрові плитки OSM.
 let styleTimer=null;
 function setBase(t){
  STYLE_OK=false;
@@ -193,20 +190,20 @@ function setBase(t){
 function fallback(t){
  if(USING_FALLBACK) return;
  USING_FALLBACK=true; clearTimeout(styleTimer); STYLE_OK=false;
- setAttr(CARTO_KEY?'© CARTO, © OpenStreetMap':'© OpenStreetMap');
- console.warn('Стиль OpenFreeMap недоступний, підкладка CARTO');
- map.setStyle(cartoStyle(t),{transformStyle:(prev,next)=>carry(prev,next)});
+ setAttr('© OpenStreetMap');
+ console.warn('Стиль OpenFreeMap недоступний, підкладка OSM');
+ map.setStyle(osmStyle(),{transformStyle:(prev,next)=>carry(prev,next)});
 }
 const C0=M.center||[50.45,30.52];
 const map=new maplibregl.Map({container:'map',center:[C0[1],C0[0]],zoom:M.only?13:11,
   maxZoom:19,attributionControl:false});
 // Атрибуція — власним елементом, а не вбудованим. OpenFreeMap кладе свій рядок
 // в опис джерела плиток, і стиль його не перебиває; а нам треба саме «OpenFreeMap
-// © OpenMapTiles, дані © OpenStreetMap», і при запасній CARTO — рядок CARTO.
+// © OpenMapTiles, дані © OpenStreetMap», і при запасній — рядок OSM.
 const attrEl=document.createElement('div');
 attrEl.className='maplibregl-ctrl maplibregl-ctrl-attrib';
 // Рядок — з atrybutsiia.py (M.atr, S-К.20): той самий, що внизу звітів і в
-// заголовку файлів адрес. Запасна підкладка CARTO — лише її рядок спереду.
+// заголовку файлів адрес. Запасна підкладка — лише її рядок спереду.
 // На телефоні рядок згорнутий до «ⓘ», як у MapLibre (36.26.1).
 function setAttr(t){attrEl.innerHTML='<button class="k-atr-i" aria-label="Джерела даних" title="Джерела даних">ⓘ</button>'+
  '<div class="maplibregl-ctrl-attrib-inner">'+(t===OFM_ATTR?'':esc(t)+' · ')+(M.atr||'')+'</div>'}
@@ -216,7 +213,7 @@ map.addControl({onAdd:()=>attrEl,onRemove(){}},'bottom-right');
 // Пізніші помилки (окремий тайл не прийшов) підкладку не міняють. Мірило —
 // STYLE_OK (подія style.load), а не isStyleLoaded(): той хибний, доки
 // вантажаться плитки, і один тайл, що не прийшов після зміни теми, перемикав
-// усю карту на CARTO.
+// усю карту на запасну підкладку.
 map.on('error',e=>{if(!STYLE_OK){console.warn('Помилка стилю:',e&&e.error&&e.error.message); fallback(THEME)}});
 // У стилях OpenFreeMap шар лісу просить картинку wood-pattern, якої в
 // їхньому наборі немає, — у консолі сипалися попередження. Бракує картинки
@@ -329,7 +326,7 @@ JS_GL_DRAW = r"""// ---- АДРЕСИ ----
 // (setData), шари лишаються ті самі: перестворення шарів на кожну галочку
 // давало б блимання, від якого й тікаємо з Leaflet.
 //
-// Розмір — правило кроку 3 з tpl_draw, один в один: той самий радіус від
+// Розмір — правило кроку 3 колишньої Leaflet-карти, один в один: той самий радіус від
 // кількості й той самий множник за зумом. Лише множник тут не стрибає на
 // zoomend, а тече з зумом (interpolate) і на цілих зумах дорівнює
 // Leaflet-овому. Зум MapLibre на одиницю менший (плитки 512 px): z12 Leaflet
@@ -438,7 +435,7 @@ const NEAR_R=250;
 // показується в колі, на якому він пов'язаний з подіями; не пов'язаний — у
 // найменшому, 50 м (PLAN-KROK7, розд. 3). До перенавчання — усі 250 м.
 const nearR=c=>c.r||NEAR_R;
-const NEAR_MAX=(F.cats||[]).length?Math.max(...F.cats.map(nearR)):NEAR_R;
+let NEAR_MAX=NEAR_R;
 // Події місця за поточним фільтром — індекси в p[4] (у тому самому порядку, що
 // й справи у spravy/<район>.json). Для проблеми — лише події її статей:
 // картка проблеми говорить тільки про проблему (рішення 28.09), решта подій
@@ -536,7 +533,13 @@ function rishHTML(d,cs){
 // 8.2): тип, не пов'язаний з подіями жодного виду, у «Що поруч» не йде, а
 // десять кафе одного кварталу закривали решту переліку. Поки радіусів немає
 // (до перенавчання) — усі типи в 250 м, як раніше.
-const NEAR_PER=5, RADII=(F.cats||[]).some(c=>c.r>0);
+const NEAR_PER=5; let RADII=false;
+// Файл «Що поруч» прийшов (zavantazhF): радіуси типів і перелік відкритої
+// картки — тепер справжні.
+PO_F.push(()=>{
+ NEAR_MAX=(F.cats||[]).length?Math.max(...F.cats.map(nearR)):NEAR_R;
+ RADII=(F.cats||[]).some(c=>c.r>0);
+ if(PLACE&&P[PLACE.i]&&P[PLACE.i][3]){PLACE.near=nearList(P[PLACE.i]); renderPlace()}});
 function nearList(p){
  if(!(F.cats||[]).length) return [];
  const my=111320, mx=111320*Math.cos(p[0]*Math.PI/180), out=[];
@@ -572,7 +575,7 @@ function renderPlace(){
  // «Скарги (N)» — поруч із «Рішення» (RISHENNYA 35.10); скарг немає — вкладки немає
  const sk=skMisce(d);
  const tabs=[['ogl','Огляд'],['rish',`Рішення (${nDec})`]].concat(sk&&sk.length?[['skarg',`Скарги (${fmt(sk.length)})`]]:[])
-  .concat(p[3]?[['near',`Що поруч (${PLACE.near.length})`]]:[]);
+  .concat(p[3]?[['near',F_P&&!(F.cats||[]).length?'Що поруч':`Що поруч (${PLACE.near.length})`]]:[]);
  if(!tabs.some(t=>t[0]===PLACE.tab)) PLACE.tab='ogl';
  const title=p[3]?(p[2]||'адреса не визначена'):streetName(p)+' · вся вулиця';
  el.innerHTML=`<div class="kp-head">
@@ -599,7 +602,7 @@ function openAt(i){
  advOpen(false); closePanel();
  const same=PLACE&&PLACE.i===i;
  PLACE={i,tab:same?PLACE.tab:'ogl',open:-1,pi:0,prob:false,allArts:false,near:P[i][3]?nearList(P[i]):[],hl:0};
- renderPlace(); placeKeepVisible(i);
+ zavantazhF(); renderPlace(); placeKeepVisible(i);
 }
 function closePlace(){ if(!PLACE) return; PLACE=null; clearNear(); renderPlace()}
 // Місце пішло за край екрана — картка про нього вже ні до чого й лише
@@ -722,8 +725,9 @@ let CLICK_TAKEN=false;
 map.on('mousedown',()=>{CLICK_TAKEN=false});
 map.on('touchstart',()=>{CLICK_TAKEN=false});
 // ---- ПОШУК: КУДИ НАБЛИЖАТИ ----
-// Вікно відкриваємо, коли карта вже стала на місце, а не таймером навмання
-// (причину див. у tpl_draw, afterMove).
+// Вікно відкриваємо, коли карта вже стала на місце, а не таймером навмання:
+// на повільному комп'ютері перемальовка займає понад секунду, і таймер
+// відкривав вікно на позначці, яку за мить знімали.
 function afterMove(go){map.once('moveend',go)}
 // z16 тут — той самий масштаб, що z17 у Leaflet-версії.
 function focusAddress(i){
@@ -1225,21 +1229,25 @@ function flowImages(){
 // Скільки найбільших відрізків кожного потоку отримують значок. Решту
 // значків, що налізли б на сусідні, прибирає сама карта (без накладання).
 const FLOW_ICONS=80;
+// Дані потоку — функціями: до першого вмикання «Прохідності» відрізків немає
+// (файл prokhid на вимогу), тоді ті самі функції наповнюють джерела заново.
+function flowData(k){const v=R.lines[k], mx=Math.max(1,...v.items.map(x=>x[2]));
+ return fc(v.items.map((it,i)=>lineF(it[0],{i,s:Math.sqrt(it[2]/mx)})))}
+const flowIcData=()=>fc(FLOWS.flatMap(([k])=>
+  R.lines[k].items.slice().sort((a,b)=>b[2]-a[2]).slice(0,FLOW_ICONS).map(it=>{
+   const c=lineLL(it[0]); return {type:'Feature',geometry:{type:'Point',coordinates:c[c.length>>1]},
+    properties:{f:k,n:it[2]}}})));
 let CTX_EVENTS=false;
 function ctxReady(){
  flowImages();
- if(map.getSource('k-pop')) return;   // джерела й шари пережили setStyle (carry)
+ if(map.getSource('k-flow-ic')) return;   // джерела й шари пережили setStyle (carry)
  const before=map.getLayer('k-addr-shadow')?'k-addr-shadow':undefined;
  const add=(l)=>map.addLayer({...l,layout:{...(l.layout||{}),visibility:'none'}},before);
- // Населення — найнижче, під усім: це тло, а не сигнал.
- const pmx=Math.max(1,...POP.map(p=>p[2]));
- map.addSource('k-pop',{type:'geojson',data:fc(POP.map(p=>({type:'Feature',
-  geometry:{type:'Point',coordinates:[p[1],p[0]]},properties:{n:p[2],s:Math.sqrt(p[2]/pmx)}})))});
- add({id:'k-pop',type:'circle',source:'k-pop',
-  paint:{'circle-radius':['+',5,['*',16,['get','s']]],'circle-color':'#4b6fa8',
-   'circle-opacity':['+',.10,['*',.28,['get','s']]]}});
- for(const [k,off] of FLOWS){const v=R.lines[k], mx=Math.max(1,...v.items.map(x=>x[2]));
-  map.addSource('k-flow-'+k,{type:'geojson',data:fc(v.items.map((it,i)=>lineF(it[0],{i,s:Math.sqrt(it[2]/mx)})))});
+ // Шару «Населення» на карті немає (36.39, S-К.10): населення лишається в
+ // розрахунках ризику й проблем (34.1), а плямами на карті його читали як
+ // ще один сигнал. Найнижче тепер — «Прохідність».
+ for(const [k,off] of FLOWS){
+  map.addSource('k-flow-'+k,{type:'geojson',data:flowData(k)});
   add({id:'k-flow-'+k,type:'line',source:'k-flow-'+k,layout:{'line-cap':'round'},
    paint:{'line-offset':off,'line-width':['+',.8,['*',3.2,['get','s']]],
     'line-opacity':['max',.10,['*',.42,['get','s']]]}});
@@ -1250,7 +1258,7 @@ function ctxReady(){
  });
  // Спершу світлі підкладки всіх видів, потім самі смуги: підкладка
  // сусіднього виду не лягає поверх смуги (на строкатій підкладці тонка
- // лінія інакше губиться серед вулиць — узято з tpl_map).
+ // лінія інакше губиться серед вулиць — узято з колишньої Leaflet-карти).
  SIMK.forEach((gi,k)=>add({id:'k-simh-'+gi,type:'line',source:'k-sim-'+gi,filter:['==',['get','q'],0],
   layout:{'line-cap':'round'},paint:{'line-offset':simOff(k),'line-width':zStep(s=>s+2),'line-opacity':.5}}));
  SIMK.forEach((gi,k)=>{
@@ -1262,10 +1270,7 @@ function ctxReady(){
   // Окремого шару «тихих вулиць» немає (RISHENNYA 33.2.1): шар один.
  });
  // Значки потоків — на найбільших відрізках, над лініями.
- map.addSource('k-flow-ic',{type:'geojson',data:fc(FLOWS.flatMap(([k])=>
-  R.lines[k].items.slice().sort((a,b)=>b[2]-a[2]).slice(0,FLOW_ICONS).map(it=>{
-   const c=lineLL(it[0]); return {type:'Feature',geometry:{type:'Point',coordinates:c[c.length>>1]},
-    properties:{f:k,n:it[2]}}})))});
+ map.addSource('k-flow-ic',{type:'geojson',data:flowIcData()});
  add({id:'k-flow-ic',type:'symbol',source:'k-flow-ic',minzoom:11,
   layout:{'icon-image':['concat','k-ic-',['get','f']],'icon-allow-overlap':false,'icon-padding':4,
    'symbol-sort-key':['-',0,['get','n']]}});
@@ -1275,7 +1280,7 @@ function ctxReady(){
 }
 const rOn=k=>{const x=document.querySelector(`[data-r="${k}"]`); return !!(x&&x.checked)};
 function drawRisks(){
- if(!STYLE_OK||!map.getSource('k-pop')) return;
+ if(!STYLE_OK||!map.getSource('k-flow-ic')) return;
  const halo=cssv('--halo'), ink=cssv('--ink');
  let dim=false;
  SIMK.forEach(gi=>{const on=rOn(RISKOF[gi]); dim=dim||on;
@@ -1283,17 +1288,20 @@ function drawRisks(){
   map.setPaintProperty('k-simh-'+gi,'line-color',halo);
   map.setPaintProperty('k-sim-'+gi,'line-color',PALA[gi%PALA.length])});
  const fOn=FLOWS.filter(([k])=>rOn(k)).map(([k])=>k);
+ // «Прохідність» увімкнули вперше — тягнемо файл і наповнюємо джерела
+ if(fOn.some(k=>R.lines[k].lazy)) zavantazhProkhid().then(()=>{
+  for(const [k] of FLOWS){const s=map.getSource('k-flow-'+k); if(s) s.setData(flowData(k))}
+  const s=map.getSource('k-flow-ic'); if(s) s.setData(flowIcData())});
  for(const [k] of FLOWS){layerVis('k-flow-'+k,fOn.includes(k)); map.setPaintProperty('k-flow-'+k,'line-color',ink)}
  map.setFilter('k-flow-ic',['in',['get','f'],['literal',fOn]]); layerVis('k-flow-ic',fOn.length>0);
  dim=dim||fOn.length>0;
- layerVis('k-pop',rOn('pop'));
  dim=dim||RISK_ON;
  RING_A=dim?RING_DIM:RING_OP;
  addrPaint(); if(typeof riskDraw==='function'&&map.getSource('k-risk')){riskDraw(); if(LASTST) drawHex(LASTST)}
  map.triggerRepaint();
 }
 // ---- РАЙОНИ: МЕЖІ, МАСКА, ПІДСВІТКА ----
-// Те саме, що в tpl_map: на міському огляді — межі всіх районів пунктиром і
+// Те саме, що в колишній Leaflet-карті: на міському огляді — межі всіх районів пунктиром і
 // ледь помітна заливка, під курсором район підсвічується; у районі — лише
 // його межа суцільною лінією, решта міста під затемненням кольору підкладки.
 // Входять і виходять з району в панелі (меню «Район») — клік по карті
@@ -1309,7 +1317,7 @@ let DIST_HOVER=-1;
 const DIST_TIP_Z=13;
 function distReady(){
  if(!DN.length||M.only||map.getSource('k-dist')) return;
- const before=map.getLayer('k-pop')?'k-pop':(map.getLayer('k-addr-shadow')?'k-addr-shadow':undefined);
+ const before=map.getLayer('k-flow-potik')?'k-flow-potik':(map.getLayer('k-addr-shadow')?'k-addr-shadow':undefined);
  map.addSource('k-dist',{type:'geojson',data:fc(DN.map((nm,i)=>({type:'Feature',id:i,
   geometry:{type:'Polygon',coordinates:[ringLL(DBORD[i])]},properties:{i}})))});
  map.addSource('k-mask',{type:'geojson',data:fc([])});
@@ -1345,7 +1353,7 @@ function distHover(i){
  if(i>=0) map.setFeatureState({source:'k-dist',id:i},{hover:true});
 }
 // ---- «ЩО ПОРУЧ» ----
-// Те саме, що в tpl_map. Об'єкт на карті — номер у кружечку з жовтою
+// Те саме, що в колишній Leaflet-карті. Об'єкт на карті — номер у кружечку з жовтою
 // обвідкою, як коло радіуса; вид об'єкта — значком у переліку картки місця.
 // Не кольором виду подій: заливка кольором ролі збігалася з Порядком і
 // Майном, і об'єкт читався як ще одна подія.
@@ -1402,7 +1410,7 @@ function nearNumbered(p,list){
  if(PLACE&&PLACE.hl) map.setFeatureState({source:'k-near',id:PLACE.hl},{hl:true});
 }
 // Підсвічує об'єкти, які модель порахувала для конкретної точки, з колами
-// радіусів (як showNear у tpl_map).
+// радіусів (як showNear у колишній Leaflet-карті).
 function showNear(la,lo,factors){
  clearNear(true);
  if(!(F.cats||[]).length||!factors||!factors.length) return 0;
@@ -1444,7 +1452,7 @@ function iconAt(p){ if(!map.getLayer('k-near-num')) return null;
  return map.queryRenderedFeatures([[p.x-3,p.y-3],[p.x+3,p.y+3]],{layers:['k-near-num']})[0]||null}
 const iconTip=f=>`<b>${f.properties.n}. ${esc(f.properties.s)}</b>`;
 // ---- ПІДКАЗКИ Й ВІКНО ВУЛИЦІ ----
-// Скільки разів — з правильним відмінком (той самий raz, що в tpl_map).
+// Скільки разів — з правильним відмінком (той самий raz, що в колишній Leaflet-карті).
 function raz(n){
  const v=Math.round(n*10)/10, t=String(v).replace('.',',');
  if(!Number.isInteger(v)) return t+' раза';
@@ -1454,7 +1462,7 @@ function raz(n){
  return t+' разів';
 }
 const nfmt=n=>(Math.round(n*10)/10).toLocaleString('uk');
-// Чинники САМЕ ЦІЄЇ вулиці — як factRows у tpl_map. Кожен рядок — виміряна
+// Чинники САМЕ ЦІЄЇ вулиці — як factRows у колишній Leaflet-карті. Кожен рядок — виміряна
 // річ, яку можна перевірити на місці. Слова «причина» тут немає навмисно.
 function factRows(fx){
  if(!fx||!fx.length) return '';
@@ -1513,7 +1521,7 @@ function simPopup(f,ll){
  advOpen(false);
  const w=document.createElement('div'); w.innerHTML=h;
  // Чинники моделі поруч — якщо модель їх назвала; інакше просто все, що є
- // в 250 м (як bindRisk у tpl_map).
+ // в 250 м (як bindRisk у колишній Leaflet-карті).
  if((F.cats||[]).length){
   const bt=document.createElement('button'); bt.className='pbtn2'; w.appendChild(bt);
   if(v.factors&&v.factors.length){bt.textContent='Показати чинники поруч';
@@ -1568,8 +1576,6 @@ function ctxEvents(){
   const fl=near(e.point,FLOWS.map(([k])=>'k-flow-'+k).filter(id=>map.getLayoutProperty(id,'visibility')==='visible'))[0];
   if(fl){const k=fl.layer.id.slice(7), v=R.lines[k], it=v.items[fl.properties.i];
    return tip(e,`<b>${esc(it[1]||'без назви')}</b><span>≈ ${it[2].toLocaleString('uk')} осіб на добу (модель)</span>`)}
-  const pp=map.getLayoutProperty('k-pop','visibility')==='visible'&&map.queryRenderedFeatures(e.point,{layers:['k-pop']})[0];
-  if(pp) return tip(e,`<b>${pp.properties.n.toLocaleString('uk')} осіб</b>`);
   // Над сотою, стовпчиком чи ризиком своя підказка (tpl_vyhlyady) — район
   // тоді мовчить: дві підказки накладалися й закривали число соти (Андрій 07.10)
   // у стовпчиках підказки району немає зовсім — лише межа й підпис (33, В6)
@@ -1715,7 +1721,7 @@ window.kartaProblemy=()=>({adres:PROBK.length, problem:PROBK.reduce((s,k)=>s+LEA
 window.kartaAdresa=q=>{const i=P.findIndex(p=>(p[2]||'').includes(q)); if(i<0) return null;
  const v=(LASTST||computeVis()).vis.find(v=>v[0]===P[i]);
  return v?{adresa:P[i][2], kolir:PALA[v[2]%PALA.length], vyd:M.groups[v[2]][0], problema:!!v[3]}:{adresa:P[i][2], kolir:null}};
-// Підписки на панель — ті самі, що в tpl_draw, без подій карти Leaflet.
+// Підписки на панель — ті самі, що були в Leaflet-карті, без подій карти Leaflet.
 document.querySelectorAll('#side input:not([data-r]):not([data-f]):not(#fquiet)').forEach(x=>x.addEventListener('change',draw));
 document.querySelectorAll('[data-r]').forEach(x=>x.addEventListener('change',drawRisks));
 {const fq=$('#fquiet'); if(fq) fq.addEventListener('change',drawRisks);}

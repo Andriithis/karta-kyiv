@@ -25,6 +25,10 @@ on:
       n_stab:
         description: 'Прогонів відбору стійкості (100 за методикою; менше — лише якщо не вкладається в час)'
         default: '100'
+      determinizm:
+        description: 'Перевірити детермінізм (36.24.4): збірка двічі, ~6 хв; з перенавчанням — і модель ще раз, +2 год'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -200,6 +204,20 @@ jobs:
           # Playwright — для кроку 7 (узгодженість підказки, картки й карти в браузері, S-К.14)
           pip install --quiet playwright && python -m playwright install --with-deps chromium > /dev/null
           python src/check_build.py
+
+      # Детермінізм (36.24.4, S-Р.11): раз на місяць — у перший понеділок за
+      # розкладом, і галочкою. Розбіжність — жовта (::warning::), сайт однаково
+      # публікується: недетермінованість не шкодить слухачеві цього тижня, але
+      # перелік проблем мигав би між однаковими даними.
+      - name: Детермінізм
+        if: ${{ github.event.inputs.determinizm == 'true' || (github.event_name == 'schedule' && github.event.schedule != '') }}
+        run: |
+          if [ "${{ github.event.inputs.determinizm }}" != "true" ] && [ "$(date +%d)" -gt 07 ]; then
+            echo "не перший тиждень місяця — пропущено"; exit 0
+          fi
+          ARG=""
+          if [ "${{ github.event.inputs.determinizm }}" = "true" ] && [ "${{ github.event.inputs.retrain_risk }}" = "true" ]; then ARG="--ryzyk"; fi
+          python src/test_determinizm.py $ARG || true
 
       # Перевірка впала — у main нічого не йде, але звіт моделі після годин
       # перенавчання лишається артефактом запуску, щоб розібратися без повтору

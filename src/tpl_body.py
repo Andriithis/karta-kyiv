@@ -33,7 +33,6 @@ BODY = r"""<body data-t="svitla"><div id="wrap"><div id="map"></div>
   <div class="chips" id="friskx" hidden></div>
  </div>
  <div class="grp" id="fctx">
-  <button class="sw" data-ctx="pop" aria-pressed="false"><span>Населення</span><span class="tog"></span></button>
   <button class="sw" data-ctx="flows" aria-pressed="false"><span>Прохідність</span><span class="tog"></span></button>
   <button class="sw" data-ctx="facts" aria-pressed="false"><span>Об'єкти довкола</span><span class="tog"></span></button>
  </div>
@@ -45,7 +44,7 @@ BODY = r"""<body data-t="svitla"><div id="wrap"><div id="map"></div>
  <!-- Сховані фільтри. На них спирається draw(): прапорці років (їх
       перемикають чипи «Рік» у «Розширено»), фільтр за судом дублював
       перехід у район, статті вмикає сітка видів і картка «Статті». Тут-таки
-      прапорці шарів ризику, населення, потоків і видів об'єктів — їх читають
+      прапорці шарів ризику, потоків і видів об'єктів — їх читають
       drawRisks() і drawFacts(). -->
  <div id="hidden-filters" hidden><div id="fy"></div><div id="fc"></div>
  <div id="fasub"></div><div id="ffact"></div></div>

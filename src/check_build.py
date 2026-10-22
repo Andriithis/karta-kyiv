@@ -74,6 +74,10 @@ TESTY = {
     'uzhodzhenist': '7. Узгодженість у браузері: підказка = картка = сума видів',
     'telefon': '7. Телефон 375×812: точка й +/− над шторкою, одна висота, 14 px, 44 px',
     'kandydaty': '4ж. Кандидати для аналізу фабул: файл є, непорожній, ≤20 МБ, ДТП з полем mitky',
+    # окремим запуском (test_determinizm.py), не в check_build: дві збірки — ~6 хв
+    'determinizm': 'test_determinizm.py: збірка двічі — той самий хеш (щомісяця в «Оновленні карти»)',
+    'bez_naselennia': '4к. Шару «Населення» на карті немає: ні перемикача, ні шару, ні файлу',
+    'vaga': '4и. Вага першого завантаження: ≤3 МБ розпаковано (жовта), ≤5 МБ і ≤1 МБ мережею (червона)',
     'atrybutsiia': '4з. Атрибуція: п\'ять джерел і умови OSM на карті, у звітах і файлах адрес',
     'poshuk_143': '8. Пошук: 143 запити Е12б — першим ≥131',
     'poshuk_opysky': '8. Пошук: описки — у перших п\'яти ≥12 з 13',
@@ -138,11 +142,10 @@ def tochky_karty(html_path):
     """Лічильник p[3] (точність) точок зібраної карти: 0 — центр вулиці,
     3 — «база», 4 — між сусідами (step3_map.PREC). S-А.3 і S-А.4 вимагають,
     щоб їх не було зовсім."""
-    import collections
-    html = open(html_path, encoding='utf-8').read()
-    m_ = re.search(r'const M=.*?, P=(\[.*?\]);\n', html, re.S)
-    if not m_: return None
-    return collections.Counter(p[3] for p in json.loads(m_.group(1)) if len(p) > 3)
+    import collections, map_dani
+    d = map_dani.chytaty(html_path, 'pts')
+    if not d: return None
+    return collections.Counter(p[3] for p in d['pts'] if len(p) > 3)
 
 
 def spec_testy():
@@ -234,10 +237,11 @@ def check_markup(html):
 
 
 def check_js(html, tmp):
-    m = re.search(r'<script>\n(.*)\n</script>', html, re.S)
+    # сторінка — ES-модуль (import MapLibre, await даних), тож .mjs
+    m = re.search(r'<script type="module">\n(.*)\n</script>', html, re.S)
     if not m:
-        return ['не знайдено <script> у сторінці']
-    jsf = os.path.join(tmp, 'x.js')
+        return ['не знайдено <script type="module"> у сторінці']
+    jsf = os.path.join(tmp, 'x.mjs')
     with open(jsf, 'w', encoding='utf-8') as f:
         f.write(m.group(1))
     if not shutil.which('node'):
@@ -259,11 +263,10 @@ SUD_ADRESA_MIN, SUD_ADRESA_CHASTKA = 5, 0.5
 def sud_raion(html_path):
     """(частка незбігу, по видах, по районах, підозрілі адреси) з готової
     карти: точні точки (будинок, перехрестя) й районні суди."""
-    import collections
-    html = open(html_path, encoding='utf-8').read()
-    m_ = re.search(r'const M=(\{.*?\}), P=(\[.*?\]);\n', html, re.S)
-    if not m_: return None
-    M, P = json.loads(m_.group(1)), json.loads(m_.group(2))
+    import collections, map_dani
+    d = map_dani.chytaty(html_path, 'meta', 'pts')
+    if not d: return None
+    M, P = d['meta'], d['pts']
     courts, dn = M.get('courts', []), M.get('dnames', [])
     gi = {}
     for g, (nm, ids, _n) in enumerate(M.get('groups', [])):
@@ -333,7 +336,10 @@ def main(save=False):
     try:
         for name, kw in CASES:
             print(f'3. Збірка: {name}')
-            dst = os.path.join(tmp, f'{name}.html')
+            # кожна збірка — у своїй папці: dani/ прибирає файли, на які її
+            # сторінка не посилається, і районна стерла б міські
+            os.makedirs(os.path.join(tmp, name), exist_ok=True)
+            dst = os.path.join(tmp, name, 'index.html')
             out = open(os.devnull, 'w')
             keep, sys.stdout = sys.stdout, out
             try:
@@ -342,7 +348,7 @@ def main(save=False):
                 sys.stdout = keep
                 out.close()
             html = open(dst, encoding='utf-8').read()
-            if name == 'міська': city_html = html
+            if name == 'міська': city_html = dst
             now[name] = hashlib.sha256(html.encode('utf-8')).hexdigest()[:16]
             for e in check_markup(html):
                 problems.append(f'{name}: розмітка — {e}')
@@ -367,9 +373,10 @@ def main(save=False):
         excl_txt += '\n' + open(map_excl.MANUAL, encoding='utf-8').read().lower()
     missed = [a for a in NE_MAE_BUTY if a.lower() not in excl_txt]
     leaked = []
-    m_ = re.search(r'const M=.*?, P=(\[.*?\]);\n', city_html or '', re.S)
-    if m_:
-        addrs = {(p or [None, None, ''])[2] for p in json.loads(m_.group(1))}
+    import map_dani
+    d_ = map_dani.chytaty(city_html, 'pts') if city_html else None
+    if d_:
+        addrs = {(p or [None, None, ''])[2] for p in d_['pts']}
         leaked = [a for a in NE_MAE_BUTY if a in addrs]
     else:
         print('   не знайшов перелік точок у сторінці')
@@ -474,8 +481,8 @@ def main(save=False):
         print('   звіту проблем чи site/index.html немає — пропущено')
     else:
         ch = PRB_.chyslo_problem(json.load(gzip.open(rpp, 'rt', encoding='utf-8')))
-        mm = re.search(r'"chyslo":\s*(\{[^}]*\})', open(sp_, encoding='utf-8').read())
-        na_karti = json.loads(mm.group(1)) if mm else None
+        import map_dani
+        na_karti = ((map_dani.chytaty(sp_, 'meta') or {}).get('meta') or {}).get('chyslo')
         tekst = PRB_.chyslo_tekst(ch)
         v_zvity = os.path.exists(pp_) and tekst in open(pp_, encoding='utf-8').read()
         print(f'   звіт: {tekst} (+ {ch["dorozhnikh"]} дорожніх ділянок); на карті: {na_karti}; у «Проблемах»: {"так" if v_zvity else "НІ"}')
@@ -495,14 +502,38 @@ def main(save=False):
     print(f'   {n_:,} пар, {mb_:.1f} МБ; ДТП {len(dtp_):,}, з мітками {sum(bool(x.get("mitky")) for x in dtp_):,}')
     if not n_ or mb_ > 20 or bez_m or not dtp_:
         print(f'   ПОМИЛКА файл кандидатів порожній, понад 20 МБ чи ДТП без поля mitky ({bez_m})'); return 1
+    print('4и. Вага першого завантаження (S-Н.5, 36.22): ≤3 МБ розпаковано, ≤1 МБ мережею')
+    import map_dani
+    if not os.path.exists(sp_):
+        print('   site/index.html немає — пропущено')
+    else:
+        rozp_, mer_, fs_ = map_dani.vaga(sp_)
+        print(f'   {rozp_ / 1048576:.2f} МБ розпаковано, {mer_ / 1048576:.2f} МБ мережею (gzip); '
+              + ', '.join(f'{n} {b / 1048576:.2f}' for n, b in fs_[:4]))
+        if rozp_ > 5 * 1048576 or mer_ > 1048576:
+            print('   ПОМИЛКА перше завантаження понад 5 МБ чи понад 1 МБ мережею'); return 1
+        if rozp_ > 3 * 1048576:
+            print(f'::warning::ЖОВТА: перше завантаження {rozp_ / 1048576:.2f} МБ > 3 МБ; найважчі — '
+                  + ', '.join(n for n, _ in fs_[:3]))
+    print('4к. Шару «Населення» на карті немає (36.39, S-К.10)')
+    if os.path.exists(sp_):
+        t_ = open(sp_, encoding='utf-8').read()
+        sliv_ = [s for s in ('data-ctx="pop"', "'k-pop'", '>Населення<') if s in t_]
+        if 'pop' in (map_dani.perelik(t_) or {}): sliv_.append('dani/pop')
+        if sliv_:
+            print('   ПОМИЛКА на карті лишився шар «Населення»: ' + ', '.join(sliv_)); return 1
+        print('   немає ні перемикача, ні шару, ні файлу')
     print('4з. Атрибуція (S-К.20, S-З.7, S-Б.7): п\'ять джерел і умови OSM')
     import atrybutsiia as ATR_
     bez = []
     sd_ = os.path.join(ROOT, 'site')
     stor = [os.path.join(sd_, 'index.html')] + sorted(glob.glob(os.path.join(sd_, '*.html')))
     for f in dict.fromkeys(stor):
-        if not os.path.exists(f) or os.path.basename(f) in ('kyiv.html', 'kyiv-gl.html', 'karta-zapasna.html'): continue
+        if not os.path.exists(f) or os.path.basename(f) in ('kyiv.html', 'kyiv-gl.html'): continue
         t = open(f, encoding='utf-8').read()
+        # рядок атрибуції карти — у meta (M.atr), а не в самій сторінці (36.22)
+        pr_ = map_dani.perelik(t)
+        if pr_: t += open(os.path.join(sd_, pr_['meta']), encoding='utf-8').read()
         if '<meta http-equiv="refresh"' in t: continue        # переадресації
         nema = [d for d in ATR_.DZHERELA if d not in t]
         if nema: bez.append(f'{os.path.basename(f)}: немає {", ".join(nema)}')

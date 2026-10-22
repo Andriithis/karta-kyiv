@@ -14,10 +14,8 @@ import mech as M
 import pravo as PR          # офіційні назви статей для картки і листа
 # HTML-шаблон винесено в окремий файл: разом із ним модуль важив 67 КБ,
 # а це один файл на дві дуже різні речі — логіку відбору й розмітку.
-from step3_tpl import TPL, TPL_GL
-# Районні файли в MapLibre-збірці вмикаються цим одним рядком — після того, як
-# Андрій затвердить паритет і GL стане типовою версією.
-GL_DISTRICTS = False
+from step3_tpl import TPL_GL
+import map_dani              # дані окремими файлами з хешем (36.22)
 from map_excl import load_excl, detect_institutional, drop_excluded
 import map_layers
 import map_problems
@@ -37,12 +35,9 @@ LAST_KARTA = None       # точки міської карти з проблем
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data'); DB = os.path.join(DATA, 'events.db')
-# Типова карта з 26.09 — нова, на MapLibre, і вона ж головна сторінка сайту
-# (index.html). Leaflet-збірка лишається лише запасною для браузера без
-# WebGL: під іншою назвою й без посилань на неї, щоб на неї не потрапляли
-# випадково. OUT — саме вона: check_build перевіряє Leaflet-збірку.
-OUT  = os.path.join(ROOT, 'site', 'karta-zapasna.html')
-GL_NAME = 'index.html'
+# Карта — одна, на MapLibre, і вона ж головна сторінка сайту. Запасну
+# Leaflet-збірку (karta-zapasna.html) прибрано (36.8).
+OUT  = os.path.join(ROOT, 'site', 'index.html')
 # Старі адреси карти. На них є посилання в роздатках і закладках, тож вони
 # не зникають, а переводять на головну з тим самим районом (#desna).
 OLD_NAMES = ('kyiv.html', 'kyiv-gl.html')
@@ -493,18 +488,6 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
         P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
         district, risks, ER, FACT, theme_rgrid, pred_theme, DOCIDX)
 
-    # Дані серіалізуються один раз і лягають однаково в обидві збірки — і в
-    # Leaflet, і в MapLibre. Інакше порівнювати їх на паритет не було б сенсу.
-    subst = {'__POP__': json.dumps(POP, separators=(',', ':')),
-             '__FACTS__': json.dumps(FACT, ensure_ascii=False, separators=(',', ':')),
-             '__RISKS__': json.dumps(risks, ensure_ascii=False, separators=(',', ':')),
-             '__META__': json.dumps(meta, ensure_ascii=False),
-             '__PTS__': json.dumps(P, ensure_ascii=False, separators=(',', ':'))}
-    def fill(tpl):
-        for k, v in subst.items():
-            tpl = tpl.replace(k, v)
-        return tpl
-    html = fill(TPL)
     # Крок 5 бере звідси числа районів для плиток — щоб не збирати десять карт
     # заради десяти чисел.
     global LAST_META, LAST_DOCS, LAST_KARTA
@@ -546,24 +529,27 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
         import map_poshuk
         map_poshuk.zibraty(P, os.path.dirname(dst) or '.')
 
-    open(dst, 'w', encoding='utf-8').write(html)
-    print(f'готово: {os.path.basename(dst)} ({os.path.getsize(dst)/1048576:.1f} МБ)')
-    # Збірка MapLibre поруч із запасною. Районних файлів у GL немає: район
-    # відкривається в міській карті (#desna). GL_DISTRICTS — на випадок, якщо
-    # вони знову знадобляться.
-    if district is None or GL_DISTRICTS:
-        odir = os.path.dirname(dst) or '.'
-        dst_gl = (os.path.join(odir, GL_NAME) if district is None
-                  else dst[:-len('.html')] + '-gl.html')
-        if district is None:
-            for nm in OLD_NAMES:
-                open(os.path.join(odir, nm), 'w', encoding='utf-8').write(REDIRECT)
-        # Дерево кластерів — лише для GL: Leaflet-версія кілець не малює, і
-        # запасна збірка від нього не змінюється ні на байт.
-        tree = json.dumps(map_clusters.build(P), separators=(',', ':'))
-        print(f'   дерево кластерів: {len(tree)/1024:.0f} КБ')
-        open(dst_gl, 'w', encoding='utf-8').write(fill(TPL_GL).replace('__TREE__', tree))
-        print(f'готово: {os.path.basename(dst_gl)} ({os.path.getsize(dst_gl)/1048576:.1f} МБ)')
+    # Районних сторінок немає: район відкривається в міській карті (#desna).
+    # Районна збірка лишилася для check_build — вона пише свою сторінку з
+    # даними в окрему папку.
+    odir = os.path.dirname(dst) or '.'
+    if district is None:
+        for nm in OLD_NAMES:
+            open(os.path.join(odir, nm), 'w', encoding='utf-8').write(REDIRECT)
+        zap = os.path.join(odir, 'karta-zapasna.html')     # прибрана 36.8
+        if os.path.exists(zap): os.remove(zap)
+    # Дані — окремими файлами з хешем (36.22): HTML лишається ~0,3 МБ коду,
+    # перше завантаження — map_dani.PERSHI, решта — на вимогу.
+    ryzyk, prokhid = map_dani.rozdilyty_R(risks)
+    dani = map_dani.zapysaty(odir, {
+        'meta': meta, 'pts': map_dani.pakuvaty_P(P), 'ryzyk': ryzyk,
+        'tree': map_dani.pakuvaty_tree(map_clusters.build(P)),
+        'prokhid': prokhid, 'poruch': FACT})
+    open(dst, 'w', encoding='utf-8').write(
+        TPL_GL.replace('__DANI__', json.dumps(dani, separators=(',', ':'))))
+    rozp, merezha, _ = map_dani.vaga(dst)
+    print(f'готово: {os.path.basename(dst)} ({os.path.getsize(dst)/1048576:.2f} МБ) і dani/ '
+          f'({len(dani)} файлів); перше завантаження {rozp/1048576:.2f} МБ, мережею {merezha/1048576:.2f} МБ')
     return theme_cnt
 
 if __name__ == '__main__':

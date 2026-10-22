@@ -308,10 +308,8 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
         # дванадцяти тисяч перевірок променем у браузері
         p.append(DIDX.get(addr_district(p[0], p[1]), -1))
 
-    pp2 = os.path.join(DATA, 'population.json')
-    if os.path.exists(pp2):
-        POP = [[x[0], x[1], x[2]] for x in json.load(open(pp2, encoding='utf-8'))['items'] if x[2] > 30]
-        print(f'населення: {len(POP):,} комірок')
+    # Шару «Населення» на карті немає (36.39, S-К.10): POP лишається порожнім,
+    # населення живе лише в розрахунках ризику й проблем (34.1).
 
     meta['skew'] = skew_txt
     meta['n_problems'] = len(problems)

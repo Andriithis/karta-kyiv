@@ -1,13 +1,48 @@
 # -*- coding: utf-8 -*-
-"""Спільна основа клієнтського JavaScript для обох рушіїв карти.
+"""Основа клієнтського JavaScript карти.
 
-Тут: підстановка даних, палітра й теми, ключ і адреси запасних плиток
-CARTO, константи районів, значки й кольори шарів контексту і побудова
-блока «Контекст» у панелі. Жодного звертання ні до Leaflet, ні до
-MapLibre: цей файл входить в обидві збірки першим, решта на нього
-спирається.
+Тут: завантаження даних, палітра й теми, константи районів, значки й
+кольори шарів контексту і побудова блока «Контекст» у панелі. Жодного
+звертання до MapLibre: решта коду на цей файл спирається.
 """
-JS_BASE = r"""const M=__META__, P=__PTS__;
+JS_BASE = r"""// ---- ДАНІ (36.22, S-Н.5) ----
+// Дані не вшиті в сторінку, а лежать поруч файлами dani/<назва>.<хеш>.json
+// (map_dani): браузер тягне їх паралельно й тримає в кеші, доки збірка не
+// змінить вміст. Одразу — чотири файли, потрібні першій карті;
+// «Прохідність» і «Що поруч» — на вимогу (zavantazhProkhid, zavantazhF).
+const DANI=__DANI__;
+const vantazh=u=>fetch(u).then(r=>{if(!r.ok) throw new Error(u+': '+r.status); return r.json()});
+// Polyline (Google, 5 знаків): дельти координат замість повних чисел.
+function polyDek(s){const out=[]; let i=0,a=0,b=0;
+ while(i<s.length){const r=[0,0];
+  for(let k=0;k<2;k++){let v=0,sh=0,c; do{c=s.charCodeAt(i++)-63; v|=(c&31)<<sh; sh+=5}while(c>=32);
+   r[k]=v&1?~(v>>1):v>>1}
+  a+=r[0]; b+=r[1]; out.push([a/1e5,b/1e5])}
+ return out}
+// Події адреси — рядком по чотири знаки (map_dani.pakuvaty_P): 23 біти
+// [стаття 7, рік 2, година+1 5, ознака 2, місяць 7]; суд — раз на адресу
+// («K») чи окремо для кожної події («V»). Розгортаємо в ті самі масиви
+// [суд, стаття, рік, година, ознака, місяць], з якими працює решта коду.
+const ABC64='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_', A64={};
+[...ABC64].forEach((c,i)=>A64[c]=i);
+function podiiaZ(sud,s,o){const v=A64[s[o]]|A64[s[o+1]]<<6|A64[s[o+2]]<<12|A64[s[o+3]]<<18;
+ return [sud,v&127,(v>>7)&3,((v>>9)&31)-1,(v>>14)&3,(v>>16)&127]}
+function rozpakuvatyP(d){
+ return d.p.map(p=>{
+  if(Array.isArray(p[2])) p[2]=d.v[p[2][0]]+', '+p[2][1];
+  const s=p[4];
+  if(typeof s==='string'){const ev=[];
+   if(s[0]==='K'){const sud=A64[s[1]]; for(let o=2;o<s.length;o+=4) ev.push(podiiaZ(sud,s,o))}
+   else {const n=(s.length-1)/5; for(let j=0;j<n;j++) ev.push(podiiaZ(A64[s[1+j]],s,1+n+4*j))}
+   p[4]=ev}
+  return p})}
+let M,P,R,TREE;
+try{let p_;
+ [M,p_,R,TREE]=await Promise.all(['meta','pts','ryzyk','tree'].map(k=>vantazh(DANI[k])));
+ P=rozpakuvatyP(p_)}
+catch(e){bezKarty('Дані карти не завантажилися. Оновіть сторінку.'); throw e}
+Object.values(R.lines||{}).forEach(v=>{if(!v.lazy) v.items.forEach(it=>{if(typeof it[0]==='string') it[0]=polyDek(it[0])})});
+TREE.lv.forEach(l=>{if(typeof l.c==='string') l.c=polyDek(l.c).flat()});
 // Числівник і іменник узгоджуються за останніми цифрами: 1, 21 подія;
 // 2–4, 22 події; 5–20, 11–14 подій. Одне правило на всю сторінку — інакше
 // кожне місце вигадувало б своє, і десь лишалося б «44 подій».
@@ -25,25 +60,6 @@ const pl=(n,one,few,many)=>{const a=n%10,b=n%100;
 const PAL={
  svitla:['#eb6834','#1baf7a','#4a3aa7','#e34948','#2a78d6','#008300','#8a7e9c','#7a6f63'],
  temna: ['#d95926','#199e70','#9085e9','#e66767','#3987e5','#008300','#d890ba','#8d94a2']};
-// Ключ CARTO. Безкоштовний, без картки, до 5 млн тайлів на місяць — для
-// Академії це нескінченність. Він клієнтський і однаково лежить у коді
-// сторінки, тому ховати його немає від кого. Параметр називається саме
-// key=, не api_key=: з неправильною назвою ключ мовчки не діє, і виглядає
-// це як зіпсований ключ. Атрибуція CARTO і OpenStreetMap обов'язкова
-// завжди — це умова безкоштовного користування.
-const CARTO_KEY='cb1_3n60_1_74a848e36e851efba49b510b';
-const ck_=CARTO_KEY?('?key='+CARTO_KEY):'';
-// {r} дає @2x на екранах з подвоєною щільністю — саме через нього підкладка
-// виглядає різкою. Esri прибрано: у Києві його растрові тайли обриваються на
-// зумі 16 («Map data not yet available»), а карта про номер будинку ходить
-// до 19. Звичайний OSM лишається запасним: якщо ключ колись відвалиться,
-// карта втратить вигляд, але лишиться робочою.
-const TILES={
- svitla:{u:'https://basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}{r}.png'+ck_,
-         a:'&copy; CARTO, &copy; OpenStreetMap'},
- temna:{u:'https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png'+ck_,
-         a:'&copy; CARTO, &copy; OpenStreetMap'},
- osm:{u:'https://tile.openstreetmap.org/{z}/{x}/{y}.png', a:'&copy; OpenStreetMap'}};
 // Тем дві. Кольорову прибрано (RISHENNYA, розд. 18); хто її колись обрав,
 // тепер бачить світлу — і в пам'яті браузера теж лишається світла, щоб
 // прибрана тема не поверталася з кожним відкриттям.
@@ -64,16 +80,24 @@ const CATTH={};M.groups.forEach((g,gi)=>g[1].forEach(i=>CATTH[i]=gi));
 // Повна назва статті з кодексу за коротким підписом (src/pravo.py).
 // Порожньо, якщо назви немає: приблизна назва в листі гірша за її відсутність.
 const LAW=s=>(M.law&&M.law[s])||'';
-const R=__RISKS__, POP=__POP__, F=__FACTS__;
 // Справи адрес для правої панелі лежать у файлах spravy/<район>.json поруч
 // зі сторінкою. Панель тягне свій файл тоді, коли її відкривають уперше.
 const DOCCACHE={};
+// «Прохідність» — на вимогу: файл prokhid тягнеться, коли шар увімкнули.
 // Потоки приїжджають стисло: геометрія кожного відрізка лежить один раз у
-// R.geo, а шари несуть тільки номер відрізка й число. Розгортаємо тут-таки,
-// щоб решта коду працювала як раніше.
-if(R.geo) Object.values(R.lines||{}).forEach(v=>{
- if(v.g) v.items=v.items.map(x=>[R.geo[x[0]][0], R.geo[x[0]][1], x[1]]);
-});
+// geo, а шари несуть тільки номер відрізка й число. Розгортаємо в R.lines,
+// щоб решта коду працювала як раніше; позначка lazy знімається.
+let PROKHID_P=null;
+const zavantazhProkhid=()=>PROKHID_P||(PROKHID_P=vantazh(DANI.prokhid).then(d=>{
+ const geo=d.geo.map(g=>[polyDek(g[0]),g[1]]);
+ for(const k in d.lines){const v=R.lines[k]; if(!v) continue;
+  v.items=d.lines[k].map(x=>[geo[x[0]][0],geo[x[0]][1],x[1]]); delete v.lazy}}));
+// «Що поруч» — при першому відкритті картки (там число в назві вкладки).
+// Доки файл їде, F порожній: картка показує вкладку без числа й
+// перемальовується, коли він прийде (PO_F).
+let F={cats:[]}, F_P=null; const PO_F=[];
+const zavantazhF=()=>F_P||(F_P=vantazh(DANI.poruch).then(f=>{
+ F=f; (F.cats||[]).forEach((c,ci)=>c._i=ci); PO_F.forEach(cb=>cb())}));
 // ---- РАЙОНИ В МЕЖАХ ОДНОГО ФАЙЛУ ----
 // Міська карта несе межі всіх десяти районів і їхні власні переліки проблем.
 // Клік по району не веде на інший файл: карта під'їжджає, затемнює решту
@@ -116,6 +140,6 @@ function $ify(sel,html){const el=document.querySelector(sel);if(el)el.innerHTML=
  // більше за самі об'єкти.
  (F.cats||[]).forEach((c,ci)=>c._i=ci);
  $ify('#ffact',(F.cats||[]).map(c=>`<input type="checkbox" data-f="${c._i}">`).join('')
-   +['pop','potik'].map(k=>
+   +['potik'].map(k=>
      `<input type="checkbox" data-r="${k}">`).join(''));
 }"""

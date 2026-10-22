@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Шапка сторінки й усі стилі карти.
 
-Тут: <!DOCTYPE>, <head>, підключення Leaflet і <style> цілком.
+Тут: <!DOCTYPE>, <head>, стилі MapLibre і <style> цілком.
 Розміри панелі, вигляд спливних вікон — усе змінюється тут.
 Кольори НЕ пишуться літералом: вони живуть у змінних двох тем на початку
 блока. Жодного тексту й жодної логіки: підписи — у tpl_body, поведінка —
@@ -10,9 +10,6 @@
 Теми й типографіка — з макета PROBA-VYGLIADU.html, картка-навігатор — із
 затвердженого макета site/maket-panel.html (версія 4).
 """
-LIBS_LEAFLET = r"""<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>"""
 # MapLibre 6.x поставляється лише як ES-модуль: dist/maplibre-gl.js більше
 # немає, тож сам JS підтягує скрипт сторінки через import (див. step3_tpl).
 # Тут лише стилі бібліотеки. Версія точна — оновлення не має приходити саме.
@@ -32,8 +29,7 @@ html body,html body[data-t="svitla"]{--faint:#6f7680}
    (AUDYT-3, № 2). */
 html body[data-t="temna"] .maplibregl-ctrl-group button .maplibregl-ctrl-icon{filter:invert(1) brightness(.9)}
 html body[data-t="temna"] .maplibregl-ctrl-group button+button{border-top-color:var(--rule)}
-/* Лише для MapLibre-збірки: запасна Leaflet-карта цих правил не має.
-   Підказка при наведенні на смугу, потік чи населення — як .rt у Leaflet. */
+/* Підказка при наведенні на смугу, потік чи населення. */
 .k-tip{pointer-events:none}
 .k-tip .maplibregl-popup-content{padding:6px 9px;font:12px var(--sans);border:1px solid var(--rule);
  border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.18)}
@@ -396,34 +392,12 @@ aside#side button:focus-visible,.adv button:focus-visible{outline:2px solid #3d9
 .cl a:hover{opacity:.62}
 #panb .sub{font-size:12px;color:var(--faint);padding:8px 0}
 @media(max-width:900px){#pan{width:100%;max-width:100%}}
-/* Підкладка більше не інвертується: інверсія світлих плиток OSM — це не тема,
-   а саме інверсія, звідси й болотяний відтінок. Тепер кожна тема має власний
-   набір плиток, він у tpl_map. */
-.leaflet-container{background:var(--ground);font-family:var(--sans)}
-/* Тінь під точками й лініями. У макеті вона стоїть на svg, а в нас усе
-   малюється в canvas (preferCanvas), тож фільтр — на полотні. Фільтр
-   розмиває силует УСЬОГО полотна на кожному кадрі, а на міському огляді це
-   11 686 адрес, і глибини там однаково не видно. Тому тінь вмикається лише
-   зблизька: клас deep вішає tpl_popup на контейнер карти на zoomend. */
-.deep .leaflet-overlay-pane canvas{filter:var(--shadow)}
 /* перемикач тем у куті карти */
 .tsw{display:flex;gap:2px;background:var(--glass);backdrop-filter:blur(16px) saturate(1.3);
  -webkit-backdrop-filter:blur(16px) saturate(1.3);border:1px solid var(--rule)}
 .tsw button{all:unset;cursor:pointer;font:12px var(--sans);color:var(--dim);padding:6px 11px;transition:color .16s}
 .tsw button:hover{color:var(--ink)}
 .tsw button[aria-pressed="true"]{color:var(--ink);background:var(--sunk)}
-.leaflet-control-attribution{background:var(--glass)!important;color:var(--faint)!important;
- font-size:9.5px!important;padding:2px 6px!important}
-.leaflet-control-attribution a{color:var(--dim)!important}
-.leaflet-bar a{background:var(--panel)!important;color:var(--ink)!important;
- border-bottom-color:var(--rule)!important}
-.leaflet-popup-content-wrapper{background:var(--panel);color:var(--ink);border-radius:8px}
-.leaflet-popup-tip{background:var(--panel)}
-.leaflet-tooltip.rt{background:var(--panel);border:1px solid var(--rule);color:var(--ink);
-  font:12px var(--sans);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.18);padding:6px 9px}
-.leaflet-tooltip.rt:before{display:none}
-.leaflet-tooltip.rt b{display:block;margin-bottom:2px}
-.leaflet-tooltip.rt span{color:var(--dim);font-size:11px}
 /* висота в частках екрана, інакше висока картка вилазить за верх вікна */
 .lp{font-size:12.5px;max-height:min(420px,58vh);overflow-y:auto;overscroll-behavior:contain}
 .lp b{display:block;margin-bottom:5px;font-size:13px}
@@ -483,11 +457,10 @@ aside#side button:focus-visible,.adv button:focus-visible{outline:2px solid #3d9
 .rpop table.fx td.fv b{display:inline;font-size:12px;color:var(--ink);margin:0}
 .rpop table.fx td.fv i{font-style:normal;color:var(--faint);font-size:10.5px}
 .rpop table.fx .fr{color:var(--dim);font-size:10.5px;margin-top:1px;line-height:1.35}
-/* ---- MapLibre ----
-   Ті самі змінні тем, що й для Leaflet: вікно, атрибуція й кнопки масштабу
-   мають виглядати однаково в обох збірках, інакше паритет не перевіриш оком.
-   На Leaflet-сторінці ці правила просто ні на що не лягають. */
+/* ---- MapLibre ---- */
 .maplibregl-map{font-family:var(--sans)}
+/* браузер без WebGL чи бібліотека не прийшла — рядок замість карти */
+.k-bez{display:flex;align-items:center;justify-content:center;height:100%;color:var(--dim);font:14px var(--sans)}
 .maplibregl-popup-content{background:var(--panel);color:var(--ink);border-radius:8px;
  padding:12px 14px;box-shadow:0 3px 14px rgba(0,0,0,.25)}
 .maplibregl-popup-anchor-bottom .maplibregl-popup-tip{border-top-color:var(--panel)}
@@ -503,5 +476,4 @@ aside#side button:focus-visible,.adv button:focus-visible{outline:2px solid #3d9
  .maplibregl-ctrl-attrib.k-atr-vidkr{max-width:calc(100vw - 24px)}}
 .maplibregl-ctrl-group{background:var(--panel)}
 </style></head>"""
-HEAD = HEAD_TPL.replace('__LIBS__', LIBS_LEAFLET)
 HEAD_GL = HEAD_TPL.replace('__LIBS__', LIBS_GL)
