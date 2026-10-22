@@ -222,10 +222,26 @@ body[data-t="temna"] .kc-risk i{background:#ff6b6b}
 #kcopy{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);z-index:7;background:var(--ink);color:var(--panel);
  border-radius:6px;padding:7px 12px;font:13px var(--sans);pointer-events:none}
 @media (max-width:700px){
- /* шторка: низька — назва, підсумок, смужка, вкладки; дотик до шапки — до 80% */
- #kplace.kp-cell{max-height:34vh}
- #kplace.kp-cell.kp-tall{max-height:80vh}
+ /* Шторка за макетом «Картка на телефоні» (36.27, затверджено 20.10): одна
+    висота для соти й адреси — ≈ пів екрана, дотик до шапки — на весь екран;
+    гортається вся картка, а не вузьке віконце всередині. */
+ #kplace,#kplace.kp-cell{display:block;height:50vh;max-height:none;overflow-y:auto;overscroll-behavior:contain}
+ #kplace.kp-tall,#kplace.kp-cell.kp-tall{height:calc(100% - 24px)}
+ #kplace .kp-body{overflow:visible}
+ /* текст 14 px, найдрібніший підпис 11 px; кнопки, вкладки, рядки видів — 44 px */
+ #kplace{font-size:14px}
+ #kplace .kp-sum,#kplace .kp-tabs button,#kplace .kp-dec .l1,#kplace .kp-dec .l2,#kplace .kp-dec .l3,
+ #kplace .kp-lnk,#kplace .kp-empty,.kc-vydy button,#kplace .bd td{font-size:14px}
+ #kplace .kp-badge,#kplace .kp-pch,#kplace .hxl,#kplace .kp-dec .l1 .h,#kplace .kp-nd{font-size:11px}
+ #kplace .kp-tabs button,.kc-vydy button,#kplace .pbtn2,#kplace .kp-lnk,#kplace .kp-probs button{min-height:44px}
+ #kplace .kp-x{width:44px;height:44px}
+ /* +/− і «ⓘ» — над шторкою (--shtorka ставить nadShtorkoyu) */
+ body.kp-open .maplibregl-ctrl-bottom-right{bottom:calc(var(--shtorka,50vh) + 16px)}
+ #kadresy-hint{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);z-index:6;background:var(--card);
+  box-shadow:var(--card-shadow);border-radius:8px;padding:0 6px 0 14px;font-size:14px;display:flex;align-items:center;gap:6px}
+ #kadresy-hint button{all:unset;cursor:pointer;min-height:44px;padding:0 10px;font-weight:600}
 }
+#kadresy-hint[hidden]{display:none}
 .bd td.lpmorec{text-align:left;width:auto;padding-left:0;font-family:var(--sans)}
 .lpmore{background:none;border:0;padding:4px 0;min-height:28px;font:inherit;font-size:11.5px;color:var(--dim);
  cursor:pointer;text-decoration:underline}
@@ -480,6 +496,11 @@ aside#side button:focus-visible,.adv button:focus-visible{outline:2px solid #3d9
 .maplibregl-popup-anchor-right .maplibregl-popup-tip{border-left-color:var(--panel)}
 .maplibregl-ctrl-attrib{background:var(--glass)!important;color:var(--faint);font-size:9.5px}
 .maplibregl-ctrl-attrib a{color:var(--dim)}
+/* атрибуція S-К.20: на ПК — рядок, на телефоні — «ⓘ», рядок за натиском */
+.k-atr-i{display:none;background:none;border:0;color:var(--dim);font-size:14px;min-width:28px;min-height:28px;cursor:pointer}
+@media (max-width:700px){.k-atr-i{display:inline-block}
+ .maplibregl-ctrl-attrib:not(.k-atr-vidkr) .maplibregl-ctrl-attrib-inner{display:none}
+ .maplibregl-ctrl-attrib.k-atr-vidkr{max-width:calc(100vw - 24px)}}
 .maplibregl-ctrl-group{background:var(--panel)}
 </style></head>"""
 HEAD = HEAD_TPL.replace('__LIBS__', LIBS_LEAFLET)

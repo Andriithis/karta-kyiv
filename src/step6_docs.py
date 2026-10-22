@@ -3,10 +3,10 @@
 
 З 28.09.2026 — три звіти й методика (PLAN-ZVITY.md, розд. 25; код —
 step6_zvity.py):
-  problemy.html, skhozhi-umovy.html, stan-mista.html, metodyka.html.
+  doslidzhennya.html (зміст розділу), problemy.html, ryzyk.html, stan-mista.html, metodyka.html.
 
 Старі адреси лишаються переадресаціями з тими самими якорями й параметрами:
-  doslidzhennya.html (з ?st= і #t-…) -> skhozhi-umovy.html;
+  skhozhi-umovy.html (з ?st= і #t-…) -> ryzyk.html;
   analiz.html, rezyume.html          -> stan-mista.html.
 Старі модулі step6_base/intro/research/state/theme видалено 29.09.2026 (аудит 4).
 """
@@ -17,7 +17,8 @@ import step6_zvity as Z
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SITE = os.path.join(ROOT, 'site')
 
-PEREADRES = {'doslidzhennya.html': 'skhozhi-umovy.html',
+# doslidzhennya.html тепер сам — зміст розділу (36.28.1); «Схожі умови» — «Ризик»
+PEREADRES = {'skhozhi-umovy.html': 'ryzyk.html',
              'analiz.html': 'stan-mista.html', 'rezyume.html': 'stan-mista.html'}
 
 

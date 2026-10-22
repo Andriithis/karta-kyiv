@@ -24,8 +24,29 @@ import os, sys, time, threading, functools, http.server, socketserver
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SITE = os.path.join(ROOT, 'site')
 ZNIMKY = os.path.join(ROOT, 'vykhid', 'znimky')
-MISCIA_ZNIMKIV = [('pl-vokzalna-1', 'пл. Вокзальна, 1'), ('khreshchatyk-22', 'вул. Хрещатик, 22'),
-                  ('telihy-13', 'Теліги, 13')]
+# Перельоти коштують ~10 с кожен — знімків мало: увесь тест ≤ 2 хв
+MISCIA_ZNIMKIV = [('pl-vokzalna-1', 'пл. Вокзальна, 1')]
+
+# Телефон 375×812 (S-К.21, 36.27; test:telefon): обрана точка над шторкою,
+# одна висота шторки для адреси й соти, текст ≥14 px, вкладки 44 px, +/− над шторкою
+JS_TELEFON = r"""async (adr) => {
+ const i=KT.P.findIndex(p=>p[3]&&(p[2]||'').includes(adr)); if(i<0) return {bad:['немає адреси '+adr]};
+ KT.setView('addr'); KT.map.jumpTo({center:[KT.P[i][1],KT.P[i][0]],zoom:17}); KT.openAt(i);
+ await new Promise(r=>{KT.map.once('idle',r); setTimeout(r,6000)});
+ const el=document.getElementById('kplace'), c=el.getBoundingClientRect(), m=KT.map.getContainer().getBoundingClientRect();
+ const q=KT.map.project([KT.P[i][1],KT.P[i][0]]), bad=[];
+ if(m.top+q.y>c.top-8) bad.push(`точка під шторкою: y ${Math.round(m.top+q.y)}, шторка від ${Math.round(c.top)}`);
+ const px=s=>parseFloat(getComputedStyle(s).fontSize);
+ const sum=el.querySelector('.kp-sum'); if(sum&&px(sum)<14) bad.push(`текст картки ${px(sum)} px < 14`);
+ for(const b of el.querySelectorAll('.kp-tabs button')) if(b.getBoundingClientRect().height<43.5){bad.push(`вкладка ${Math.round(b.getBoundingClientRect().height)} px < 44`); break}
+ const ctl=document.querySelector('.maplibregl-ctrl-bottom-right').getBoundingClientRect();
+ if(ctl.bottom>c.top+1) bad.push(`+/− під шторкою: низ ${Math.round(ctl.bottom)}, шторка від ${Math.round(c.top)}`);
+ const hA=Math.round(c.height);
+ const B=[...KT.hexb('S').values()].find(b=>b.ad.includes(i));
+ if(B){KT.openCell('СОТА',B.ad,[B.cx,B.cy,130],null); await new Promise(r=>setTimeout(r,300));
+  const hS=Math.round(el.getBoundingClientRect().height); if(Math.abs(hS-hA)>2) bad.push(`висота шторки: адреса ${hA}, сота ${hS}`);
+  KT.closeCell(); KT.openAt(i)}
+ return {bad, hA}}"""
 
 # Уся перевірка — один виклик у сторінці: 300 місць × вигляд за секунди
 JS = r"""async ([N, seed]) => {
@@ -101,9 +122,20 @@ def main(n=300, seed=36, znimky=True):
                 pg.evaluate(f'KT.setView("addr"); KT.map.jumpTo({{center:[KT.P[{i}][1],KT.P[{i}][0]],zoom:17}}); KT.openAt({i})')
                 pg.evaluate('new Promise(r=>{KT.map.once("idle",r); setTimeout(r,5000)})')
                 pg.screenshot(path=os.path.join(ZNIMKY, nazva + '.png'))
+        # телефон: окремий контекст з дотиком (pointer:coarse, як на справжньому)
+        ct = br.new_context(viewport={'width': 375, 'height': 812}, is_mobile=True, has_touch=True, device_scale_factor=2)
+        tp = ct.new_page()
+        tp.route('**/tiles.openfreemap.org/fonts/**', lambda r: r.abort())
+        tp.goto(url)
+        tp.wait_for_function('window.KT&&KT.ready', timeout=90000)
+        tel = tp.evaluate(JS_TELEFON, 'пл. Вокзальна, 1')
+        if znimky:
+            os.makedirs(ZNIMKY, exist_ok=True); tp.screenshot(path=os.path.join(ZNIMKY, 'telefon-pl-vokzalna-1.png'))
+        ct.close()
         br.close()
     srv.shutdown()
-    bad, c = res['bad'], res['n']
+    bad, c = res['bad'] + [f'телефон: {b}' for b in tel['bad']], res['n']
+    print(f"   телефон 375×812: шторка {tel.get('hA')} px, точка над нею, +/− над нею; помилок {len(tel['bad'])}")
     print(f"   адрес {c['adres']} (з них з проблемою {c['z_problemoiu']}), сот {c['sot']}, проблем {c['problem']}, "
           f"кілець {c['kilets']}; розбіжностей {len(bad)}; {time.time() - t0:.0f} с (перевірка {t_perevirky:.0f} с)"
           + (f'; знімки — {os.path.relpath(ZNIMKY, ROOT)}' if znimky else ''))

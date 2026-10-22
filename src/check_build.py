@@ -20,7 +20,7 @@
 
 Еталон лежить у data/_check_last.json і в репозиторій не потрапляє.
 """
-import os, sys, gzip, json, shutil, hashlib, tempfile, subprocess, py_compile, re
+import os, sys, gzip, glob, json, shutil, hashlib, tempfile, subprocess, py_compile, re
 
 SRCD = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(SRCD)
@@ -72,7 +72,9 @@ TESTY = {
     'zhakkar': '4д. Стабільність ризику: спільних ліній з попередньою збіркою ≥0,7',
     'chyslo_problem': '4е. Число проблем: карта = «Проблеми» = problems_report',
     'uzhodzhenist': '7. Узгодженість у браузері: підказка = картка = сума видів',
+    'telefon': '7. Телефон 375×812: точка й +/− над шторкою, одна висота, 14 px, 44 px',
     'kandydaty': '4ж. Кандидати для аналізу фабул: файл є, непорожній, ≤20 МБ',
+    'atrybutsiia': '4з. Атрибуція: п\'ять джерел і умови OSM на карті, у звітах і файлах адрес',
     'poshuk_143': '8. Пошук: 143 запити Е12б — першим ≥131',
     'poshuk_opysky': '8. Пошук: описки — у перших п\'яти ≥12 з 13',
     'poshuk_andrii': '8. Пошук: запити Андрія — вулиця в перших трьох, ≤100 мс на телефоні',
@@ -488,6 +490,23 @@ def main(save=False):
     print(f'   {n_:,} пар, {mb_:.1f} МБ')
     if not n_ or mb_ > 20:
         print('   ПОМИЛКА файл кандидатів порожній чи понад 20 МБ'); return 1
+    print('4з. Атрибуція (S-К.20, S-З.7, S-Б.7): п\'ять джерел і умови OSM')
+    import atrybutsiia as ATR_
+    bez = []
+    sd_ = os.path.join(ROOT, 'site')
+    stor = [os.path.join(sd_, 'index.html')] + sorted(glob.glob(os.path.join(sd_, '*.html')))
+    for f in dict.fromkeys(stor):
+        if not os.path.exists(f) or os.path.basename(f) in ('kyiv.html', 'kyiv-gl.html', 'karta-zapasna.html'): continue
+        t = open(f, encoding='utf-8').read()
+        if '<meta http-equiv="refresh"' in t: continue        # переадресації
+        nema = [d for d in ATR_.DZHERELA if d not in t]
+        if nema: bez.append(f'{os.path.basename(f)}: немає {", ".join(nema)}')
+    fa = sorted(glob.glob(os.path.join(sd_, 'adresy', '*.json')))[:1]
+    if fa and ATR_.OSM_COPYRIGHT not in open(fa[0], encoding='utf-8').read(2000): bez.append('adresy/: немає рядка ліцензії')
+    if not os.path.exists(os.path.join(ROOT, 'LICENSE-DATA.md')): bez.append('немає LICENSE-DATA.md')
+    for b in bez: print('   ПОМИЛКА', b)
+    if bez: return 1
+    print(f'   на карті, у {len(stor) - 1} сторінках і файлах адрес — усе; LICENSE-DATA.md є')
     print('5. Розмітка і JavaScript')
     if problems:
         for p in problems:

@@ -7,7 +7,8 @@
 вкладкою «Скарги», якщо мешканці скаржились на той самий будинок (той самий
 ключ «вулиця + будинок», що й у map_skargy).
 
-Формат клітинки: [[шир×1e5, довг×1e5, підпис, [номери скарг у skargy.json]], …].
+Формат клітинки: {"l": рядок ліцензії (atrybutsiia.TEKST), "a": [[шир×1e5, довг×1e5,
+підпис, [номери скарг у skargy.json]], …]}.
 Підпис — назва вулиці як в OSM (pidpys), для адрес лише з КМДА — назва OSM тієї
 самої вулиці: підпис КМДА пише прізвище наперед («бульвар Шевченка Тараса»).
 """
@@ -65,8 +66,11 @@ def zibraty(P, dst_dir, log=print):
         out[kl(la, lo)].append([round(la * 1e5), round(lo * 1e5), lab, js])
     d = os.path.join(dst_dir, 'adresy')
     shutil.rmtree(d, ignore_errors=True); os.makedirs(d)
+    import atrybutsiia
     for key, xs in out.items():
-        json.dump(xs, open(os.path.join(d, key + '.json'), 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
+        # похідна база OSM — з рядком ліцензії в заголовку файлу (36.26.2, S-Б.7)
+        json.dump(dict(l=atrybutsiia.TEKST, a=xs), open(os.path.join(d, key + '.json'), 'w', encoding='utf-8'),
+                  ensure_ascii=False, separators=(',', ':'))
     tot = sum(len(x) for x in out.values())
     mb = sum(os.path.getsize(f) for f in glob.glob(os.path.join(d, '*.json'))) / 1048576
     log(f'   адреси без подій (36.18.4): {tot:,} (OSM {n_osm:,}, разом з КМДА {len(adr):,}; на карті з подіями '

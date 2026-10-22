@@ -205,10 +205,12 @@ const map=new maplibregl.Map({container:'map',center:[C0[1],C0[0]],zoom:M.only?1
 // © OpenMapTiles, дані © OpenStreetMap», і при запасній CARTO — рядок CARTO.
 const attrEl=document.createElement('div');
 attrEl.className='maplibregl-ctrl maplibregl-ctrl-attrib';
-// Рядок про адреси — той самий, що й у Leaflet-збірці (причину див. у tpl_map):
-// він не залежить від підкладки, тож стоїть за будь-якою з них.
-function setAttr(t){attrEl.innerHTML='<div class="maplibregl-ctrl-attrib-inner">'+t+
- ' · адреси — з текстів рішень ЄДРСР · адреси © КМДА</div>'}
+// Рядок — з atrybutsiia.py (M.atr, S-К.20): той самий, що внизу звітів і в
+// заголовку файлів адрес. Запасна підкладка CARTO — лише її рядок спереду.
+// На телефоні рядок згорнутий до «ⓘ», як у MapLibre (36.26.1).
+function setAttr(t){attrEl.innerHTML='<button class="k-atr-i" aria-label="Джерела даних" title="Джерела даних">ⓘ</button>'+
+ '<div class="maplibregl-ctrl-attrib-inner">'+(t===OFM_ATTR?'':esc(t)+' · ')+(M.atr||'')+'</div>'}
+attrEl.addEventListener('click',e=>{ if(e.target.closest('.k-atr-i')) attrEl.classList.toggle('k-atr-vidkr')});
 map.addControl({onAdd:()=>attrEl,onRemove(){}},'bottom-right');
 // Помилка до того, як стиль устиг завантажитися, — це відмова підкладки.
 // Пізніші помилки (окремий тайл не прийшов) підкладку не міняють. Мірило —
@@ -347,7 +349,8 @@ const r0Of=(n,mx)=>Math.max(R0_MIN,Math.min(14,R0_MIN+9.5*Math.pow(n/Math.max(mx
 // Невидима зона кліку — не менше 16 px у діаметрі навколо центру адреси
 // (WCAG 2.5.8 просить 24 px на ціль; на щільній карті це з'їло б сусідів,
 // тож 16 — і з сусідів береться найближча до курсора).
-const HIT_R=8;
+// На дотик — 20 px (36.27.4): палець ширший за курсор; розмір сот не міняється.
+const HIT_R=matchMedia('(pointer:coarse)').matches?20:8;
 function addrAt(p){ if(RINGS_ON||!map.getLayer('k-addr')) return null;
  // у сотах і стовпчиках крапок адрес немає — клік належить соті
  if(MODE==='soty'||MODE==='stovp') return null;
@@ -607,9 +610,14 @@ map.on('moveend',()=>{ if(!PLACE) return; const p=P[PLACE.i];
 // на вільну частину між карткою й навігатором (на телефоні — над карткою),
 // без наближення.
 function placeKeepVisible(i){
- const p=P[i]; if(!p) return;
+ const p=P[i]; if(p) nadShtorkoyu(p[0],p[1])}
+// Обране місце не під карткою: на ПК — збоку від неї, на телефоні — над
+// шторкою (36.27.1); однаково для адреси, соти й порожньої адреси.
+function nadShtorkoyu(la,lo){
  const cont=map.getContainer(), m=cont.getBoundingClientRect(), el=placeEl(), side=$('#side');
- const c=el.getBoundingClientRect(), q=map.project([p[1],p[0]]), W=cont.clientWidth, H=cont.clientHeight;
+ const c=el.getBoundingClientRect(), q=map.project([lo,la]), W=cont.clientWidth, H=cont.clientHeight;
+ // висота шторки — для +/− і «ⓘ» над нею (CSS --shtorka, 36.27.3)
+ document.documentElement.style.setProperty('--shtorka',Math.round(c.height)+'px');
  const phone=c.left-m.left<24&&c.width>W*.8;
  let dx=0, dy=0;
  if(phone){const top=c.top-m.top; if(q.y>top-24) dy=q.y-top/2}
@@ -1501,7 +1509,7 @@ function simPopup(f,ll){
  const an=v.slug?('#t-'+v.slug):'';
  // Речення «оцінка за умовами довкола…» перенесено в методику (29.09):
  // карта без пояснювальних текстів, лише посилання.
- h+=`<div class="rmeth"><a class="rdoc" style="display:inline;margin:0" href="skhozhi-umovy.html${(it[1]&&it[1]!=='без назви')?('?st='+encodeURIComponent(it[1])):''}${an}" target="_blank" rel="noopener">Як пораховано ↗</a></div></div>`;
+ h+=`<div class="rmeth"><a class="rdoc" style="display:inline;margin:0" href="ryzyk.html${(it[1]&&it[1]!=='без назви')?('?st='+encodeURIComponent(it[1])):''}${an}" target="_blank" rel="noopener">Як пораховано ↗</a></div></div>`;
  advOpen(false);
  const w=document.createElement('div'); w.innerHTML=h;
  // Чинники моделі поруч — якщо модель їх назвала; інакше просто все, що є

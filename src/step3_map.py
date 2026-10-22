@@ -479,6 +479,9 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
     # (36.20.1: «і так ясно, що рік не повний»); межа неповних місяців — лише в
     # розрахунках «після» (S-Р.9).
     meta['mon0'] = MIN_EVENT_DATE[:7]
+    # атрибуція — один рядок з atrybutsiia.py (S-К.20): той самий, що в звітах
+    import atrybutsiia
+    meta['atr'] = atrybutsiia.HTML
     meta['mon_n'] = 1 + max((e[5] for p in P for e in p[4]), default=0)
 
 

@@ -42,6 +42,35 @@ def mezhi(podii):
     return out, ostannie
 
 
+def nepovni_misiatsi(V, mon0, mon_n):
+    """Номери місяців (від mon0, 'YYYY-MM'), де очікувана повнота суміші всіх
+    видів нижча за POROH (S-З.4, 36.28.5): для графіка «Стан міста» замість
+    «останні два». Повнота виду за вік — частка подій, чиє рішення вийшло не
+    пізніше; вага виду — його частка подій."""
+    import podii as PD, step3_map as S3
+    xs = [(PD.theme(r[2]), _d(S3.ev_date(V['TKD'].get(r[0]), r[3])), _d(r[3] or '')) for r in V['rows']]
+    ostannie = max((r for _t, _e, r in xs if r), default=None)
+    if not ostannie: return set()
+    hranycia = ostannie - dt.timedelta(days=365)
+    zatr, vaga = collections.defaultdict(list), collections.Counter()
+    for th, e, r in xs:
+        vaga[th] += 1
+        if e and r and e <= hranycia and r >= e: zatr[th].append((r - e).days)
+    for z in zatr.values(): z.sort()
+    import bisect
+    tot = sum(vaga[t] for t in zatr) or 1
+    y0, m0 = int(mon0[:4]), int(mon0[5:7])
+    out = set()
+    for i in range(mon_n):
+        t = y0 * 12 + m0 - 1 + i
+        kin = dt.date(t // 12 + (t % 12 == 11), (t % 12 + 1) % 12 + 1, 1)    # перший день наступного місяця
+        vik = (ostannie - kin).days
+        if vik < 0: out.add(i); continue
+        c = sum(vaga[th] / tot * bisect.bisect_right(z, vik) / len(z) for th, z in zatr.items() if z)
+        if c < POROH: out.add(i)
+    return out
+
+
 def z_vybir(V):
     """Таблиця з відбору карти (step3_map.vybir): вид, дата з тексту, дата рішення."""
     import podii as PD, step3_map as S3

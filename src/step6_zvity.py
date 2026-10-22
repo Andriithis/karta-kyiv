@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import labels as L
 import mech as M
 import problems as PRB_          # пороги воріт у тексті звітів — з самого відбору
+import atrybutsiia as ATR
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'data')
@@ -99,13 +100,19 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
  .prob{break-before:page;border:0}a{color:#111;text-decoration:none}}
 """
 
-STORINKY = [('problemy.html', 'Проблеми'), ('skhozhi-umovy.html', 'Схожі умови'),
-            ('stan-mista.html', 'Стан міста'), ('metodyka.html', 'Методика')]
+# Розділ «Дослідження» за затвердженим макетом (36.28, S-З.1;
+# doslidzhennya/audyt-34/E9-maket-doslidzhennya.md): один вхід — сторінка-зміст,
+# та сама навігація вгорі всіх сторінок; ненаписаний розділ — сірим, без
+# посилання. «Схожі умови» тепер «Ризик» (36.28.4).
+STORINKY = [('doslidzhennya.html', 'Дослідження'), ('stan-mista.html', 'Стан міста'), ('problemy.html', 'Проблеми'),
+            ('ryzyk.html', 'Ризик'), (None, 'Вирішені'), (None, 'Коли'), (None, 'Розбори'),
+            ('metodyka.html', 'Методика')]
 
 
 def page(fn, title, lead, body, script=''):
-    nav = ''.join(f'<a href="{f}"' + (' aria-current="page"' if f == fn else '') + f'>{esc(t)}</a>'
-                  for f, t in STORINKY)
+    # поточна — жирним; ненаписана — сірим текстом без посилання (макет Е9)
+    nav = ''.join((f'<a href="{f}"' + (' aria-current="page" style="font-weight:700"' if f == fn else '') + f'>{esc(t)}</a>')
+                  if f else f'<span style="color:var(--faint)">{esc(t)}</span>' for f, t in STORINKY)
     return ('<!DOCTYPE html><html lang="uk"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<title>{esc(title)}</title><style>{CSS}</style></head><body><div class="wrap">'
@@ -113,7 +120,9 @@ def page(fn, title, lead, body, script=''):
             f'<h1>{esc(title)}</h1><div class="sub">{lead}</div></header>{body}'
             f'<p class="muted" style="margin-top:40px">Складено {dt.date.today().strftime("%d.%m.%Y")} з тих самих даних, '
             'що й карта. Адреси — з текстів рішень ЄДРСР: це місце, де подію оформлено, і воно не '
-            'завжди збігається з місцем, де все сталося.</p></div>'
+            'завжди збігається з місцем, де все сталося.</p>'
+            # атрибуція внизу кожної сторінки — той самий рядок, що на карті (S-З.7)
+            f'<p class="muted" style="font-size:12px">{ATR.HTML}</p></div>'
             f'{script}</body></html>')
 
 
@@ -161,6 +170,9 @@ def dani():
             except ValueError: pass
     zt.sort()
     D['zatrymka'] = (zt[len(zt) // 2], zt[int(len(zt) * .9)]) if zt else None
+    if V:
+        import povnota
+        D['nepovni'] = povnota.nepovni_misiatsi(V, D['mon0'], D['mon_n'])
     D['plosha'] = V.get('plosha')
     # події, поставлені на перехрестя (завдання 30, 4.4)
     D['perekhrestia'] = sum(1 for r in V['rows'] if r[9] == 'cross')
@@ -237,10 +249,13 @@ def stan_mista(D):
     mm = [0] * D['mon_n']
     for _p, e in ev:
         if 0 <= e[5] < len(mm): mm[e[5]] += 1
-    part = {len(mm) - 1, len(mm) - 2}
+    # неповні місяці — за затримкою видів, а не «останні два» (S-З.4, 36.28.5)
+    part = D.get('nepovni')
+    if part is None: part = {len(mm) - 1, len(mm) - 2}
     b.append('<h2>Динаміка за датою події</h2>' + hist(mm, [mon_label(D, i) for i in range(len(mm))], part)
-             + '<p class="muted">Блідіші — останні два місяці: рішення публікують із затримкою, тож ці місяці '
-             'ще неповні. Дата — дата самої події з тексту рішення; де її немає — дата рішення.</p>')
+             + '<p class="muted">Блідіші — місяці, де опубліковано менше 90% рішень, які ще надійдуть: суди '
+             'публікують із затримкою, і для крадіжок вона сягає року. Дата — дата самої події з тексту рішення; '
+             'де її немає — дата рішення.</p>')
     kv = collections.Counter()
     for _p, e in ev:
         if e[5] >= 0:
@@ -478,8 +493,10 @@ def skhozhi_umovy(D):
     # Модель «разом» (RISHENNYA 33.2.1; ZAVDANNYA-30, ч. 3) — з перенавчання
     # 30.09; до нього в engine_report лежить модель лише середовища
     novi = any('PAI_як_рахувалося' in v for v in ER.values() if isinstance(v, dict))
-    b = ['<p>Шар показує вулиці, де події ймовірні далі, за всім, що про них відомо: події, що вже були, і '
-         'середовище довкола (Caplan, Kennedy). Він не пояснює подій: гіпотезу, чому тут, висуває людина на місці.</p>']
+    b = ['<p>Ризик — вулиці й точки, де події ймовірні далі. Точки (з перенавчання 02.11.2026) — історія подій за 24 місяці, де торішня '
+         'подія важить удвічі менше за нинішню; для хуліганства — середовище довкола (Caplan, Kennedy), бо лише '
+         'там воно вгадує краще за саму історію понад похибку. Вулиці — модель, що поєднує історію й середовище '
+         '(таблиця нижче). Шар не пояснює подій: гіпотезу, чому тут, висуває людина на місці.</p>']
     if not novi:
         b.append('<div class="empty">Модель ще не перенавчена за завданням 30: числа нижче — з попередньої '
                  'моделі лише середовища. Після перенавчання звіт оновиться сам.</div>')
@@ -604,16 +621,17 @@ def problemy(D):
         b.append(f'<p class="muted">Окремо, не в переліку: {num(rep_.get("dorozhnikh_dilianok", 0))} дорожніх ділянок '
                  'з ДТП без потерпілих (інша природа — знаменник тут транспортний потік) і '
                  f'{num((rep_.get("formuietsia") or {}).get("vsogo", 0))} місць, де проблема, можливо, формується.</p>')
-    b.append('<div class="tw"><table><tr><th>#</th><th>Місце</th><th>Що відбувається</th><th>Район</th>'
-             '<th class="n">Подій</th><th>Мешканці (1551)</th></tr>')
+    # таблиця-зміст за макетом Е9: №, адреса, що відбувається, подій, район;
+    # голос мешканців — на сторінці кожної проблеми
+    b.append('<div class="tw"><table><tr><th>#</th><th>Адреса</th><th>Що відбувається</th>'
+             '<th class="n">Подій</th><th>Район</th></tr>')
     for k, (i, q) in enumerate(items, 1):
         p = P[i]
         b.append(f'<tr><td class="n">{k}</td><td><a href="#p-{k}">{esc(p[2])}</a>'
                  + (f' <span class="tag">{esc(q["riven"])}</span>' if q.get('riven') in ('лінія', 'ділянка') else '')
                  + (' <span class="tag">фіксує поліція</span>' if q.get('status') == 'фіксує поліція' else '') + '</td>'
                  f'<td><span class="sw" style="background:{KOLIR.get(M.simtheme(q["sim"]), "#888")}"></span>{esc(q["mech"])}</td>'
-                 f'<td>{esc(dn[p[8]] if len(p) > 8 and 0 <= p[8] < len(dn) else "—")}</td><td class="n">{q["n"]}</td>'
-                 f'<td>{esc(((q.get("golos") or {}).get("stan")) or "—")}</td></tr>')
+                 f'<td class="n">{q["n"]}</td><td>{esc(dn[p[8]] if len(p) > 8 and 0 <= p[8] < len(dn) else "—")}</td></tr>')
     b.append('</table></div>')
     for k, (i, q) in enumerate(items, 1):
         p = P[i]
@@ -863,10 +881,10 @@ def build(outdir):
         page('stan-mista.html', 'Стан міста', 'Коротко: скільки, де, коли — за подіями карти.', ''.join(b)))
     made.append('stan-mista.html')
     b, script = skhozhi_umovy(D)
-    open(os.path.join(outdir, 'skhozhi-umovy.html'), 'w', encoding='utf-8').write(
-        page('skhozhi-umovy.html', 'Схожі умови', 'Де середовище схоже на місця з подіями — за видами, '
-             'з перевіркою на роках і частині міста, яких модель не бачила.', ''.join(b), script))
-    made.append('skhozhi-umovy.html')
+    open(os.path.join(outdir, 'ryzyk.html'), 'w', encoding='utf-8').write(
+        page('ryzyk.html', 'Ризик', 'Де події ймовірні далі — за видами, з перевіркою на роках і частині міста, '
+             'яких модель не бачила.', ''.join(b), script))
+    made.append('ryzyk.html')
     b, npr = problemy(D)
     # число — з problems_report, окремо місця, лінії й ділянки (S-ПР.14)
     import problems as PRB
@@ -876,7 +894,47 @@ def build(outdir):
              'Сторінка на кожну; друкується на A4.', ''.join(b)))
     made.append('problemy.html')
     open(os.path.join(outdir, 'metodyka.html'), 'w', encoding='utf-8').write(
-        page('metodyka.html', 'Методика', 'Спільний додаток до трьох звітів: дані, ворота проблем, голос '
-             'мешканців, «Схожі умови».', ''.join(metodyka(D))))
+        page('metodyka.html', 'Методика', 'Спільний додаток до звітів: дані, ворота проблем, голос '
+             'мешканців, ризик.', ''.join(metodyka(D))))
     made.append('metodyka.html')
+    open(os.path.join(outdir, 'doslidzhennya.html'), 'w', encoding='utf-8').write(
+        page('doslidzhennya.html', 'Дослідження', 'Що видно з судових рішень про Київ: скільки й де, які місця '
+             'стали проблемами, де ймовірне далі і що вже вирішилося.', zmist(D, n)))
+    made.append('doslidzhennya.html')
     return made
+
+
+def zmist(D, n):
+    """Сторінка-зміст за затвердженим макетом (E9-maket-doslidzhennya.md, 36.28.1,
+    S-З.1): картка — дрібне сіре питання, назва жирно, 1–2 рядки з числами цієї
+    збірки, «Відкрити»; ненаписаний розділ — сіра картка з плашкою, коли
+    з'явиться, без посилання. Сітка від 250 px, на телефоні — одна колонка."""
+    adr = sorted((len(p[4]) for p in D['doma'] if p[4]), reverse=True)
+    m = len(adr); top = sum(adr[:max(1, round(m * .1))]) if m else 0
+    ch = PRB_.chyslo_problem(D.get('PR') or {})
+    mists = ch['mists'] + ch['dilianok']
+    R = [('stan-mista.html', 'Скільки, де, коли', 'Стан міста',
+          [f'<b>{num(n)}</b> {pl(n, "подія", "події", "подій")} на {num(m)} {pl(m, "адресі", "адресах", "адресах")}',
+           f'На 10% адрес — {pct(top / n if n else 0)} подій'], None),
+         ('problemy.html', 'З чого почати на місці', 'Проблеми',
+          [f'<b>{num(mists)}</b> {pl(mists, "місце", "місця", "місць")} · {num(ch["linii"])} {pl(ch["linii"], "лінія", "лінії", "ліній")} · '
+           f'{num(ch["dorozhnikh"])} {pl(ch["dorozhnikh"], "ділянка", "ділянки", "ділянок")} доріг',
+           'Зміст за районами, сторінка на кожну — для друку'], None),
+         ('ryzyk.html', 'Де події ймовірні далі', 'Ризик',
+          ['Вулиці за історією подій; хуліганство — за середовищем', 'Перевірено на роках, яких модель не бачила'], None),
+         (None, 'Що спрацювало', 'Вирішені проблеми', ['Місця, де події зникли, і що там змінилося'], 'після перевірки кандидатів'),
+         (None, 'Погода, тривоги, свята', 'Коли', ['Що змінює кількість подій у часі, а що ні'], 'після першої хвилі'),
+         (None, 'Роботи слухачів', 'Розбори', ['Розбори проблем за SARA, «група N», без прізвищ'], 'з першим розбором'),
+         ('metodyka.html', 'Як порахано', 'Методика', ['Дані, ворота проблем, ризик, межі'], None)]
+    kartky = ''.join(
+        f'<div class="card zm{" zm-ni" if not f else ""}"><div class="zm-p">{esc(pyt)}</div><div class="zm-n">{esc(nazva)}</div>'
+        + ''.join(f'<div class="zm-r">{r}</div>' for r in ryadky)
+        + (f'<a class="zm-a" href="{f}">Відкрити</a>' if f else f'<span class="zm-pl">{esc(plashka)}</span>') + '</div>'
+        for f, pyt, nazva, ryadky, plashka in R)
+    return ('<style>.zmg{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}'
+            '@media (max-width:560px){.zmg{grid-template-columns:1fr}}'
+            '.zm{display:flex;flex-direction:column;gap:4px}.zm-p{font-size:12px;color:var(--faint)}'
+            '.zm-n{font-weight:700;font-size:17px}.zm-r{font-size:14px}.zm-a{margin-top:auto;padding-top:6px}'
+            '.zm-ni{color:var(--faint)}.zm-pl{margin-top:auto;align-self:flex-start;font-size:12px;border:1px solid var(--rule);'
+            'border-radius:10px;padding:1px 8px}</style>'
+            f'<div class="zmg">{kartky}</div>')
