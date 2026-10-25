@@ -76,6 +76,7 @@ TESTY = {
     'kandydaty': '4ж. Кандидати для аналізу фабул: файл є, непорожній, ≤20 МБ, ДТП з полем mitky',
     # окремим запуском (test_determinizm.py), не в check_build: дві збірки — ~6 хв
     'determinizm': 'test_determinizm.py: збірка двічі — той самий хеш (щомісяця в «Оновленні карти»)',
+    'histerezys_pravyla': '4л. Гістерезис не тримає проблему, чиї події пішли через правила',
     'bez_nomera': '4й. Події з точністю «вулиця» — 0 у точках будинків і перехресть',
     'bez_naselennia': '4к. Шару «Населення» на карті немає: ні перемикача, ні шару, ні файлу',
     'vaga': '4и. Вага першого завантаження: ≤3 МБ розпаковано (жовта), ≤5 МБ і ≤1 МБ мережею (червона)',
@@ -329,6 +330,7 @@ def main(save=False):
     problems.REPORT = os.path.join(tmp, 'problems_report.json.gz')
     problems.SKHOZHI = os.path.join(tmp, 'skhozhi_1551.json')
     problems.KANDYDATY = os.path.join(tmp, 'kandydaty.json.gz')
+    problems.ZMINY = os.path.join(tmp, 'ZMINY-METODYKY.md')      # 36.40: журнал не чіпаємо
 
     CASES = [('міська', dict(district=None)),
              ('районна', dict(district='Деснянський'))]
@@ -360,6 +362,24 @@ def main(save=False):
             print(f'   {len(html)/1048576:.1f} МБ · {now[name]}')
     finally:
         pass
+
+    print('4л. Гістерезис не тримає проблему, чиї події пішли через правила (36.40, S-ПР.13)')
+    # Штучна минула збірка: проблема X з двома подіями. Цього разу (1) обидві на
+    # місці, але подій замало — гістерезис тримає; (2) одна пішла з даних
+    # (стаття поза видами) — не тримає й пише в BEZ_HISTEREZYSU.
+    rep_ = problems.REPORT
+    problems.REPORT = os.path.join(tmp, 'hist_test.json')
+    json.dump(dict(versiia=dict(podii_do='2026-01-01'),
+                   perelik=[dict(sim='X', p=[50.4, 30.5], status='хронічна', riven='точка', docs=['a', 'b'])]),
+              open(problems.REPORT, 'w', encoding='utf-8'))
+    z1 = [dict(riven='точка', status='мало', sim='X', p=(50.4, 30.5), docs=['a', 'b'], podii=2)]
+    z2 = [dict(riven='точка', status='мало', sim='X', p=(50.4, 30.5), docs=['a'], podii=1)]
+    t1 = bool(problems.histerezys(z1, '2026-02-01', log=lambda *a: None))
+    t2 = bool(problems.histerezys(z2, '2026-02-01', log=lambda *a: None)) or not problems.BEZ_HISTEREZYSU
+    problems.REPORT = rep_
+    print(f'   події на місці — тримає: {"так" if t1 else "НІ"}; подія пішла через правила — не тримає: {"так" if not t2 else "НІ"}')
+    if not t1 or t2:
+        print('   ПОМИЛКА гістерезис не за 36.40'); return 1
 
     print('4й. Події без номера будинку — не в точках будинків (S-А.3, Е25 Н1)')
     # Точність кожної події — з геокодера (geo.precision тестової бази), точка

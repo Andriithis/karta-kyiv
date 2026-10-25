@@ -38,6 +38,7 @@ def zbirka(tmp, nazva):
     # умови однакові.
     rep = os.path.join(d, 'problems_report.json.gz')
     problems.REPORT, problems.SKHOZHI, problems.KANDYDATY = rep, os.path.join(d, 's.json'), os.path.join(d, 'k.json.gz')
+    problems.ZMINY = os.path.join(d, 'zminy.md')
     map_excl.EXCL, map_excl.REVIEW = os.path.join(d, 'excl.txt'), os.path.join(d, 'top.txt')
     with contextlib.redirect_stdout(io.StringIO()):
         step3_map.main(out=os.path.join(d, 'site', 'index.html'))

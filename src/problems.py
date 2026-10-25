@@ -616,13 +616,37 @@ def chyslo_tekst(c):
 
 
 POROH_HIST = .8      # S-ПР.13: нижче 80% порогу дві збірки поспіль — проблема зникає
+BEZ_HISTEREZYSU = []  # 36.40: проблеми минулої збірки, чиї події пішли через правила
+
+
+ZMINY = os.path.join(ROOT, 'doslidzhennya', 'ZMINY-METODYKY.md')
+
+
+def zmina_metodyky(S, log=print):
+    """Рядок у журнал змін методики (36.40, S-З.8): проблеми, які зникли не
+    з даними, а через зміну правил. Один рядок на знімок даних S — повторна
+    збірка на тих самих даних його не дублює. Workflow комітить журнал."""
+    if not os.path.exists(ZMINY): return
+    t = open(ZMINY, encoding='utf-8').read()
+    mitka = f'<!-- 36.40 {S} -->'
+    if mitka in t: return
+    ryadok = (f'| {S[8:10]}.{S[5:7]}.{S[:4]} (збірка) | Зникли без гістерезису — події пішли через зміну правил '
+              f'(36.40): ' + '; '.join(f'{", ".join(b["adresy"])} ({M.simname(b["sim"])}, пішло {b["pishlo"]} '
+                                       f'з {b["pishlo"] + b["zalyshylos"]})' for b in BEZ_HISTEREZYSU)
+              + f' {mitka} | −{len(BEZ_HISTEREZYSU)} | не міняє |')
+    t = re.sub(r'(\|---\|---\|---\|---\|\n)', r'\1' + ryadok.replace('\\', r'\\') + '\n', t, count=1)
+    open(ZMINY, 'w', encoding='utf-8').write(t)
+    log(f'   -> doslidzhennya/ZMINY-METODYKY.md: рядок 36.40 за {S}')
 
 
 def histerezys(zapysy, S, log=print):
     """id(запису) -> стан гістерезису для точок, що були проблемою минулої
     збірки, а цього разу не пройшли ворота. Минула збірка — той самий файл
     звіту в main. Лічильник «нижче 80%» росте лише з новими даними (інший
-    знімок S): дві збірки на тих самих даних дають той самий перелік (S-Р.11)."""
+    знімок S): дві збірки на тих самих даних дають той самий перелік (S-Р.11).
+    Проблеми, чиї події пішли через зміну правил, гістерезис не тримає —
+    вони в BEZ_HISTEREZYSU (36.40, S-ПР.13)."""
+    BEZ_HISTEREZYSU.clear()
     pop = {}
     for f, op in ((REPORT, gzip.open), (REPORT[:-3], open)):
         if os.path.exists(f):
@@ -636,18 +660,37 @@ def histerezys(zapysy, S, log=print):
         sims = [y['sim'] for y in x.get('rozbyvka') or [] if y.get('status') in ('хронічна', None)] or [x['sim']]
         for s in sims:
             for c in x.get('chastyny') or [x]:
-                buly.append((s, tuple(c['p'])))
+                buly.append((s, tuple(c['p']), x.get('docs') or []))
+    # де кожна подія стоїть цієї збірки (36.40): документ минулої проблеми,
+    # якого немає в жодній парі механізму (стаття поза видами, 36.38) чи який
+    # стоїть далі ділянки (нове правило адрес), пішов через правила, а не з
+    # даними — тоді гістерезис не тримає (Берковецька, 6-Д: 1 подія,
+    # «хронічна», бо решта була ст.184). Старіння подій документів не
+    # прибирає: docs — за весь час.
+    de = {}
+    for z in zapysy:
+        for d in z.get('docs') or []: de.setdefault((z['sim'], d), []).append(tuple(z['p']))
     out = {}
     for r in zapysy:
         if r['riven'] != 'точка' or r['status'] not in ('мало', 'гостра', 'випадкова'): continue
-        if not any(s == r['sim'] and dist(p, r['p']) <= R_MISCE for s, p in buly): continue
+        pop_r = [d for s, p, d in buly if s == r['sim'] and dist(p, r['p']) <= R_MISCE]
+        if not pop_r: continue
+        pishly = [d for ds in pop_r for d in ds
+                  if not any(dist(q, r['p']) <= DILIANKA_MAX for q in de.get((r['sim'], d), []))]
+        if pishly:
+            BEZ_HISTEREZYSU.append(dict(sim=r['sim'], p=r['p'], adresy=r.get('adresy', [])[:2],
+                                        pishlo=len(pishly), zalyshylos=r.get('podii', 0)))
+            continue
         k0 = max([k for s, p, k in k_pop if s == r['sim'] and dist(p, r['p']) <= R_MISCE] or [0])
         sylna = r.get('za_2roky', 0) >= POROH_HIST * MIN_POD
         k = k0 if S0 == S else (0 if sylna else k0 + 1)
         if k >= 2: continue
         out[id(r)] = dict(nyzhche_80=k, za_2roky=r.get('za_2roky', 0), porih=MIN_POD)
     log(f'   гістерезис: минула збірка {S0 or "—"}, проблем-точок тоді {len(buly)}, '
-        f'лишились за гістерезисом {len(out)} (з них нижче 80% порогу {sum(1 for v in out.values() if v["nyzhche_80"])})')
+        f'лишились за гістерезисом {len(out)} (з них нижче 80% порогу {sum(1 for v in out.values() if v["nyzhche_80"])}); '
+        f'без гістерезису — події пішли через правила (36.40): {len(BEZ_HISTEREZYSU)}'
+        + ''.join(f'; {", ".join(b["adresy"])} ({b["sim"]}, пішло {b["pishlo"]})' for b in BEZ_HISTEREZYSU))
+    if BEZ_HISTEREZYSU: zmina_metodyky(S, log)
     return out
 
 
@@ -1294,6 +1337,7 @@ def run(V=None, log=print, FACT=None):
         # стан гістерезису для наступної збірки (S-ПР.13)
         histerezys=[dict(sim=r['sim'], p=list(r['p']), nyzhche_80=r['histerezys']['nyzhche_80'])
                     for r in zapysy if r.get('histerezys')],
+        bez_histerezysu=list(BEZ_HISTEREZYSU),       # 36.40: події пішли через правила
         inshi=[{k: v for k, v in r.items() if k not in ('statti', 'docs')} for r in zapysy
                if r['status'] not in PROBLEMA and r['status'] != 'не перевірена адреса'][:3000])
     try:
