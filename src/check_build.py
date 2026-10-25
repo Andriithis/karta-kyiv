@@ -76,6 +76,7 @@ TESTY = {
     'kandydaty': '4ж. Кандидати для аналізу фабул: файл є, непорожній, ≤20 МБ, ДТП з полем mitky',
     # окремим запуском (test_determinizm.py), не в check_build: дві збірки — ~6 хв
     'determinizm': 'test_determinizm.py: збірка двічі — той самий хеш (щомісяця в «Оновленні карти»)',
+    'bez_nomera': '4й. Події з точністю «вулиця» — 0 у точках будинків і перехресть',
     'bez_naselennia': '4к. Шару «Населення» на карті немає: ні перемикача, ні шару, ні файлу',
     'vaga': '4и. Вага першого завантаження: ≤3 МБ розпаковано (жовта), ≤5 МБ і ≤1 МБ мережею (червона)',
     'atrybutsiia': '4з. Атрибуція: п\'ять джерел і умови OSM на карті, у звітах і файлах адрес',
@@ -332,7 +333,7 @@ def main(save=False):
     CASES = [('міська', dict(district=None)),
              ('районна', dict(district='Деснянський'))]
 
-    now, problems, city_html = {}, [], ''
+    now, problems, city_html, tochnist_mista = {}, [], '', {}
     try:
         for name, kw in CASES:
             print(f'3. Збірка: {name}')
@@ -348,7 +349,9 @@ def main(save=False):
                 sys.stdout = keep
                 out.close()
             html = open(dst, encoding='utf-8').read()
-            if name == 'міська': city_html = dst
+            if name == 'міська':
+                city_html = dst
+                tochnist_mista = dict(step3_map.LAST_TOCHNIST)
             now[name] = hashlib.sha256(html.encode('utf-8')).hexdigest()[:16]
             for e in check_markup(html):
                 problems.append(f'{name}: розмітка — {e}')
@@ -357,6 +360,19 @@ def main(save=False):
             print(f'   {len(html)/1048576:.1f} МБ · {now[name]}')
     finally:
         pass
+
+    print('4й. Події без номера будинку — не в точках будинків (S-А.3, Е25 Н1)')
+    # Точність кожної події — з геокодера (geo.precision тестової бази), точка
+    # — з тієї самої збірки. Центр вулиці збігався з будинком (Електротехнічна,
+    # 16), і події без номера ставали подіями будинку.
+    import sqlite3
+    with sqlite3.connect(TESTDB) as cx_:
+        prec_ = dict(cx_.execute('select doc_id, precision from geo'))
+    zli_ = [d for d, t in tochnist_mista.items() if t in (1, 2) and prec_.get(d) not in step3_map.POINT]
+    print(f'   подій у точках будинків і перехресть: {sum(1 for t in tochnist_mista.values() if t in (1, 2)):,}; '
+          f'з точністю «вулиця» серед них: {len(zli_)}')
+    if zli_:
+        print(f'   ПОМИЛКА події без номера в точці будинку, напр. {zli_[:5]}'); return 1
 
     print('4. Установи не просочилися на карту')
     # Дві перевірки, бо однієї мало. Перелік виключень — те, що вирішило

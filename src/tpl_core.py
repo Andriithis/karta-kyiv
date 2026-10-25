@@ -13,7 +13,8 @@ computeVis() — хто саме зараз видимий і якого кол�
 JS_CORE = r"""const $=s=>document.querySelector(s);
 const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>
  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const lc=s=>s?s.charAt(0).toLowerCase()+s.slice(1):s;
+// Абревіатуру («ДТП») не чіпаємо: інакше «переважає дТП» (Е25, Н11)
+const lc=s=>s&&!/^[А-ЯІЇЄҐA-Z]{2}/.test(s)?s.charAt(0).toLowerCase()+s.slice(1):s;
 $('#fc').innerHTML=M.courts.map((n,i)=>`<label><input type="checkbox" data-c="${i}" checked>${n}</label>`).join('');
 $('#fy').innerHTML=M.years.map((n,i)=>`<label><input type="checkbox" data-y="${i}" checked>${n}</label>`).join('');
 const fmt=n=>n.toLocaleString('uk');

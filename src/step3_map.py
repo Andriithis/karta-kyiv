@@ -29,6 +29,7 @@ from map_problems import COURTS, SLUG
 LAST_META = {}          # meta останньої збірки — читає крок 5
 CANON = {}              # doc_id -> назва вулиці з OSM для підпису (vybir -> zbirka)
 LAST_DOCS = []          # справи адрес для панелі, паралельно до точок карти
+LAST_TOCHNIST = {}      # doc_id -> p[3] точки, куди стала подія (check_build, S-А.3)
 LAST_VYBIR = None       # відібрані події останньої збірки — їх беруть звіти (step6)
 LAST_KARTA = None       # точки міської карти з проблемами, підписи статей, meta —
                         # звіти рахують ті самі числа, що видно на карті (PLAN-ZVITY, п. 2)
@@ -375,7 +376,10 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
         et = (tk or {}).get('time') or ''
         if et[:2].isdigit():
             tm = et
-        agg[(round(la, 5), round(lo, 5))].append(
+        # Центр вулиці — окремий кошик навіть у тій самій координаті, що й
+        # будинок (Е25, Н1): OSM ставить центр Електротехнічної рівно на
+        # будинок 16, і 126 подій без номера ставали «подіями будинку 16».
+        agg[(round(la, 5), round(lo, 5), prec in POINT)].append(
             (ci[court], li[lb], yi.get(ev_year[doc], 0),
              int(tm[:2]) if tm and tm[:2].isdigit() else -1,
              PREC.get(prec, 0), date, street or '', house or '',
@@ -398,7 +402,7 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
     DOCS = []          # паралельно до P: справи адреси для правої панелі
     DOCIDX = {}        # doc_id -> (індекс точки, індекс події в p[4])
     n_street = 0
-    for (la, lo), evs in agg.items():
+    for (la, lo, _tochna), evs in agg.items():
         hs = [e for e in evs if e[4] and e[6]]
         if hs:
             e = hs[0]
@@ -449,6 +453,11 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
                      for e_ in ev_sorted])
     print(f'унікальних адрес: {len(P):,} '
           f'(з них {n_street:,} — центри вулиць, точного будинку немає)')
+    # doc_id -> точність точки, куди стала подія (до обрізання районом):
+    # check_build звіряє з точністю геокодера — подія без номера не має бути
+    # в точці будинку (S-А.3, Е25 Н1)
+    global LAST_TOCHNIST
+    LAST_TOCHNIST = {d: P[i][3] for d, (i, _k) in DOCIDX.items()}
 
     groups_idx = {}
     for ti, t in enumerate(L.ORDER):

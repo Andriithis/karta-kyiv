@@ -819,7 +819,9 @@ def main():
                         c = float(fP.params[k_]) * (XP[i, j] - XP[:, j].mean())
                         if c > 0 and ctypP[j]: rows.append((c, cnameP[j]))
                     return [r for _c, r in sorted(rows, reverse=True)[:3]]
-                tochky_out[key] = dict(theme=th, name=nm, pai=round(PAI_P, 2), items=[
+                # metod — щоб звіт «Ризик» писав метод точок з даних, а не з
+                # календаря (Е25, Н12: «з перенавчання 02.11» стояло до нього)
+                tochky_out[key] = dict(theme=th, name=nm, pai=round(PAI_P, 2), metod=metod, items=[
                     [round(TP[i]['la'], 5), round(TP[i]['lo'], 5), TP[i]['typ'], int(n2P[i]),
                      round(float(pctP[i]), 2), round(float(pmP[i]), 2), facP(i)] for i in oP[:kP]])
             return info
