@@ -439,6 +439,11 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
             # tidy_end — хвіст кваліфікації («тому його дії») і в уже
             # записаних частинах, без їх перезапису
             f = '' if tk['vada'] == 'шкідлива' else TK.tidy_end(tk['fab'])
+            # прохід лишив фабулу порожньою, а витяг обставин є — беремо його
+            # (Е25, Н10: 526 порожніх карток); «шкідливі» не повертаємо — з 20
+            # навмання п'ять були процедурою («Автоматизованого розподілу…»)
+            if not f and not tk['fab']:
+                f = next((fab[x] for x in case_docs.get(doc, [doc]) if fab.get(x)), '')
             kl = tk['klass']
         else:
             f = next((fab[x] for x in case_docs.get(doc, [doc]) if fab.get(x)), '')

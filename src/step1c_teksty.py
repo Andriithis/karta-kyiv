@@ -583,12 +583,48 @@ def bez_ukaziv(fab):
     return re.sub(r'(стану),(?=\S)', r'\1, ', ''.join(out)) if len(out) > 1 else fab
 
 
+# Повне ПІБ поліцейського при званні чи посаді (Е25, Н10; S-Б.5): лишаємо
+# звання, ім'я прибираємо — фабула публічна, а поліцейський не учасник події.
+PIB_POLITSII = re.compile(r"((?:сержант|лейтенант|капітан|майор|підполковник|полковник|інспектор|поліцейськ)\w*"
+                          r"[^.;]{0,60}?)\s+[А-ЯІЇЄҐ][а-яіїєґ'’]+\s+[А-ЯІЇЄҐ][а-яіїєґ'’]+\s+"
+                          r"[А-ЯІЇЄҐ][а-яіїєґ'’]+(?:вич|івн|ївн)\w*")
+# Шапка RTF замість тексту («\*Times New Roman;…;Tahoma;;;; Справа № …»)
+RTF_SHAPKA = re.compile(r'Times New Roman|Tahoma;|\\rtf|;;;')
+# Зачин «До суду надійшов протокол …, згідно якого / про те, що» — до події
+# (S-П.7, Н10): речення з подією всередині раніше лишалося з цим зачином
+# крапка всередині дати чи номера («від 24.09.2025, згідно якого») і в «р.»
+# («від 04.04.2024 р. відносно») — не межа
+_NK = r'(?:[^.]|\.(?=\d)|(?<=\s[рм])\.)'
+SHOW_INTRO_CUT = re.compile(r'^\s*(?:До\s+' + _NK + r'{0,160}?суд\w*' + _NK + r'{0,80}?|На\s+розгляд\s+' + _NK + r'{0,80}?)'
+                            r'\s*надійш\w+\s+'
+                            + _NK + r'{0,260}?(?:згідно\s+(?:з\s+)?як\w+|у\s+якому\s+зазначено|про\s+те\s*,?|'
+                            r'(?:відносно|щодо)(?:\s+ОСОБА_\d+\s*,?\s*(?:зі\s+змісту\s+якого\s+\w+|який|яка)?)?)'
+                            r'\s*,?\s*(?:що\s*,?\s*)?', re.I)
+
+
+def bez_pib_politsii(t):
+    # кілька разів: «інспектора поліції Донцова А. А. та Лисенка О. Л.» — друге
+    # ім'я стоїть при тому самому званні, яке перший збіг уже забрав
+    for _ in range(4):
+        if not t: break
+        t2 = PIB_POLITSII.sub(r'\1', t)
+        if t2 == t: break
+        t = t2
+    # після двох імен лишалося «інспектора поліції та , внаслідок»
+    return re.sub(r'\s+(?:та|і|й)\s*(?=[,.;])', '', t) if t else t
+
+
 def pokaz(fab, kd='КК'):
     """Фабула з проходу -> опис на карті й у панелі. Межа — стеля проходу
     (КУпАП 1 000, КК 2 500), лише по кінцю речення."""
     if not fab:
         return ''
-    t = tidy_end(bez_ukaziv(fab))
+    if RTF_SHAPKA.search(fab[:300]):
+        # шапка RTF: опис — лише після «ВСТАНОВИВ», інакше опису немає (Н10)
+        m = re.search(r'В\s?С\s?Т\s?А\s?Н\s?О\s?В\s?И\s?В\s*:?', fab, re.I)
+        if not m: return ''
+        fab = fab[m.end():]
+    t = tidy_end(bez_ukaziv(bez_pib_politsii(fab)))
     out = []
     sents = _sentences(t)
     # Перелік судимостей на кілька речень, що кінчається «за наступних
@@ -601,6 +637,11 @@ def pokaz(fab, kd='КК'):
     for k, s in enumerate(sents):
         s = s.strip()
         if not out:
+            m_ = SHOW_INTRO_CUT.match(s)
+            if m_ and is_event_sentence(s[m_.end():]):
+                # учасник був у зачині («відносно ОСОБА_1, який …») — лишаємо його
+                who, s = re.search(r'ОСОБА_\d+', m_.group()), s[m_.end():]
+                if who and who.group() not in s[:80]: s = who.group() + ' ' + s
             if SHOW_INTRO.search(s) and not is_event_sentence(s):
                 continue
             # Окреме речення про укази («Відповідно до Указу … введено воєнний
@@ -869,7 +910,8 @@ def rozbir(text, cat, rishennia=''):
     res, sent = adresa(full, text, nar=PD.theme(cat) == 'НАР', zhytlo=VBYVSTVO(cat))
     kd = kodeks(cat)
     return dict(
-        fab=_cut(full, CAP[kd]), fab_len=len(full), end_found=found, kodeks=kd, vada=v,
+        # ПІБ поліцейського не зберігаємо: data/teksty публічні (S-Б.5, Н10)
+        fab=bez_pib_politsii(_cut(full, CAP[kd])), fab_len=len(full), end_found=found, kodeks=kd, vada=v,
         date=event_date(full), time=event_time(full) or (res.get('time') or ''),
         addr_sentence=sent, street=res['street'] or '', house=res['house'] or '',
         level=res['level'],
