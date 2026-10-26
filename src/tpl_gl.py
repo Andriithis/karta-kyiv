@@ -517,9 +517,17 @@ function oglHTML(d){
  } else {
   // Проблеми адреси — блоками: вид, сценарій, «40 з 307»; клік — окрема
   // картка проблеми з лише її подіями (S-К.12)
-  const vsi=p[4].length;
-  h+=probs.map((q,j)=>`<div class="kp-pc" role="button" tabindex="0" data-kp-prob="${j}"><div class="kp-pch">Проблема · ${esc(q.theme)}</div>`+
-   `<div class="kp-pct">${esc(q.mech)}</div><div class="tt">${fmt(q.n)} з ${fmt(vsi)} ${pl(vsi,'події','подій','подій')} адреси</div></div>`).join('');
+  // Перше число — події проблеми саме на цій адресі, друге — усі події адреси;
+  // події всієї лінії чи ділянки — окремо (Андрій 26.10: «10 з 6 подій
+  // адреси» на Кадетському Гаю, 11 — q.n рахувало всю лінію).
+  const vsi=p[4].length, i=PLACE.i;
+  const tut=q=>q.ev&&q.ev.length?q.ev.filter(r=>r[0]===i).length
+   :(()=>{const labs=new Set((q.arts||[]).map(a=>a[0])); return p[4].filter(e=>labs.has(M.cats[e[1]])).length})();
+  const de=q=>q.riven==='лінія'?'на вулиці':q.riven==='ділянка'?'на ділянці':'у місці';
+  h+=probs.map((q,j)=>{const t=tut(q);
+   return `<div class="kp-pc" role="button" tabindex="0" data-kp-prob="${j}"><div class="kp-pch">Проблема · ${esc(q.theme)}</div>`+
+   `<div class="kp-pct">${esc(q.mech)}</div><div class="tt">${fmt(t)} з ${fmt(vsi)} ${pl(vsi,'події','подій','подій')} адреси`+
+   (q.n>t?` · ${fmt(q.n)} ${de(q)}`:'')+`</div></div>`}).join('');
  }
  h+=placeArts(p,evs)+placeHist(p,evs);
  // Ризик — тим самим правилом, що й у картці соти (S-К.15): лінії в 50 м

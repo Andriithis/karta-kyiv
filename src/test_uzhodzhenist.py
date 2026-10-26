@@ -110,6 +110,18 @@ def main(n=300, seed=36, znimky=True):
         pg.wait_for_function('window.KT&&KT.ready', timeout=90000)
         t1 = time.time()
         res = pg.evaluate(JS, [n, seed])
+        # Блоки проблем у картці адреси (Андрій 26.10): «X з Y подій адреси» —
+        # X (події проблеми на цій адресі) не більше Y (усі події адреси).
+        # Усі адреси з проблемою, не вибірка: їх кілька сотень.
+        bloky = pg.evaluate(r'''()=>{const out={n:0,bad:[]};
+          KT.P.forEach((p,i)=>{ if(!p[3]||!KT.probsOf(p).length) return;
+            KT.kartkaAdresy(i);
+            document.querySelectorAll('#kplace [data-kp-prob] .tt').forEach(t=>{out.n++;
+              const m=t.textContent.replace(/ | /g,'').match(/^(\d+)з(\d+)/);
+              if(!m||+m[1]>+m[2]) out.bad.push(p[2]+': '+t.textContent)})});
+          KT.closePlace(); return out}''')
+        res['bad'] += [f'блок проблеми: {b}' for b in bloky['bad']]
+        res['n']['blokiv'] = bloky['n']
         t_perevirky = time.time() - t1
         if znimky:
             os.makedirs(ZNIMKY, exist_ok=True)
@@ -137,7 +149,7 @@ def main(n=300, seed=36, znimky=True):
     bad, c = res['bad'] + [f'телефон: {b}' for b in tel['bad']], res['n']
     print(f"   телефон 375×812: шторка {tel.get('hA')} px, точка над нею, +/− над нею; помилок {len(tel['bad'])}")
     print(f"   адрес {c['adres']} (з них з проблемою {c['z_problemoiu']}), сот {c['sot']}, проблем {c['problem']}, "
-          f"кілець {c['kilets']}; розбіжностей {len(bad)}; {time.time() - t0:.0f} с (перевірка {t_perevirky:.0f} с)"
+          f"кілець {c['kilets']}, блоків проблем у картках {c.get('blokiv', 0)}; розбіжностей {len(bad)}; {time.time() - t0:.0f} с (перевірка {t_perevirky:.0f} с)"
           + (f'; знімки — {os.path.relpath(ZNIMKY, ROOT)}' if znimky else ''))
     for b in bad[:40]: print('   ПОМИЛКА', b)
     return 1 if bad else 0
