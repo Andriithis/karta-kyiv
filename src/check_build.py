@@ -76,6 +76,7 @@ TESTY = {
     'kandydaty': '4ж. Кандидати для аналізу фабул: файл є, непорожній, ≤20 МБ, ДТП з полем mitky',
     # окремим запуском (test_determinizm.py), не в check_build: дві збірки — ~6 хв
     'determinizm': 'test_determinizm.py: збірка двічі — той самий хеш (щомісяця в «Оновленні карти»)',
+    'natovp_2roky': '4р. «Натовп»: подій за ті самі 2 роки, що й очікуваних',
     'fabuly_chysti': '4п. Фабули в показі: без шапки RTF, зачину «До суду надійшов…» і ПІБ поліцейських',
     'inshe_misto': '4о. Інше місто біля адреси — поза картою; Київ з опискою, метро, напрямок — ні',
     'odna_podiia': '4н. Та сама подія під різними справами (суд, день, хвилина, адреса, стаття) — одна подія',
@@ -587,6 +588,16 @@ def main(save=False):
         if na_karti != ch or (os.path.exists(pp_) and not v_zvity):
             print('   ПОМИЛКА число проблем розходиться між картою, «Проблемами» й звітом')
             return 1
+    print('4р. «Натовп»: події й очікувані — за ті самі 2 роки (Е25 Н4, S-З.2)')
+    if os.path.exists(rpp):
+        per_ = json.load(gzip.open(rpp, 'rt', encoding='utf-8')).get('perelik', [])
+        z_nt = [r for r in per_ if r.get('natovp')]
+        # картка виду: натовп — головного механізму, число з його розбивки
+        ne_ = [r['adresy'][:1] for r in z_nt if r['natovp'].get('podii') not in
+               [r.get('za_2roky')] + [y.get('za_2roky') for y in r.get('rozbyvka') or [] if isinstance(y, dict)]]
+        print(f'   проблем з рядком «Натовп» {len(z_nt)}; число не за 2 роки: {len(ne_)}')
+        if ne_:
+            print(f'   ПОМИЛКА «Натовп» рахує не 2 роки: {ne_[:5]}'); return 1
     print('4ж. Кандидати для аналізу фабул (36.37): data/kandydaty.json.gz є, непорожній, ≤20 МБ, ДТП з mitky')
     kp_ = os.path.join(DATA, 'kandydaty.json.gz')
     if not os.path.exists(kp_):

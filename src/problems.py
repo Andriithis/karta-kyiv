@@ -1070,8 +1070,11 @@ def run(V=None, log=print, FACT=None):
             rec['proaktyvnykh'] = round(1 - s['zayavnykh'], 2)
             rec['golos'] = golos_misce(G, th, pts, dmap, bez_meshk=BM(pts, rec['adresy']))
             rec['raion'] = dmap(tuple(rep))
-            nt = NT(sim, pts, len(u))
-            if nt: rec['natovp'] = dict(ochikuvano=nt[0], stan=nt[1])
+            # Подій — за ті самі 2 роки, на які модель рахує очікувані (Е25, Н4):
+            # раніше йшли всі роки, і «більше, ніж дає натовп» завищувалось до
+            # двох разів, а звіт писав «за 2 роки» про 3–4 роки подій
+            nt = NT(sim, pts, rec.get('za_2roky', 0))
+            if nt: rec['natovp'] = dict(ochikuvano=nt[0], stan=nt[1], podii=rec.get('za_2roky', 0))
         return rec, u
 
     def zapys(key, evs, riven, pts):
