@@ -364,9 +364,14 @@ function addrReady(){
  if(!map.getSource('k-addr')){
   // Лінія-проблема — відрізком вулиці, а не значком на одній з її адрес
   // (завдання 29, п. 2): події лінії розкидані вздовж усього відрізка.
+  // Вигляд — як контур проблеми-точки (S-К.7): чорнило теми 2,5 px пунктиром
+  // поверх облямівки кольору підкладки, а не товста чорна смуга, що на
+  // огляді міста читалась як дорога (Андрій 26.10).
   map.addSource('k-probl',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
-  map.addLayer({id:'k-probl',type:'line',source:'k-probl',layout:{'line-cap':'round'},
-   paint:{'line-color':['get','c'],'line-width':['interpolate',['linear'],['zoom'],11,3,16,7],'line-opacity':.75}});
+  map.addLayer({id:'k-probl-h',type:'line',source:'k-probl',layout:{'line-cap':'round','line-join':'round'},
+   paint:{'line-width':5.5,'line-opacity':.9}});
+  map.addLayer({id:'k-probl',type:'line',source:'k-probl',layout:{'line-cap':'butt','line-join':'round'},
+   paint:{'line-width':2.5,'line-dasharray':[2.4,1.6]}});
   map.addSource('k-addr',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
   // Тінь — другий шар кола, розмитий і трохи зсунутий донизу, під основним.
   // У Leaflet це filter:drop-shadow на полотні; у GL фільтрів полотна немає,
@@ -385,6 +390,8 @@ function addrReady(){
  // Гало й тінь — кольори теми з CSS: шари переходять у новий стиль як є,
  // а колір теми міняється тут.
  const sh=(cssv('--shadow').match(/rgba?\([^)]*\)/)||['rgba(0,0,0,.25)'])[0];
+ map.setPaintProperty('k-probl-h','line-color',cssv('--halo')||'#fff');
+ map.setPaintProperty('k-probl','line-color',cssv('--ink')||'#111');
  map.setPaintProperty('k-addr','circle-stroke-color',cssv('--halo'));
  map.setPaintProperty('k-addr-shadow','circle-color',sh);
  ringColors(); ADDR_VIS=null; ringsReady();
@@ -409,12 +416,14 @@ function draw(){
   properties:{i:PIDX.get(p),c:PALA[th%PALA.length],n,r0:r0Of(n,mx),
    pr:probsOf(p).some(q=>q.thi===undefined||q.thi<0||st.GVIS.has(q.thi))?1:0,
    k:(probsOf(p).length?1e6:0)-n}}))});
- // Відрізки ліній-проблем — там, де видно ромби проблем
+ // Відрізки ліній-проблем — там, де видно ромби проблем. i і j — точка й
+ // номер проблеми серед видимих проблем точки (той самий, що PLACE.pi у
+ // placeData): клік по лінії відкриває картку саме цієї проблеми
  const ln=[];
- vis.forEach(([p])=>probsOf(p).forEach(q=>{
-  if(q.riven==='лінія'&&q.geom&&(q.thi===undefined||q.thi<0||st.GVIS.has(q.thi)))
+ vis.forEach(([p])=>{const vq=probsOf(p).filter(q=>q.thi===undefined||q.thi<0||st.GVIS.has(q.thi));
+  vq.forEach((q,j)=>{ if(q.riven==='лінія'&&q.geom)
    ln.push({type:'Feature',geometry:{type:'LineString',coordinates:q.geom.map(x=>[x[1],x[0]])},
-    properties:{c:INK_C}})}));
+    properties:{i:PIDX.get(p),j}})})});
  if(map.getSource('k-probl')) map.getSource('k-probl').setData({type:'FeatureCollection',features:ln});
 }
 // ---- КАРТКА МІСЦЯ (розд. 30; MAKET-KROK10, друга редакція) ----
@@ -877,6 +886,9 @@ function addrPaint(){
  map.setPaintProperty('k-addr','circle-stroke-opacity',op1);
  map.setPaintProperty('k-addr-shadow','circle-opacity',op1);
  if(map.getLayer('k-addr-pr')) map.setPaintProperty('k-addr-pr','circle-stroke-opacity',op1);
+ // Лінія-проблема — там само, де контури проблем у кільцях і адресах: на сотах
+ // і стовпчиках проблему вже позначає обведена сота
+ for(const l of ['k-probl','k-probl-h']) if(map.getLayer(l)) layerVis(l,BASE_READY&&!hexy);
 }
 // Що видно в цьому кадрі: [[вузол з x, y], непрозорість]. Та сама логіка,
 // що й була: рівень за зумом, перетікання до наступного — лише під час зуму.
