@@ -317,3 +317,28 @@ def merge_cases(rows, doc, cat, date, cause, event):
         lab = label_cat(cats, cat(rep))
         out.append((rep, g, lab, [lab] + sorted(cats - {lab})))
     return out
+
+
+def zlyty_odnochasni(merged, kliuch, date, cat):
+    """Друге злиття (Е25, Н9; 36.40): та сама подія під різними номерами
+    справ — Лютеранська, 3: одна крадіжка на 337,75 грн 05.01.2025 о 20:14 —
+    сім рішень. kliuch(rep) -> (суд, дата події, година:хвилина, адреса,
+    стаття) або None, коли чогось бракує: без хвилини не зливаємо — дві
+    крадіжки в одному магазині за день реальні. Представник — найпізніше
+    рішення по суті, документи й статті — усіх справ групи. Повертає
+    (список як у merge_cases, [(ключ, скільки справ злито, їхні представники)])."""
+    gr = collections.defaultdict(list)
+    for m in merged:
+        k = kliuch(m[0])
+        gr[k if k else ('#', id(m))].append(m)
+    out, zlyto = [], []
+    for k, ms in gr.items():
+        if len(ms) == 1:
+            out.append(ms[0]); continue
+        rep = max((m[0] for m in ms), key=lambda x: date(x) or '')
+        g = [x for m in ms for x in m[1]]
+        cats = {c for m in ms for c in m[3]}
+        lab = label_cat(cats, cat(rep))
+        out.append((rep, g, lab, [lab] + sorted(cats - {lab})))
+        zlyto.append((k, len(ms), [m[0] for m in ms]))
+    return out, zlyto

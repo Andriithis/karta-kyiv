@@ -30,6 +30,7 @@ LAST_META = {}          # meta останньої збірки — читає к
 CANON = {}              # doc_id -> назва вулиці з OSM для підпису (vybir -> zbirka)
 LAST_DOCS = []          # справи адрес для панелі, паралельно до точок карти
 LAST_TOCHNIST = {}      # doc_id -> p[3] точки, куди стала подія (check_build, S-А.3)
+LAST_ZLYTO = []         # [(ключ, справ, представники)] — та сама подія під різними справами (Н9)
 LAST_VYBIR = None       # відібрані події останньої збірки — їх беруть звіти (step6)
 LAST_KARTA = None       # точки міської карти з проблемами, підписи статей, meta —
                         # звіти рахують ті самі числа, що видно на карті (PLAN-ZVITY, п. 2)
@@ -223,6 +224,22 @@ def vybir(c, print=print):
     cause = {d: v[0] for d, v in extra.items() if v[0]}
     merged = PD.merge_cases(rows, doc=lambda r: r[0], cat=lambda r: r[2], date=lambda r: r[3],
                             cause=cause, event=lambda r: isev[r[0]])
+    # Та сама подія під різними номерами справ (Е25, Н9; 36.40): суд, день
+    # події, хвилина, адреса (adr_kliuch) і стаття збігаються — одна подія.
+    # Без цього одна крадіжка стояла на карті сім разів, а в лінзі
+    # «Порушник» одна особа — сім рядків.
+    import adr_kliuch
+    KL_ = adr_kliuch.Kliuch()
+    def odnochasna(r):
+        tk = TKD.get(r[0]) or {}
+        t, ed = (tk.get('time') or '')[:5], ev_date(tk, r[3])
+        if not ed or len(t) < 5 or t == '00:00' or not r[5] or not r[6]: return None
+        return (r[1], ed, t, KL_(r[5], r[6]), PD.article(r[2]))
+    merged, zlyto = PD.zlyty_odnochasni(merged, odnochasna, date=lambda r: r[3], cat=lambda r: r[2])
+    global LAST_ZLYTO
+    LAST_ZLYTO = zlyto
+    print(f'   та сама подія під різними справами (суд, день, хвилина, адреса, стаття): '
+          f'груп {len(zlyto):,}, зайвих подій прибрано {sum(n - 1 for _k, n, _r in zlyto):,}')
     # Справа, представника якої розібрав прохід по текстах, бере адресу лише
     # з нього. Якщо його самого серед подій з координатами немає (адреса
     # прихована чи місця в тексті не названо), представником став би інший
