@@ -630,7 +630,8 @@ def zmina_metodyky(S, log=print):
     t = open(ZMINY, encoding='utf-8').read()
     mitka = f'<!-- 36.40 {S} -->'
     if mitka in t: return
-    ryadok = (f'| {S[8:10]}.{S[5:7]}.{S[:4]} (збірка) | Зникли без гістерезису — події пішли через зміну правил '
+    sd = dt.date.today().strftime('%d.%m.%Y')
+    ryadok = (f'| {sd} (збірка, дані до {S[8:10]}.{S[5:7]}.{S[:4]}) | Зникли без гістерезису — події пішли через зміну правил '
               f'(36.40): ' + '; '.join(f'{", ".join(b["adresy"])} ({M.simname(b["sim"])}, пішло {b["pishlo"]} '
                                        f'з {b["pishlo"] + b["zalyshylos"]})' for b in BEZ_HISTEREZYSU)
               + f' {mitka} | −{len(BEZ_HISTEREZYSU)} | не міняє |')
@@ -654,13 +655,19 @@ def histerezys(zapysy, S, log=print):
             except (OSError, ValueError): pass
     S0 = (pop.get('versiia') or {}).get('podii_do')
     k_pop = [(h['sim'], tuple(h['p']), h['nyzhche_80']) for h in pop.get('histerezys', [])]
+    # Проблема, яку вже тримав гістерезис, у переліку несе свої слабкі нинішні
+    # docs; документи з часу, коли вона була проблемою, — у стані histerezys.
+    # Без цього зміна правил після першої «утриманої» збірки не впізнавалася б.
+    h_docs = [(h['sim'], tuple(h['p']), h['docs']) for h in pop.get('histerezys', []) if h.get('docs')]
     buly = []
     for x in pop.get('perelik', []):
         if x.get('riven') == 'лінія' or x.get('status') != 'хронічна': continue
         sims = [y['sim'] for y in x.get('rozbyvka') or [] if y.get('status') in ('хронічна', None)] or [x['sim']]
         for s in sims:
             for c in x.get('chastyny') or [x]:
-                buly.append((s, tuple(c['p']), x.get('docs') or []))
+                p_ = tuple(c['p'])
+                d_ = next((d for s2, p2, d in h_docs if s2 == s and dist(p2, p_) <= R_MISCE), None)
+                buly.append((s, p_, d_ if d_ is not None else (x.get('docs') or [])))
     # де кожна подія стоїть цієї збірки (36.40): документ минулої проблеми,
     # якого немає в жодній парі механізму (стаття поза видами, 36.38) чи який
     # стоїть далі ділянки (нове правило адрес), пішов через правила, а не з
@@ -685,7 +692,8 @@ def histerezys(zapysy, S, log=print):
         sylna = r.get('za_2roky', 0) >= POROH_HIST * MIN_POD
         k = k0 if S0 == S else (0 if sylna else k0 + 1)
         if k >= 2: continue
-        out[id(r)] = dict(nyzhche_80=k, za_2roky=r.get('za_2roky', 0), porih=MIN_POD)
+        out[id(r)] = dict(nyzhche_80=k, za_2roky=r.get('za_2roky', 0), porih=MIN_POD,
+                          docs=sorted({d for ds in pop_r for d in ds}))
     log(f'   гістерезис: минула збірка {S0 or "—"}, проблем-точок тоді {len(buly)}, '
         f'лишились за гістерезисом {len(out)} (з них нижче 80% порогу {sum(1 for v in out.values() if v["nyzhche_80"])}); '
         f'без гістерезису — події пішли через правила (36.40): {len(BEZ_HISTEREZYSU)}'
@@ -1335,7 +1343,8 @@ def run(V=None, log=print, FACT=None):
         r8={M.simname(k): v for k, v in r8.items()},
         perelik=problemy, dorozhni_dilianky=dilianky, formuietsia_perelik=formue,
         # стан гістерезису для наступної збірки (S-ПР.13)
-        histerezys=[dict(sim=r['sim'], p=list(r['p']), nyzhche_80=r['histerezys']['nyzhche_80'])
+        histerezys=[dict(sim=r['sim'], p=list(r['p']), nyzhche_80=r['histerezys']['nyzhche_80'],
+                         docs=r['histerezys'].get('docs', []))
                     for r in zapysy if r.get('histerezys')],
         bez_histerezysu=list(BEZ_HISTEREZYSU),       # 36.40: події пішли через правила
         inshi=[{k: v for k, v in r.items() if k not in ('statti', 'docs')} for r in zapysy

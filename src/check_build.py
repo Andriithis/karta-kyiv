@@ -367,16 +367,28 @@ def main(save=False):
     # Штучна минула збірка: проблема X з двома подіями. Цього разу (1) обидві на
     # місці, але подій замало — гістерезис тримає; (2) одна пішла з даних
     # (стаття поза видами) — не тримає й пише в BEZ_HISTEREZYSU.
-    rep_ = problems.REPORT
-    problems.REPORT = os.path.join(tmp, 'hist_test.json')
-    json.dump(dict(versiia=dict(podii_do='2026-01-01'),
-                   perelik=[dict(sim='X', p=[50.4, 30.5], status='хронічна', riven='точка', docs=['a', 'b'])]),
-              open(problems.REPORT, 'w', encoding='utf-8'))
+    # у main() ім'я problems — список помилок, тож модуль — окремим ім'ям
+    import problems as PRH_
+    rep_ = PRH_.REPORT
+    # звіт — .json.gz, як справжній (histerezys читає саме його)
+    PRH_.REPORT = os.path.join(tmp, 'hist_test.json.gz')
+
+    def minula_(d):
+        with gzip.open(PRH_.REPORT, 'wt', encoding='utf-8') as fh: json.dump(d, fh)
+    minula_(dict(versiia=dict(podii_do='2026-01-01'),
+                 perelik=[dict(sim='X', p=[50.4, 30.5], status='хронічна', riven='точка', docs=['a', 'b'])]))
     z1 = [dict(riven='точка', status='мало', sim='X', p=(50.4, 30.5), docs=['a', 'b'], podii=2)]
     z2 = [dict(riven='точка', status='мало', sim='X', p=(50.4, 30.5), docs=['a'], podii=1)]
-    t1 = bool(problems.histerezys(z1, '2026-02-01', log=lambda *a: None))
-    t2 = bool(problems.histerezys(z2, '2026-02-01', log=lambda *a: None)) or not problems.BEZ_HISTEREZYSU
-    problems.REPORT = rep_
+    t1 = bool(PRH_.histerezys(z1, '2026-02-01', log=lambda *a: None))
+    t2 = bool(PRH_.histerezys(z2, '2026-02-01', log=lambda *a: None)) or not PRH_.BEZ_HISTEREZYSU
+    # (3) проблему вже тримає гістерезис; її документи — з часу, коли вона
+    # була проблемою (стан histerezys), а не слабкі нинішні
+    minula_(dict(versiia=dict(podii_do='2026-02-01'),
+                 perelik=[dict(sim='X', p=[50.4, 30.5], status='хронічна', riven='точка', docs=['a'])],
+                 histerezys=[dict(sim='X', p=[50.4, 30.5], nyzhche_80=0, docs=['a', 'b'])]))
+    t3 = bool(PRH_.histerezys(z2, '2026-03-01', log=lambda *a: None))
+    PRH_.REPORT = rep_
+    t2 = t2 or t3
     print(f'   події на місці — тримає: {"так" if t1 else "НІ"}; подія пішла через правила — не тримає: {"так" if not t2 else "НІ"}')
     if not t1 or t2:
         print('   ПОМИЛКА гістерезис не за 36.40'); return 1
