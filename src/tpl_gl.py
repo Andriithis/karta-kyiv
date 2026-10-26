@@ -726,6 +726,18 @@ $('#advbtn').addEventListener('click',()=>{ if(!$('#adv').hidden){ if(POPUP) POP
 // за зоною addrAt, а не за самим колом: дрібну адресу інакше не влучити.
 map.on('click',e=>{ if(iconAt(e.point)) return;
  const f=addrAt(e.point); if(f){CLICK_TAKEN=true; openAt(f.properties.i)}});
+// Лінія-проблема — під курсором, з допуском: вона 2,5 px, і влучити рівно в
+// неї мишею, а тим паче пальцем, майже неможливо
+function liniiaAt(pt){
+ if(!map.getLayer('k-probl')||map.getLayoutProperty('k-probl','visibility')==='none') return null;
+ const r=matchMedia('(pointer: coarse)').matches?HIT_R:7;
+ return map.queryRenderedFeatures([[pt.x-r,pt.y-r],[pt.x+r,pt.y+r]],{layers:['k-probl','k-probl-h']})[0]||null}
+// Клік по лінії — картка проблеми з її подіями, як клік по блоку проблеми в
+// картці адреси (Андрій 26.10: раніше клік відкривав соту поруч)
+function openProblem(i,j){ openAt(i); if(!PLACE) return; PLACE.prob=true; PLACE.pi=j; PLACE.tab='ogl'; PLACE.open=-1; renderPlace()}
+map.on('click',e=>{ if(CLICK_TAKEN||iconAt(e.point)||addrAt(e.point)) return;
+ const l=liniiaAt(e.point); if(l){CLICK_TAKEN=true; openProblem(l.properties.i,l.properties.j)}});
+map.on('mousemove',e=>{ if(liniiaAt(e.point)) map.getCanvas().style.cursor='pointer'});
 // Клік уже відкрив вікно чи повів до кільця — загальний обробник (ctxEvents)
 // його не чіпає. Питати карту «що під курсором» там уже пізно: вікно
 // зсуває карту під себе, а з «меншим рухом» у системі — миттєво, і клік по
@@ -1154,7 +1166,7 @@ function hitRing(pt){let best=null, bd=1e9; const z=map.getZoom();
   const d=Math.hypot(o.x-pt.x,o.y-pt.y); if(d<=r&&d<bd){bd=d;best=o}}
  return best}
 map.on('click',e=>{
- if(!RINGS_ON||iconAt(e.point)) return;
+ if(CLICK_TAKEN||!RINGS_ON||iconAt(e.point)) return;
  const o=hitRing(e.point); if(!o) return;
  CLICK_TAKEN=true;
  if(o.dot) return openAt(LEAF[o.k]);

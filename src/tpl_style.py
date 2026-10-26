@@ -139,6 +139,10 @@ html .tsw button{min-height:32px;display:inline-flex;align-items:center}
 #kplace .kp-body{overflow:auto;padding:10px 16px 14px;scrollbar-width:none;overscroll-behavior:contain}
 #kplace .kp-body::-webkit-scrollbar{display:none}
 #kplace .kp-pc{border-left:3px solid var(--ink);background:var(--sunk);border-radius:6px;padding:8px 10px;margin-bottom:8px}
+/* блок проблеми в картці адреси відкриває картку проблеми — тож виглядає
+   клікабельним (Андрій 26.10: «проблема не клікається») */
+#kplace .kp-pc[data-kp-prob]{cursor:pointer}
+#kplace .kp-pc[data-kp-prob]:hover,#kplace .kp-pc[data-kp-prob]:focus-visible{background:var(--rule)}
 #kplace .kp-pch{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
 #kplace .kp-pct{font-size:14px;font-weight:600;margin:1px 0 3px}
 #kplace .kp-mod{margin-top:8px}
