@@ -16,6 +16,7 @@ import pravo as PR          # офіційні назви статей для к
 # а це один файл на дві дуже різні речі — логіку відбору й розмітку.
 from step3_tpl import TPL_GL
 import map_dani              # дані окремими файлами з хешем (36.22)
+import linzy as LZ           # лінзи «Порушник» і «Ціль» (36.41)
 from map_excl import load_excl, detect_institutional, drop_excluded
 import map_layers
 import map_problems
@@ -452,6 +453,12 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
         # Опис — фабула з проходу лише з безпечними вирізаннями (TK.pokaz).
         # Суть sut() сюди не йде: вона різала частини речень і саму дію, а
         # 5 193 справи лишалися без опису (рішення 24.09, ZVIT-GPT-SUT.md).
+        # Лінзи (36.41, мінімальна версія 28.10): ознаки порушника, стать і ціль —
+        # із сирої фабули, до вирізань показу («повторно протягом року» буває в
+        # частині, яку показ скорочує)
+        syra = (tk or {}).get('fab') or f
+        lz = (LZ.oznaky(syra, TK.kodeks(cat)), LZ.stat(syra),
+              LZ.tsil_kody(PD.theme(cat), L.SIMGROUP.get(cat, ''), syra))
         f = TK.pokaz(f, TK.kodeks(cat))
         # Панель показує дату й час самої події з проходу: дата рішення буває
         # на місяць пізніше («2026-04-22 · 23:00» при події 21.03.2026). Нема
@@ -470,7 +477,7 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
              *extra.get(doc, ('', '')),
              [extra.get(x, ('', ''))[1] for x in case_docs.get(doc, [doc])
               if extra.get(x, ('', ''))[1]],
-             f, arts.get(doc, []), ACLS.index(kl), ed or date, 0 if ed else 1, doc))
+             f, arts.get(doc, []), ACLS.index(kl), ed or date, 0 if ed else 1, doc, lz))
     ncls = collections.Counter(ACLS[e[13]] for evs in agg.values() for e in evs)
     print('   клас адреси подій: ' + ', '.join(f'{k} {ncls[k]:,}' for k in ACLS))
 
@@ -486,6 +493,7 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
     DOCS = []          # паралельно до P: справи адреси для правої панелі
     DOCIDX = {}        # doc_id -> (індекс точки, індекс події в p[4])
     n_street = 0
+    LZ_OF, TSIL_IX = {}, {}
     for (la, lo, _tochna), evs in agg.items():
         hs = [e for e in evs if e[4] and e[6]]
         if hs:
@@ -530,6 +538,10 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
                   [[e_[0], e_[1], e_[2], e_[3], e_[13], mon_idx(e_[14])] + ([e_[12]] if e_[12] else [])
                    for e_ in ev_sorted],
                   len(ev_sorted)])
+        # лінзи — окремо від точок (окремий файл на вимогу, 36.22), у тому самому
+        # порядку подій; за id точки, бо відбір району обрізає P
+        LZ_OF[id(P[-1])] = [[e_[17][0], {'ч': 1, 'ж': 2}.get(e_[17][1], 0),
+                             [TSIL_IX.setdefault(c, len(TSIL_IX)) for c in e_[17][2]]] for e_ in ev_sorted]
         # DOCS — те, що показує панель: справа, дата події (або рішення),
         # година, номер справи, папери справи, фабула; сьоме поле 1 — дата
         # рішення, бо дати події в описі немає.
@@ -637,7 +649,11 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
     dani = map_dani.zapysaty(odir, {
         'meta': meta, 'pts': map_dani.pakuvaty_P(P), 'ryzyk': ryzyk,
         'tree': map_dani.pakuvaty_tree(map_clusters.build(P)),
-        'prokhid': prokhid, 'poruch': FACT})
+        'prokhid': prokhid, 'poruch': FACT,
+        # лінзи (36.41): e — на кожну точку P події [ознаки, стать, [коди цілі]];
+        # v — коди цілі «поле=значення», oz і tn — підписи
+        'linzy': dict(e=[LZ_OF.get(id(p), []) for p in P], v=list(TSIL_IX),
+                      oz=[[b, n] for b, _k, n in LZ.OZNAKY], tn=LZ.TSIL_NAZVA)})
     open(dst, 'w', encoding='utf-8').write(
         TPL_GL.replace('__DANI__', json.dumps(dani, separators=(',', ':'))))
     rozp, merezha, _ = map_dani.vaga(dst)

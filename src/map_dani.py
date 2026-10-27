@@ -19,7 +19,7 @@
 import base64, gzip, hashlib, json, os, re
 
 PERSHI = ('meta', 'pts', 'ryzyk', 'tree')
-NA_VYMOHU = ('prokhid', 'poruch')
+NA_VYMOHU = ('prokhid', 'poruch', 'linzy')
 
 # ---- ПОДІЇ РЯДКОМ ----
 # Подія — шість чисел [суд, стаття, рік, година, ознака, місяць]. Масивом це

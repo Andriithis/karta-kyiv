@@ -104,7 +104,9 @@ function drawHex(st){
  for(const G of HEXG){
   map.getSource('k-hex-'+G.id).setData(soty?hexData(G,false):{type:'FeatureCollection',features:[]});
   map.getSource('k-col-'+G.id).setData(stovp&&G.id===COL_G?hexData(G,true):{type:'FeatureCollection',features:[]});
-  for(const l of ['k-hex-','k-hexl-','k-hexp-']) layerVis(l+G.id,soty);
+  for(const l of ['k-hex-','k-hexl-']) layerVis(l+G.id,soty);
+  // контур соти-проблеми — не в лінзах «Порушник» і «Ціль» (36.41: «Проблеми» сховані)
+  layerVis('k-hexp-'+G.id,soty&&!lzActive());
   layerVis('k-col-'+G.id,stovp)}
 }
 // ==== АДРЕСИ (7.5–7.6) ====

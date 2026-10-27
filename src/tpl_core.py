@@ -104,7 +104,9 @@ const PERIODS=[['ранок','6–12',[6,7,8,9,10,11]],['день','12–18',[12
  ['вечір','18–24',[18,19,20,21,22,23]],['ніч','0–6',[0,1,2,3,4,5]]];
 // Звіти — одне посилання на зміст розділу (36.28.1, S-К.10): три посилання
 // ділили увагу, а розділів стало сім.
-$ify('#docs','<a href="doslidzhennya.html" target="_blank" rel="noopener">Дослідження <span>↗</span></a>');
+// «Заходи ↗» поруч — довідник заходів щодо правопорушника (лінзи, 36.41)
+$ify('#docs','<a href="doslidzhennya.html" target="_blank" rel="noopener">Дослідження <span>↗</span></a>'+
+ '<a href="zakhody.html" target="_blank" rel="noopener" style="display:block;margin:6px 0 0">Заходи <span>↗</span></a>');
 // Три режими — три відповіді на одне питання «що показувати». Теплова карта
 // доти була окремою кнопкою збоку й читалася як ще один фільтр поверх решти.
 const MODES=[['all','Події'],['prob','Проблеми'],['heat','Теплова']];
@@ -413,7 +415,8 @@ function computeVis(){
   const visProbs=ownProbs.filter(pr=>pr.thi===undefined||pr.thi<0||GVIS.has(pr.thi));
   if(CF>=0&&!visProbs.length) continue;
   let n=0;const cnt={};
-  for(const e of p[4]) if(evOn(e,C,A,Y,H)){
+  // лінза (36.41) — лише тут, для карти; картки адреси й соти від неї не залежать
+  for(const e of p[4]) if(evOn(e,C,A,Y,H)&&lzOn(e)){
    n++;const t_=CATTH[e[1]];cnt[t_]=(cnt[t_]||0)+1}
   if(!n) continue;
   // Напрямок адреси-проблеми — Володимирська лишається майновою, хоч би які

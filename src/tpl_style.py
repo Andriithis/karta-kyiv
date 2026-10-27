@@ -139,6 +139,32 @@ html .tsw button{min-height:32px;display:inline-flex;align-items:center}
 #kplace .kp-body{overflow:auto;padding:10px 16px 14px;scrollbar-width:none;overscroll-behavior:contain}
 #kplace .kp-body::-webkit-scrollbar{display:none}
 #kplace .kp-pc{border-left:3px solid var(--ink);background:var(--sunk);border-radius:6px;padding:8px 10px;margin-bottom:8px}
+/* лінзи (36.41, макет «Три лінзи карти»): перемикач, рядок вибору, шторка */
+/* flex-shrink:0 — на телефоні панель є flex-колонкою з обмеженою висотою, і без нього перемикач стискався до 2 px */
+.lz-seg,.lz-sel,.lz-dd{flex-shrink:0}
+.lz-seg{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--rule);border-radius:9px;overflow:hidden;margin:8px 0 2px}
+.lz-seg button{all:unset;cursor:pointer;text-align:center;padding:6px 2px;font:12.5px var(--sans);color:var(--dim);border-left:1px solid var(--rule)}
+.lz-seg button:first-child{border-left:0}
+.lz-seg button[aria-selected="true"]{background:var(--ink);color:var(--panel);font-weight:600}
+.lz-sel{all:unset;box-sizing:border-box;cursor:pointer;width:100%;display:flex;justify-content:space-between;gap:8px;
+ border:1px solid var(--rule);border-radius:8px;padding:5px 10px;margin:6px 0 2px;font:12.5px var(--sans);color:var(--ink)}
+.lz-n{font-style:normal;font-variant-numeric:tabular-nums;color:var(--dim);margin-left:6px}
+.lz-sel[hidden],.lz-dd[hidden]{display:none}
+.lz-dd{border:1px solid var(--rule);border-radius:8px;overflow:auto;max-height:46vh;margin:4px 0;background:var(--panel)}
+.lz-dd .lz-h{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);background:var(--sunk);padding:5px 10px}
+.lz-it{all:unset;box-sizing:border-box;cursor:pointer;width:100%;display:flex;justify-content:space-between;gap:8px;
+ padding:6px 10px;border-top:1px solid var(--rule);font:12.5px var(--sans);color:var(--ink)}
+.lz-it i{font-style:normal;font-variant-numeric:tabular-nums;color:var(--dim)}
+.lz-it[aria-pressed="true"]{background:var(--sunk);font-weight:600}
+.type.lz-blid{opacity:.4}
+#kplace .kp-tri{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;align-items:baseline;padding:8px 10px;
+ border-radius:6px;background:var(--sunk);margin-bottom:8px;font-size:12.5px}
+#kplace .kp-tri b{font-weight:600}
+#kplace .kp-i{text-decoration:none;color:var(--dim);font-weight:400}
+#kplace .kp-osh{color:var(--dim);font-size:12px;margin-bottom:6px}
+#kplace .kp-os{display:flex;flex-direction:column;padding:7px 2px;border-top:1px solid var(--rule);cursor:pointer}
+#kplace .kp-os span{color:var(--dim);font-size:12px}
+#kplace .kp-os:hover{background:var(--sunk)}
 /* блок проблеми в картці адреси відкриває картку проблеми — тож виглядає
    клікабельним (Андрій 26.10: «проблема не клікається») */
 #kplace .kp-pc[data-kp-prob]{cursor:pointer}

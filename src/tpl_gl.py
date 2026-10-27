@@ -425,6 +425,7 @@ function draw(){
    ln.push({type:'Feature',geometry:{type:'LineString',coordinates:q.geom.map(x=>[x[1],x[0]])},
     properties:{i:PIDX.get(p),j}})})});
  if(map.getSource('k-probl')) map.getSource('k-probl').setData({type:'FeatureCollection',features:ln});
+ lzPanel();
 }
 // ---- КАРТКА МІСЦЯ (розд. 30; MAKET-KROK10, друга редакція) ----
 // Одна картка ліворуч, завжди на тому самому місці, замість вікна над точкою,
@@ -509,7 +510,10 @@ function probMore(pr){
  return h}
 function oglHTML(d){
  const {p,pr,evs,probs}=d;
- let h='';
+ // список осіб з ознакою — замість огляду (лінзи, 36.41)
+ if(!pr&&PLACE.osoby) return osobyHTML(d);
+ // три сторони — Місце, Порушник, Ціль — завжди поруч (лінзи, MVP п. 4)
+ let h=pr?'':triHTML(d);
  if(pr){
   // «Проблема · вид» — уже в шапці картки; тут удруге не повторюємо (33, В5)
   h+=`<div class="kp-pc"><div class="kp-pct">${esc(pr.mech)}</div>
@@ -606,6 +610,9 @@ function renderPlace(){
   <div class="kp-body">${PLACE.tab==='ogl'?oglHTML(d):PLACE.tab==='rish'?rishHTML(d,DOCS_NOW.key===dkey?DOCS_NOW.cs:undefined):PLACE.tab==='skarg'?skHTML(sk,SK_LIM):nearHTML()}</div>`;
  el.hidden=false; document.body.classList.add('kp-open');
  el.querySelector('.kp-body').scrollTop=top;
+ // з переліку осіб — одразу до рішення цієї особи (лінзи, 36.41)
+ if(PLACE.tab==='rish'&&PLACE.dosoby){const o=el.querySelector(`[data-dec="${PLACE.open}"]`);
+  if(o){o.scrollIntoView({block:'start'}); PLACE.dosoby=false}}
  // «Що поруч» — на карті лише поки відкрита його вкладка, з тими самими
  // номерами, що в переліку (рішення 28.09).
  if(PLACE.tab==='near') nearNumbered(p,PLACE.near); else clearNear(true);
@@ -619,7 +626,7 @@ function openAt(i){
  advOpen(false); closePanel();
  const same=PLACE&&PLACE.i===i;
  PLACE={i,tab:same?PLACE.tab:'ogl',open:-1,pi:0,prob:false,allArts:false,near:P[i][3]?nearList(P[i]):[],hl:0};
- zavantazhF(); renderPlace(); placeKeepVisible(i);
+ zavantazhF(); zavantazhLinzy(); renderPlace(); placeKeepVisible(i);
 }
 function closePlace(){ if(!PLACE) return; PLACE=null; clearNear(); renderPlace()}
 // Місце пішло за край екрана — картка про нього вже ні до чого й лише
@@ -654,6 +661,9 @@ placeEl().addEventListener('click',e=>{
  const pi=e.target.closest('[data-kp-pi]'); if(pi){PLACE.pi=+pi.dataset.kpPi; PLACE.open=-1; renderPlace(); return}
  // блок проблеми в картці адреси -> окрема картка проблеми
  const pb=e.target.closest('[data-kp-prob]'); if(pb){PLACE.pi=+pb.dataset.kpProb; PLACE.prob=true; PLACE.tab='ogl'; PLACE.open=-1; renderPlace(); return}
+ // «Порушник» у картці -> список осіб; особа -> її рішення з фабулою (лінзи)
+ const os=e.target.closest('[data-kp-os]'); if(os){PLACE.osoby=os.dataset.kpOs==='1'; PLACE.tab='ogl'; renderPlace(); return}
+ const oo=e.target.closest('[data-kp-osoba]'); if(oo){PLACE.osoby=false; PLACE.tab='rish'; PLACE.open=oo.dataset.kpOsoba; PLACE.dosoby=true; renderPlace(); return}
  const k=e.target.closest('[data-kp]'); if(k){ if(k.dataset.kp==='close') closePlace();
   else if(k.dataset.kp==='arts'){PLACE.allArts=true; renderPlace()}
   else if(k.dataset.kp==='adresa'){PLACE.prob=false; PLACE.tab='ogl'; PLACE.open=-1; renderPlace()} return}
@@ -661,7 +671,7 @@ placeEl().addEventListener('click',e=>{
  const dc=e.target.closest('[data-dec]'); if(dc){const n=dc.dataset.dec; PLACE.open=PLACE.open===n?-1:n; renderPlace(); return}
  const nr=e.target.closest('[data-near]'); if(nr){nearHighlight(+nr.dataset.near,true); return}
 });
-placeEl().addEventListener('keydown',e=>{const dc=e.target.closest('[data-dec],[data-kp-prob]');
+placeEl().addEventListener('keydown',e=>{const dc=e.target.closest('[data-dec],[data-kp-prob],[data-kp-osoba]');
  if(dc&&(e.key==='Enter'||e.key===' ')){e.preventDefault(); dc.click()}});
 placeEl().addEventListener('mouseover',e=>{const nr=e.target.closest('[data-near]'); if(nr) nearHighlight(+nr.dataset.near,false)});
 // Підсвітка об'єкта «Що поруч»: у переліку й на карті одночасно; з карти —
@@ -905,10 +915,12 @@ function addrPaint(){
  map.setPaintProperty('k-addr','circle-opacity',op);
  map.setPaintProperty('k-addr','circle-stroke-opacity',op1);
  map.setPaintProperty('k-addr-shadow','circle-opacity',op1);
- if(map.getLayer('k-addr-pr')) map.setPaintProperty('k-addr-pr','circle-stroke-opacity',op1);
+ // контури проблем — не в лінзах «Порушник» і «Ціль» (36.41: «Проблеми» сховані)
+ const opPr=lzActive()?0:op1;
+ if(map.getLayer('k-addr-pr')) map.setPaintProperty('k-addr-pr','circle-stroke-opacity',opPr);
  // Лінія-проблема — там само, де контури проблем у кільцях і адресах: на сотах
  // і стовпчиках проблему вже позначає обведена сота
- for(const l of ['k-probl','k-probl-h']) if(map.getLayer(l)) layerVis(l,BASE_READY&&!hexy);
+ for(const l of ['k-probl','k-probl-h']) if(map.getLayer(l)) layerVis(l,BASE_READY&&!hexy&&!lzActive());
 }
 // Що видно в цьому кадрі: [[вузол з x, y], непрозорість]. Та сама логіка,
 // що й була: рівень за зумом, перетікання до наступного — лише під час зуму.
@@ -1074,7 +1086,7 @@ const ringLayer={id:'k-rings', type:'custom', renderingMode:'2d',
    if(o.dot){const v=LEAFV[o.k]; if(!v) continue; const r=v.r0*zmulAt(z);
     quad(o.x,o.y,r+2,r,0,1,RING_A*al,Q1,rgb(PALA[v.th%PALA.length]));
     // окрема адреса з проблемою — обвідка навколо крапки замість ромба (7.4)
-    if(v.np){const rr=Math.max(5,r)+2.5; quad(o.x,o.y,rr+1.5,rr+.6,rr-.6,3,al,Q1,ink)}
+    if(v.np&&!lzActive()){const rr=Math.max(5,r)+2.5; quad(o.x,o.y,rr+1.5,rr+.6,rr-.6,3,al,Q1,ink)}
     continue}
    // До 5 подій — крапка без числа; найменше кільце з числом — 11 px;
    // внутрішній радіус 0,76 (35.6, макет «Проблема — контуром»).
@@ -1082,13 +1094,13 @@ const ringLayer={id:'k-rings', type:'custom', renderingMode:'2d',
    let acc=0; for(let g=0;g<7;g++){acc+=g<NG?o.s[g]:0; q[g]=acc/o.n}
    quad(o.x,o.y,r+2,r,inner,0,RING_A*al,q,C0);
    if(!small) texts.push([o.x,o.y+.5,fmtN(o.n),Math.max(9,Math.min(13,inner*.8)),al]);
-   if(o.np){
+   if(o.np&&!lzActive()){
     // проблема — лише обвідка кільця чорнилом, без ромба й числа проблем;
     // на огляді міста тонша (0,6 / 0,9 / 1,2 px)
     const rr=r+3, th=z<11.5?.3:z<12.5?.45:.6;
     quad(o.x,o.y,rr+1.5,rr+th,rr-th,3,al,Q1,ink)}
   }
-  if(addrDiamonds){
+  if(addrDiamonds&&!lzActive()){
    const b=map.getBounds(), pad=.1*(b.getNorth()-b.getSouth());
    for(const k of PROBK){const pi=LEAF[k], la=P[pi][0], lo=P[pi][1], v=LEAFV[k];
     if(lo<b.getWest()-pad||lo>b.getEast()+pad||la<b.getSouth()-pad||la>b.getNorth()+pad) continue;
