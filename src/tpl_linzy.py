@@ -13,7 +13,10 @@ doslidzhennya/linzy/MVP-28-10.md; макет «Три лінзи карти»).
 JS_LINZY = r"""// ==== ЛІНЗИ (36.41) ====
 // var, а не let: computeVis (tpl_core) питає лінзу ще під час першої
 // перемальовки, до цього місця модуля
-var LINZA='misce', LZD=null, LZ_P=null, OZ_ON=new Set([1]), TSIL_ON=null;
+var LINZA='misce', LZD=null, LZ_P=null, OZ_ON=null, TSIL_ON=null;
+// «основні» — усі ознаки, крім «повторно протягом року» (біт 4): там переважно
+// водії без прав, 3,7 тис. подій, і вони затулили б решту
+const OZ_ZAMOVCH=b=>b!==4;
 // поле цілі -> вид (шторка «Ціль» групує за видом, макет трикутника, п. 7)
 const TSIL_VYD={berut:'Майно',u_koho:'Майно',zitknennia:'ДТП',na_koho:'Хуліганство',rechovyna:'Наркотики',
  sposib:'Наркотики',shcho_prodaiut:'Торгівля'};
@@ -21,9 +24,10 @@ const zavantazhLinzy=()=>LZ_P||(LZ_P=vantazh(DANI.linzy).then(d=>{LZD=d;
  // ознаки й ціль — властивостями самих подій: evOn і картки бачать їх одразу
  d.e.forEach((evs,i)=>{const pe=P[i]&&P[i][4]; if(pe) evs.forEach((x,k)=>{const e=pe[k]; if(e){e.oz=x[0]; e.st=x[1]; e.ts=x[2]}})});
  if(TSIL_ON===null){const t=d.v.indexOf('berut=телефон'); TSIL_ON=t>=0?t:0}
+ if(OZ_ON===null) OZ_ON=new Set(d.oz.map(x=>x[0]).filter(OZ_ZAMOVCH));
  if(LINZA!=='misce') draw(); else lzPanel();
  if(PLACE) renderPlace()}));
-function ozMaska(){let m=0; OZ_ON.forEach(b=>m|=b); return m}
+function ozMaska(){let m=0; if(OZ_ON) OZ_ON.forEach(b=>m|=b); return m}
 // чи подія яскрава в поточній лінзі (лише для карти — computeVis)
 function lzOn(e){
  // до виконання цього місця модуля LINZA ще undefined — це «Місце»
@@ -83,13 +87,13 @@ function lzPanel(){
  document.querySelectorAll('#fa .type').forEach(b=>{const n=L.vyd[+b.dataset.g]||0;
   b.querySelector('.lz-n').textContent=fmt(n); b.classList.toggle('lz-blid',!n)});
  if(LINZA==='porush'){
-  const n=[...OZ_ON].reduce((a,b)=>a+(L.oz[b]||0),0);
-  $('#flselt').textContent='Ознака: '+([...OZ_ON].sort().join()==='1'?'основні':[...OZ_ON].length?'обрані':'жодної');
+  const zam=LZD.oz.every(([b])=>OZ_ON.has(b)===OZ_ZAMOVCH(b));
+  $('#flselt').textContent='Ознака: '+(zam?'основні':OZ_ON.size?'обрано '+OZ_ON.size:'жодної');
   $('#flseln').textContent=fmt(Object.values(L.vyd).reduce((a,b)=>a+b,0))+' ▾';
-  const it=(b,nm)=>`<button class="lz-it" data-oz="${b}" aria-pressed="${OZ_ON.has(b)}"><span>${esc(nm)}</span><i>${fmt(L.oz[b]||0)}</i></button>`;
-  const nm=b=>(LZD.oz.find(x=>x[0]===b)||[0,''])[1];
-  $('#fldd').innerHTML=`<div class="lz-h">Основні</div>${it(1,nm(1))}
-   <div class="lz-h">Адміністративні</div>${it(4,nm(4)+' (переважно водії)')}`;
+  const it=([b,nm])=>`<button class="lz-it" data-oz="${b}" aria-pressed="${OZ_ON.has(b)}"><span>${esc(nm+(b===4?' (переважно водії)':''))}</span><i>${fmt(L.oz[b]||0)}</i></button>`;
+  // групи — як на сторінці «Заходи»: Діти / Дорослі (Андрій 27.10)
+  const gr=[...new Set(LZD.oz.map(x=>x[2]))];
+  $('#fldd').innerHTML=gr.map(g=>`<div class="lz-h">${esc(g)}</div>`+LZD.oz.filter(x=>x[2]===g).map(it).join('')).join('');
  } else {
   const t=TSIL_ON!==null&&LZD.v[TSIL_ON]?lzNazva(TSIL_ON):'—';
   $('#flselt').textContent='Ціль: '+t; $('#flseln').textContent=fmt(L.ts[TSIL_ON]||0)+' ▾';

@@ -457,7 +457,7 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
         # із сирої фабули, до вирізань показу («повторно протягом року» буває в
         # частині, яку показ скорочує)
         syra = (tk or {}).get('fab') or f
-        lz = (LZ.oznaky(syra, TK.kodeks(cat)), LZ.stat(syra),
+        lz = (LZ.oznaky(syra, TK.kodeks(cat), cat), LZ.stat(syra),
               LZ.tsil_kody(PD.theme(cat), L.SIMGROUP.get(cat, ''), syra))
         f = TK.pokaz(f, TK.kodeks(cat))
         # Панель показує дату й час самої події з проходу: дата рішення буває
@@ -653,7 +653,7 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
         # лінзи (36.41): e — на кожну точку P події [ознаки, стать, [коди цілі]];
         # v — коди цілі «поле=значення», oz і tn — підписи
         'linzy': dict(e=[LZ_OF.get(id(p), []) for p in P], v=list(TSIL_IX),
-                      oz=[[b, n] for b, _k, n in LZ.OZNAKY], tn=LZ.TSIL_NAZVA)})
+                      oz=[[b, n, g] for b, _k, n, g in LZ.OZNAKY], tn=LZ.TSIL_NAZVA)})
     open(dst, 'w', encoding='utf-8').write(
         TPL_GL.replace('__DANI__', json.dumps(dani, separators=(',', ':'))))
     rozp, merezha, _ = map_dani.vaga(dst)
