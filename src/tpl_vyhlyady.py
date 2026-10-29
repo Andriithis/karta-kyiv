@@ -156,58 +156,50 @@ function riskData(){
  const lines={type:'FeatureCollection',features:L1.map(([i,ks])=>lineF(RSEG[i].g,{i,r:nr(Math.max(...ks.map(val)))}))};
  const pts={type:'FeatureCollection',features:P1.map(([i,ks])=>({type:'Feature',geometry:{type:'Point',
   coordinates:[RPT[i].lo,RPT[i].la]},properties:{i,r:nr(Math.max(...ks.map(val)))}}))};
- // огляд міста — соти 600 м того самого кольору, за найвищим рангом у соті
- const H=new Map();
- const add=(la,lo,r)=>{const [k,cx,cy]=hexAt(la,lo,600); const h=H.get(k); if(!h||h.r<r) H.set(k,{cx,cy,r})};
- lines.features.forEach(f=>{const c=f.geometry.coordinates[0]; add(c[1],c[0],f.properties.r)});
- pts.features.forEach(f=>{const c=f.geometry.coordinates; add(c[1],c[0],f.properties.r)});
- const hex={type:'FeatureCollection',features:[...H.values()].map(h=>({type:'Feature',
-  geometry:{type:'Polygon',coordinates:hexPoly(h.cx,h.cy,600)},properties:{r:h.r}}))};
- return {lines,pts,hex}}
+ // Соти ризику на огляді прибрано (36.46, S-К.28): червона заливка закривала
+ // події навіть у вигляді «Адреси». Ризик — лише лінії й точки на будь-якому зумі.
+ return {lines,pts}}
 function riskReady(){
  if(!map.getSource('k-risk')){
   const before=map.getLayer('k-rings')?'k-rings':undefined;
   map.addSource('k-risk',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
   map.addSource('k-riskpt',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
-  map.addSource('k-riskhex',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
-  map.addLayer({id:'k-riskhex',type:'fill',source:'k-riskhex',maxzoom:13,
-   paint:{'fill-opacity':['interpolate',['linear'],['zoom'],11.5,['+',.12,['*',.45,['get','r']]],12.5,0]}},before);
-  const W=(a,b)=>['interpolate',['linear'],['zoom'],11,['+',a[0],['*',a[1],['get','r']]],15,['+',b[0],['*',b[1],['get','r']]]];
+  // На огляді лінії тонші й без облямівки, щоб не закривати соти й кільця (36.46)
+  const W=(a,b)=>['interpolate',['linear'],['zoom'],10,['+',.6,['*',.8,['get','r']]],11,['+',a[0],['*',a[1],['get','r']]],15,['+',b[0],['*',b[1],['get','r']]]];
+  const OP=['interpolate',['linear'],['zoom'],10,['+',.25,['*',.5,['get','r']]],12.5,['+',.35,['*',.6,['get','r']]]];
   map.addLayer({id:'k-riskh',type:'line',source:'k-risk',minzoom:11.8,layout:{'line-cap':'round'},
    paint:{'line-width':['+',2,W([1.2,2],[2.5,4])],'line-opacity':['interpolate',['linear'],['zoom'],11.8,0,12.5,.85]}},before);
-  map.addLayer({id:'k-risk',type:'line',source:'k-risk',minzoom:11.8,layout:{'line-cap':'round'},
-   paint:{'line-width':W([1.2,2],[2.5,4]),'line-opacity':['interpolate',['linear'],['zoom'],11.8,0,12.5,['+',.35,['*',.6,['get','r']]]]}},before);
-  map.addLayer({id:'k-riskpt',type:'circle',source:'k-riskpt',minzoom:11.8,
-   paint:{'circle-radius':3.5,'circle-stroke-width':1.5,
-    'circle-opacity':['interpolate',['linear'],['zoom'],11.8,0,12.5,['+',.35,['*',.6,['get','r']]]]}},before);
+  map.addLayer({id:'k-risk',type:'line',source:'k-risk',layout:{'line-cap':'round'},
+   paint:{'line-width':W([1.2,2],[2.5,4]),'line-opacity':OP}},before);
+  map.addLayer({id:'k-riskpt',type:'circle',source:'k-riskpt',
+   paint:{'circle-radius':['interpolate',['linear'],['zoom'],10,1.5,12.5,3.5],'circle-stroke-width':['interpolate',['linear'],['zoom'],11.8,0,12.5,1.5],
+    'circle-opacity':OP}},before);
  }
  const c=RISK_C[THEME]||RISK_C.svitla, h=cssv('--halo')||'#fff';
  map.setPaintProperty('k-risk','line-color',c); map.setPaintProperty('k-riskh','line-color',h);
- map.setPaintProperty('k-riskhex','fill-color',c);
  map.setPaintProperty('k-riskpt','circle-color',c); map.setPaintProperty('k-riskpt','circle-stroke-color',h);
  riskDraw();
 }
 function riskDraw(){
  if(!map.getSource('k-risk')) return;
- const d=RISK_ON?riskData():{lines:{type:'FeatureCollection',features:[]},pts:{type:'FeatureCollection',features:[]},hex:{type:'FeatureCollection',features:[]}};
- map.getSource('k-risk').setData(d.lines); map.getSource('k-riskpt').setData(d.pts); map.getSource('k-riskhex').setData(d.hex);
- for(const id of ['k-risk','k-riskh','k-riskpt','k-riskhex']) layerVis(id,RISK_ON);
+ const d=RISK_ON?riskData():{lines:{type:'FeatureCollection',features:[]},pts:{type:'FeatureCollection',features:[]}};
+ map.getSource('k-risk').setData(d.lines); map.getSource('k-riskpt').setData(d.pts);
+ for(const id of ['k-risk','k-riskh','k-riskpt']) layerVis(id,RISK_ON);
 }
 // «серед N% найризикованіших вулиць Києва · очікується ~M подій за рік» —
 // N — місце серед УСІХ відрізків міста, вгору до цілого (< 1 → «1%»); M —
 // прогноз моделі на 12 місяців (Андрій 06.10). Види — без дублікатів.
-// M не справджується в жодному виді (0–45% при порозі 60%) — у першій хвилі
-// прибирається (RISHENNYA 36.17.3); «серед N%» лишається.
+// M не справджується в жодному виді (0–45% при порозі 60%) — прибрано
+// (RISHENNYA 36.17.3, S-Р.8); «серед N%» лишається.
 const pctCity=p=>p==null?null:Math.max(1,Math.ceil(p));
-const muTxt=m=>m==null?'':m<1?' · менше 1 події за рік':` · очікується ~${Math.round(m)} ${pl(Math.round(m),'подія','події','подій')} за рік`;
 function riskRows(s,pt){
  const seen=new Set(), ks=s.kinds.filter(x=>typeOn(x.gi)).sort((a,b)=>(a.pct??99)-(b.pct??99))
   .filter(x=>!seen.has(x.title)&&seen.add(x.title));
  return ks.map(x=>{const n=pctCity(x.pct);
-  return `${esc(x.title)}${n?` — серед ${n}% найризикованіших ${pt?'місць':'вулиць'} Києва`:''}${muTxt(x.mu)}`})}
+  return `${esc(x.title)}${n?` — серед ${n}% найризикованіших ${pt?'місць':'вулиць'} Києва`:''}`})}
 // «Умови як біля подій» — з моделі ліній; лінії переходять на історію зі
 // згасанням без середовища, тож для ліній рядок прибирається (RISHENNYA 36.17.1)
-function riskWhence(s){const n=Math.max(0,...s.kinds.map(x=>x.n2)), fx=[...new Set(s.kinds.flatMap(x=>(x.fx||[]).map(f=>f[0])))];
+function riskWhence(s,pt){const n=Math.max(0,...s.kinds.map(x=>x.n2)), fx=pt?[...new Set(s.kinds.flatMap(x=>(x.fx||[]).map(f=>f[0])))]:[];
  const out=[]; if(n>0) out.push(`Тут уже були події: ${n} за 2 роки`); if(fx.length) out.push(`Умови як біля подій: ${fx.join(', ')}`);
  return out}
 function riskAt(p){ if(!RISK_ON||!map.getLayer('k-risk')) return null;
@@ -215,12 +207,12 @@ function riskAt(p){ if(!RISK_ON||!map.getLayer('k-risk')) return null;
  if(!f) return null; const pt=f.layer.id==='k-riskpt'; return {pt,s:(pt?RPT:RSEG)[f.properties.i]}}
 function riskTip(o){const s=o.s;
  return `<b>Ризик${o.pt?' · '+esc(s.typ):s.name?' · '+esc(s.name):''}</b>`+riskRows(s,o.pt).map(t=>`<span>${t}</span>`).join('')+
-  riskWhence(s).map(t=>`<span class="rtw">${esc(t)}</span>`).join('')}
+  riskWhence(s,o.pt).map(t=>`<span class="rtw">${esc(t)}</span>`).join('')}
 function riskPopup(o,ll){
  const s=o.s;
  let h=`<div class="rpop"><b>${o.pt?esc(s.typ):esc(s.name||'без назви')}</b>`+
-  riskRows(s,o.pt).map(t=>`<div class="sub">${t}</div>`).join('')+riskWhence(s).map(t=>`<div class="rmeth">${esc(t)}</div>`).join('');
- const k0=s.kinds.filter(x=>typeOn(x.gi))[0]; if(k0) h+=factRows(k0.fx&&k0.fx[0]&&k0.fx[0].length>1?k0.fx:null);
+  riskRows(s,o.pt).map(t=>`<div class="sub">${t}</div>`).join('')+riskWhence(s,o.pt).map(t=>`<div class="rmeth">${esc(t)}</div>`).join('');
+ const k0=o.pt&&s.kinds.filter(x=>typeOn(x.gi))[0]; if(k0) h+=factRows(k0.fx&&k0.fx[0]&&k0.fx[0].length>1?k0.fx:null);
  // Скарги 1551 у 50 м (перехрестя — 30 м): рядок, що розгортає список, —
  // у вікні ризику вкладок немає (RISHENNYA 35.10)
  const sk=skRyzyk(o);
