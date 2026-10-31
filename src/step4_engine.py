@@ -137,6 +137,13 @@ KOROTKA = (2, 400.0)      # не більше 2 відрізків і 400 м р�
 PROAKT_CHAST = {'ГП', 'ДОР'}
 
 
+# Ризик-історія (36.71): на карту — лише лінії й точки з ≥2 подіями за 2 роки,
+# щільність ліній — на довжину щонайменше 100 м (короткий відрізок з однією
+# подією інакше потрапляв у верхній 1%)
+MIN_POD_RYZYK = 2
+DOVZH_MIN = 100.0
+
+
 def sexp(v):
     """exp для кратності. Коли біля об'єкта подій немає зовсім, модель дає
     коефіцієнт із нескінченним інтервалом (розділення) — пишемо 1e6 («∞» у
@@ -821,9 +828,14 @@ def main():
                     return [r for _c, r in sorted(rows, reverse=True)[:3]]
                 # metod — щоб звіт «Ризик» писав метод точок з даних, а не з
                 # календаря (Е25, Н12: «з перенавчання 02.11» стояло до нього)
+                # Історії точка з однією свіжою подією важить більше за дві давні —
+                # і у «верхньому 1%» стояли місця з 1 подією за 2 роки (ZVIT-41,
+                # центральний чат 01.11). На карту — лише точки з ≥2 подіями за 2
+                # роки; середовище (хуліганство, R6) так не обрізається
+                pokaz = [i for i in oP if metod.startswith('R6') or n2P[i] >= MIN_POD_RYZYK][:kP]
                 tochky_out[key] = dict(theme=th, name=nm, pai=round(PAI_P, 2), metod=metod, items=[
                     [round(TP[i]['la'], 5), round(TP[i]['lo'], 5), TP[i]['typ'], int(n2P[i]),
-                     round(float(pctP[i]), 2), round(float(pmP[i]), 2), facP(i)] for i in oP[:kP]])
+                     round(float(pctP[i]), 2), round(float(pmP[i]), 2), facP(i)] for i in pokaz])
             return info
         return dict(на_карті=False, причина=f'замало подій на точках: {int(p25.sum())} у 2025')
     for key, vyd in KEYS:
@@ -975,9 +987,13 @@ def main():
         # історія до 12.2025 -> події 2026, PAI на довжину. Модель «разом» лишається
         # лише у звіті для порівняння.
         cntk = lambda ms: cnt(key, ms)
-        dR1 = zgasannia(cntk, '2025-12') / slen
+        # щільність — на довжину щонайменше DOVZH_MIN: відрізок у 10 м з однією
+        # подією інакше отримував найвищу щільність міста й ставав «верхнім 1%»
+        # з 1 подією за 2 роки (ZVIT-41, 01.11)
+        slenR = np.maximum(slen, DOVZH_MIN)
+        dR1 = zgasannia(cntk, '2025-12') / slenR
         PAI_R1, hR1 = pai(dR1, y26)
-        dmR1 = zgasannia(cntk, MAPW[-1]) / slen
+        dmR1 = zgasannia(cntk, MAPW[-1]) / slenR
         ok = PAI_R1 >= MIN_PAI
         why = '' if ok else f'PAI на довжину {PAI_R1:.1f} < {MIN_PAI:g}'
         if vyd == 'тема': radiusy[nm] = {d['тип']: d['r'] for d in facs if d['r']}
@@ -1035,7 +1051,9 @@ def main():
             # місце серед усіх відрізків міста, верхні N% (7.10); показано — стільки
             # ж, скільки дає крива точності, але в порядку історії
             orr = np.argsort(-dmR1, kind='stable'); pct_c = np.empty(n); pct_c[orr] = 100 * (np.arange(n) + 1) / n
-            shown_h = orr[:n_show]
+            # на карту — лише відрізки з ≥2 подіями за 2 роки: одна подія — не
+            # історія, а випадок
+            shown_h = [i for i in orr if n2[i] >= MIN_POD_RYZYK][:n_show]
             # без чинників і без «~M»: у картці лінії їх немає (S-Р.8)
             layers[key] = dict(kind='theme' if vyd == 'тема' else 'mech', theme=th, name=nm,
                                title='Ризик: ' + nm, slug=M.anchor(key),
