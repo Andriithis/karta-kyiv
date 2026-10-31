@@ -26,7 +26,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: karta-perevirka
+  group: karta-perevirka-${{ github.event.inputs.ref }}-${{ github.event.inputs.stseny }}
   cancel-in-progress: true
 
 jobs:
