@@ -109,7 +109,7 @@ METODYKA.md. Якщо рішення просить щось "позначити
 
 ```
 gh workflow run "Перевірка збірки" -f stseny=znimky/etap1.json
-gh workflow run "Перевірка збірки" -f stseny=znimky/etap1.json -f ref=<старий коміт>
+gh workflow run "Перевірка збірки" -f stseny=znimky/etap1.json -f ref=<повний SHA коміту>
 ```
 
 Локально (лише якщо пам'яті досить):

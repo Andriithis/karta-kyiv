@@ -107,5 +107,7 @@ jobs:
             vykhid/znimky
             vykhid_check.txt
             vykhid_zbirka.txt
+            data/kandydaty.json.gz
+            data/problems_report.json.gz
           if-no-files-found: ignore
           retention-days: 14
