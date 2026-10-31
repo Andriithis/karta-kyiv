@@ -47,6 +47,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
 
       # Посилання на тексти: поточний рік — із свіжого дампу, минулі — з
       # data/posylannya (докачує лише відсутні роки).

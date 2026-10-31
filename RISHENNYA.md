@@ -2703,6 +2703,18 @@ NAUKA (що взято з робіт). Номери розділів усере�
 workflow — «METODYKA, ч. II / ч. III»; старі розділи RISHENNYA й історичні
 дослідження не правились (назви ведуть в архів).
 
+**36.69. Код сторінки — справжні файли; MapLibre поруч із сайтом; точні
+версії пакетів (рішення 30.10; ZAVDANNYA-41, 4.5) → S-К.1.** JS, CSS і
+розмітка з `src/tpl_*.py` — у `site_src/` (base, core, gl_*, vyhlyady, linzy,
+tur, kiosk .js; head, libs_gl, tur, kiosk .css; body.html); `tpl_*.py` лише
+читають їх (`tpl_fajly.cytaty`) і зберігають свої описи. Склеєна сторінка —
+байт у байт та сама, що до перенесення, крім шляху до MapLibre й одного рядка
+коментаря про нього (звірено локально, 274 039 символів). MapLibre 6.10.0
+(mjs, shared, worker, css, ліцензія BSD-3) — у `site_src/vendor/`, збірка
+копіює в `site/vendor/`: кіоск і карта не залежать від CDN. `requirements.txt` —
+точні версії; workflow ставлять лише свої пакети з `-c requirements.txt` і
+кешують pip.
+
 ---
 
 ## Порядок

@@ -50,6 +50,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
 
       # Знімок OSM — з гілки osm (workflow «Знімок OSM», щомісяця; RISHENNYA
       # 35.9): збірка більше не качає OSM сама й не залежить від збоїв
@@ -168,7 +170,7 @@ jobs:
           if [ "$RETRAIN" = "true" ]; then
             # statsmodels — негативна біноміальна; відбір стійкості — src/rtm.py
             # (ZAVDANNYA-30, 3.3). Оцінка 30.09: ~1,7–2,7 год на раннері при 100 прогонах
-            pip install --quiet numpy scikit-learn statsmodels
+            pip install --quiet -c requirements.txt numpy scikit-learn statsmodels
             python src/step4_engine.py
           else
             echo "модель ризику цього запуску не перенавчається"
@@ -182,7 +184,7 @@ jobs:
         env:
           N_STAB: ${{ github.event.inputs.n_stab || '100' }}
         run: |
-          pip install --quiet numpy scikit-learn statsmodels
+          pip install --quiet -c requirements.txt numpy scikit-learn statsmodels
           python src/doslid_1551.py || echo "дослідження 1551 не вдалося — дивіться журнал"
 
       - name: Крок 3 — збірка карти
@@ -192,7 +194,7 @@ jobs:
           MAPILLARY_TOKEN: ${{ secrets.MAPILLARY_TOKEN }}
         run: |
           # numpy — нульовий рівень Р8 у відборі проблем (problems.py)
-          pip install --quiet numpy
+          pip install --quiet -c requirements.txt numpy
           python src/step3_map.py
 
       - name: Крок 5 — сайт з районами (викладач/слухач)
@@ -206,7 +208,7 @@ jobs:
       - name: Перевірка збірки
         run: |
           # Playwright — для кроку 7 (узгодженість підказки, картки й карти в браузері, S-К.14)
-          pip install --quiet playwright && python -m playwright install --with-deps chromium > /dev/null
+          pip install --quiet -c requirements.txt playwright && python -m playwright install --with-deps chromium > /dev/null
           python src/check_build.py
 
       # Детермінізм (36.24.4, S-Р.11): раз на місяць — у перший понеділок за

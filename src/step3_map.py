@@ -648,6 +648,11 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
     # Районна збірка лишилася для check_build — вона пише свою сторінку з
     # даними в окрему папку.
     odir = os.path.dirname(dst) or '.'
+    # MapLibre поруч із сайтом (ZAVDANNYA-41, 4.5): кіоск і карта не залежать від CDN
+    import shutil
+    vsrc = os.path.join(ROOT, 'site_src', 'vendor')
+    if os.path.isdir(vsrc):
+        shutil.copytree(vsrc, os.path.join(odir, 'vendor'), dirs_exist_ok=True)
     if district is None:
         for nm in OLD_NAMES:
             open(os.path.join(odir, nm), 'w', encoding='utf-8').write(REDIRECT)

@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# MapLibre — як є з npm, без перетворення кінців рядків (ZAVDANNYA-41, 4.5)
+site_src/vendor/** -text

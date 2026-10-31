@@ -44,6 +44,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
 
       # ---- Geofabrik ----
       - name: Geofabrik → Київ (osmium) → ті самі файли
@@ -54,7 +56,7 @@ jobs:
         run: |
           set -e
           sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
-          pip install --quiet osmium shapely numpy
+          pip install --quiet -c requirements.txt osmium shapely numpy
           curl -fsSL --retry 3 -o /tmp/ua.osm.pbf https://download.geofabrik.de/europe/ukraine-latest.osm.pbf
           ls -la /tmp/ua.osm.pbf
           python src/osm_pbf.py mezha /tmp/kyiv_2km.geojson
@@ -168,6 +170,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
       - name: Знімок OSM з гілки osm
         run: |
           git fetch --depth=1 origin osm
@@ -176,7 +180,7 @@ jobs:
           echo "знімок OSM від $(cat osm/data.txt)"
       - name: Крок 2c — прохідність
         run: |
-          pip install --quiet numpy scipy
+          pip install --quiet -c requirements.txt numpy scipy
           python src/step2c_network.py
       - name: Зберегти network.json
         run: |

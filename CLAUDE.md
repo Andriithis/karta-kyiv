@@ -198,7 +198,7 @@ Workflow запускаються через `gh` (встановлено й а�
 | `src/step0_fetch_dump.py`, `step1_download.py` | дамп реєстру, посилання на рішення |
 | `src/step1c_teksty.py`, `addr.py`, `podii.py` | прохід по текстах: фабула, дата події, адреса й клас |
 | `src/step2*.py` | геокодування, вулична мережа, чинники середовища, межі |
-| `src/step3_map.py`, `tpl_*.py` | збірка карти: панель, вікна, стилі, шари |
+| `src/step3_map.py`, `tpl_*.py`, `site_src/` | збірка карти: `site_src/*.js`, `*.css`, `body.html` — код сторінки; `tpl_*.py` їх читають; MapLibre — `site_src/vendor/` |
 | `src/tpl_gl.py`, `map_clusters.py` | карта на MapLibre (`index.html`), дерево кілець |
 | `src/map_problems.py`, `map_excl.py` | відбір проблем, установи |
 | `src/map_layers.py` | шари ризику під подіями |
