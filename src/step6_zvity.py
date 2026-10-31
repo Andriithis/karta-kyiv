@@ -925,6 +925,11 @@ def build(outdir):
              'Способи вирішувати проблеми й працювати з ризиками — за трикутником, з силою доказів.',
              SR.storinka(zakhody())))
     made.append('shcho-robyty.html')
+    # Огляд міста — чернетка (36.44, ZAVDANNYA-40 6.1): поза меню, до «так» Андрія
+    open(os.path.join(outdir, 'ohliad-chernetka.html'), 'w', encoding='utf-8').write(
+        page('ohliad-chernetka.html', 'Київ за рішеннями судів',
+             'Чернетка огляду міста — розповідь зі скролом.', ohliad(D)))
+    made.append('ohliad-chernetka.html')
     open(os.path.join(outdir, 'zakhody.html'), 'w', encoding='utf-8').write(
         '<!DOCTYPE html><html lang="uk"><head><meta charset="utf-8"><title>Що робити</title>'
         '<meta http-equiv="refresh" content="0; url=shcho-robyty.html#porushnyk"></head>'
@@ -979,6 +984,31 @@ ZAKHODY = [
         ('Люди, які стають ціллю в конкретному місці', 'поліція, партнери', [(ZNP, ', ст.23')]),
     ]),
 ]
+
+
+def ohliad(D):
+    """Огляд міста для людей (6.1): одне велике число на старті, далі історії
+    — тури з переліку аналізу фабул (tury.py): заголовок, сценарій, число,
+    «показати на карті». Знеособлено аналітиком; причин не пишемо (CLAUDE.md)."""
+    import tury as TU
+    adr = sorted((len(p[4]) for p in D['doma'] if p[4]), reverse=True)
+    n, m = sum(adr), len(adr)
+    k, s = 0, 0
+    while k < m and s < n / 2: s += adr[k]; k += 1
+    b = ['<style>.oh-v{font:800 clamp(40px,8vw,110px)/1 var(--sans);margin:30px 0 6px}.oh-p{font-size:20px;max-width:720px}'
+         '.oh-s{min-height:70vh;padding:40px 0;border-top:1px solid var(--rule)}.oh-s h2{font-size:28px}'
+         '.oh-z{margin:18px 0;padding:14px 18px;border-left:4px solid var(--ink);background:rgba(127,127,127,.06)}'
+         '.oh-z b{font-size:30px}</style>',
+         f'<section class="oh-s" style="border:0"><div class="oh-v">{pct(k / m if m else 0)}</div>'
+         f'<p class="oh-p">адрес Києва дають половину всіх {num(n)} подій з точною адресою. Решта міста — тиха.</p>'
+         '<p class="oh-p"><a href="index.html?kiosk=1">Подивитися турами ›</a></p></section>']
+    for t in TU.tury():
+        b.append(f'<section class="oh-s" id="{t["kod"]}"><h2>{esc(t["nazva"])}</h2>')
+        for z in t['zupynky'][:3]:
+            b.append(f'<div class="oh-z"><b>{num(z["chyslo"])}</b> {pl(z["chyslo"], "раз", "рази", "разів")} — '
+                     f'{esc(z["istoriia"])}<br><a href="index.html#m={z["lat"]:.5f},{z["lon"]:.5f}">{esc(z["adresa"])} на карті ›</a></div>')
+        b.append('<p>Що з цим робити — <a href="shcho-robyty.html">«Що робити»</a>.</p></section>')
+    return ''.join(b)
 
 
 def zakhody():
