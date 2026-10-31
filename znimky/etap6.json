@@ -1,0 +1,6 @@
+[
+ {"nazva": "6-kiosk-zastavka-1920", "vikno": [1920, 1080], "query": "kiosk=1", "chekaty": 6},
+ {"nazva": "6-kiosk-panel-1920", "vikno": [1920, 1080], "query": "kiosk=1", "chekaty": 3, "js": "(async()=>{await new Promise(r=>setTimeout(r,2000)); KT.map.getContainer().parentElement.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}))})()"},
+ {"nazva": "6-kiosk-zastavka-3840", "vikno": [3840, 2160], "query": "kiosk=1", "chekaty": 6},
+ {"nazva": "6-kiosk-panel-3840", "vikno": [3840, 2160], "query": "kiosk=1", "chekaty": 3, "js": "(async()=>{await new Promise(r=>setTimeout(r,2000)); KT.map.getContainer().parentElement.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}))})()"}
+]

@@ -653,7 +653,9 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
         # лінзи (36.41): e — на кожну точку P події [ознаки, стать, [коди цілі]];
         # v — коди цілі «поле=значення», oz і tn — підписи
         'linzy': dict(e=[LZ_OF.get(id(p), []) for p in P], v=list(TSIL_IX),
-                      oz=[[b, n, g] for b, _k, n, g in LZ.OZNAKY], tn=LZ.TSIL_NAZVA)})
+                      oz=[[b, n, g] for b, _k, n, g in LZ.OZNAKY], tn=LZ.TSIL_NAZVA),
+        # тури кіоску й огляду міста (6.2) — з переліку аналізу фабул, на вимогу
+        'tury': __import__('tury').tury()})
     open(dst, 'w', encoding='utf-8').write(
         TPL_GL.replace('__DANI__', json.dumps(dani, separators=(',', ':'))))
     rozp, merezha, _ = map_dani.vaga(dst)
