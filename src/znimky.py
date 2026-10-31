@@ -29,7 +29,8 @@ def stsena(br, url, s):
     pg.wait_for_function('window.KT&&KT.ready', timeout=120000)
     js = []
     if s.get('vyhliad'): js.append(f'KT.setView({s["vyhliad"]!r})')
-    if 'ryzyk' in s: js.append(f'if(RISK_ON!=={str(bool(s["ryzyk"])).lower()}) document.querySelector("#frisk").click()')
+    # змінні сторінки закриті в її області видимості — стан перемикача беремо з aria-pressed
+    if 'ryzyk' in s: js.append(f'{{const b=document.querySelector("#frisk"); if((b.getAttribute("aria-pressed")==="true")!=={str(bool(s["ryzyk"])).lower()}) b.click()}}')
     if s.get('adresa'):
         js.append(f'(()=>{{const i=KT.P.findIndex(p=>(p[2]||"").includes({s["adresa"]!r}));'
                   f'if(i<0) return; KT.map.jumpTo({{center:[KT.P[i][1],KT.P[i][0]],zoom:{s.get("zum", 17)}}});'
