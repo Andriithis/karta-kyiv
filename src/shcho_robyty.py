@@ -128,8 +128,9 @@ RYZYK = [('короткі візити патруля в гарячі точки
          ('робота з тими, кого вже обікрали чи побили, і з сусідніми адресами', 'помірно', 'povtor'),
          ('«сусідська варта» з мешканцями', 'помірно', 'susidy')]
 
-NE_PRATSIUIE = [('«залякування» підлітків екскурсіями до в\'язниць', 'не працює — правопорушень після них більше', 'scared'),
-                ('рейд без змін на місці', 'ефект зникає після рейду; міряти до й після', 'hot')]
+# «Не працює» — лише те, що огляд показав без ефекту чи зі шкодою (центральний
+# чат 31.10); застереження без такого огляду — у механізмах, без мітки
+NE_PRATSIUIE = [('«залякування» підлітків екскурсіями до в\'язниць', 'правопорушень після них більше', 'scared')]
 
 
 def dzherelo(k):
@@ -139,6 +140,13 @@ def dzherelo(k):
 
 
 SYLA = {'сильно': 'sy-s', 'помірно': 'sy-p', 'слабко': 'sy-l', 'не працює': 'sy-n'}
+
+
+def zasterezhennia(ne):
+    """«доказів мало» — мітка «слабко»; решта — застереження без мітки:
+    доведеного «не працює» для нього немає"""
+    if ne.startswith('Доказів мало'): return f'<p><span class="sy sy-l">слабко</span>{esc(ne)}</p>'
+    return f'<p class="muted">Обережно: {esc(ne[0].lower() + ne[1:])}</p>'
 
 
 def pryklady(mekh, an):
@@ -170,7 +178,7 @@ def storinka(zakhody_html):
         for kod, mekh, h, _s, vysn, tt, ne in [m for m in MEKHANIZMY if m[3] == strona]:
             b.append(f'<div class="mk" id="{kod}"><h3>{esc(h)}</h3><p class="zm-v">{esc(vysn)}</p><ul>'
                      + ''.join(f'<li><span class="sy {SYLA[s]}">{s}</span>{esc(t)} — {dzherelo(k)}</li>' for t, s, k in tt)
-                     + '</ul>' + (f'<p><span class="sy sy-n">не працює</span>{esc(ne)}</p>' if ne else ''))
+                     + '</ul>' + (zasterezhennia(ne) if ne else ''))
             pr = pryklady(mekh, an)
             if pr: b.append(f'<p>На карті:</p><ul>{pr}</ul>')
             b.append('</div>')
