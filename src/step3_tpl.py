@@ -8,6 +8,7 @@
     tpl_core     панель, паспорт SARA, картка проблеми, computeVis
     tpl_vyhlyady вигляди, картки адреси й соти, пошук, телефон
     tpl_linzy    фільтри «Порушник» і «Ціль», три рядки картки, особи
+    tpl_tur      тур картою: кнопка «Тур» і кіоск, один рушій
     tpl_kiosk    кіоск для сенсорного екрана академії (?kiosk=1)
 
 Запасну Leaflet-збірку (karta-zapasna.html) прибрано разом з tpl_map і
@@ -23,6 +24,7 @@ from tpl_core import JS_CORE
 from tpl_gl import JS_GL_LOAD, JS_GL_MAP, JS_GL_DRAW
 from tpl_vyhlyady import JS_VYHLYADY
 from tpl_linzy import JS_LINZY
+from tpl_tur import JS_TUR, CSS_TUR
 from tpl_kiosk import JS_KIOSK, CSS_KIOSK
 
 # MapLibre 6.x — лише ES-модуль, тому сторінка вся в <script type="module">:
@@ -30,9 +32,9 @@ from tpl_kiosk import JS_KIOSK, CSS_KIOSK
 # Модуль виконується після розбору сторінки, як і звичайний скрипт у кінці
 # <body>. Порядок частин важить: tpl_base дає дані й палітру, tpl_gl створює
 # карту, tpl_core будує панель, останні малюють уже по готовому.
-TPL_GL = (HEAD_GL + '<style>' + CSS_KIOSK + '</style>' + BODY + '\n<script type="module">\n'
+TPL_GL = (HEAD_GL + '<style>' + CSS_TUR + CSS_KIOSK + '</style>' + BODY + '\n<script type="module">\n'
           + JS_GL_LOAD + '\n' + JS_BASE + '\n' + JS_GL_MAP + '\n' + JS_CORE + '\n' + JS_GL_DRAW
-          + '\n' + JS_VYHLYADY + '\n' + JS_LINZY + '\n' + JS_KIOSK
+          + '\n' + JS_VYHLYADY + '\n' + JS_LINZY + '\n' + JS_TUR + '\n' + JS_KIOSK
           + '\n</script></body></html>')
 
 # Слова «прогноз» в інтерфейсі нової карти немає (розд. 23, п. 8): карта не

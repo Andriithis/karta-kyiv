@@ -1,0 +1,9 @@
+[
+ {"nazva": "2-knopka-tur-pk", "vikno": [1366, 768], "vyhliad": "soty", "tsentr": [30.523, 50.45], "zum": 11},
+ {"nazva": "2-tur-ide-pk", "vikno": [1366, 768], "vyhliad": "soty", "tsentr": [30.523, 50.45], "zum": 11, "chekaty": 9,
+  "js": "document.querySelector('#ftur').click()"},
+ {"nazva": "2-tur-ide-telefon", "vikno": [375, 812], "vyhliad": "soty", "tsentr": [30.523, 50.45], "zum": 11, "chekaty": 9,
+  "js": "document.querySelector('#ftur').click()"},
+ {"nazva": "2-tur-video-pk", "vikno": [1366, 768], "vyhliad": "soty", "tsentr": [30.523, 50.45], "zum": 11, "video": 26,
+  "js": "(async()=>{await new Promise(r=>setTimeout(r,800)); document.querySelector('#ftur').click(); await new Promise(r=>setTimeout(r,21000)); document.querySelector('#map').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}))})()"}
+]
