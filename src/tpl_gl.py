@@ -626,7 +626,10 @@ function renderPlace(){
  const tabs=[['ogl','Огляд'],['rish',`Рішення (${nDec})`]].concat(sk&&sk.length?[['skarg',`Скарги (${fmt(sk.length)})`]]:[])
   .concat(p[3]?[['near',F_P&&!(F.cats||[]).length?'Що поруч':`Що поруч (${PLACE.near.length})`]]:[]);
  if(!tabs.some(t=>t[0]===PLACE.tab)) PLACE.tab='ogl';
- const title=p[3]?(p[2]||'адреса не визначена'):streetName(p)+' · вся вулиця';
+ // Картка проблеми-місця — усі адреси місця в заголовку («вул. Васильківська, 30 /
+ // вул. Сумська, 1»; центральний чат 31.10); лінії й ділянки — як були, адрес там десятки
+ const title=pr&&pr.stsenarij&&(pr.adresy||[]).length>1?pr.adresy.join(' / ')
+  :p[3]?(p[2]||'адреса не визначена'):streetName(p)+' · вся вулиця';
  el.innerHTML=`<div class="kp-head">
    ${pr?`<div class="kp-badge"><button class="kp-lnk" data-kp="adresa" title="Усі події адреси">‹ адреса</button> Проблема · ${esc(pr.theme)}</div>`:''}
    <b class="kp-title">${esc(title)}</b>
