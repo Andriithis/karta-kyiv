@@ -221,7 +221,8 @@ function riskPopup(o,ll){
  // у вікні ризику вкладок немає (RISHENNYA 35.10)
  const sk=skRyzyk(o);
  if(sk&&sk.length) h+=`<button class="rsk-b" data-rsk="1" aria-expanded="false">Скарги (${fmt(sk.length)})</button><div class="rsk" hidden>${skHTML(sk,50,true)}</div>`;
- h+=`<div class="rmeth"><a class="rdoc" style="display:inline;margin:0" href="ryzyk.html" target="_blank" rel="noopener">Як пораховано ↗</a></div></div>`;
+ h+=`<div class="rmeth"><a class="rdoc" style="display:inline;margin:0" href="ryzyk.html" target="_blank" rel="noopener">Як пораховано ↗</a>`+
+  ` · <a class="rdoc" style="display:inline;margin:0" href="shcho-robyty.html#ryzyk" target="_blank" rel="noopener">Що робити ›</a></div></div>`;
  if(POPUP) POPUP.remove(); clearNear();
  const w=document.createElement('div'); w.innerHTML=h;
  const rb=w.querySelector('[data-rsk]');

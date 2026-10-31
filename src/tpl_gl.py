@@ -523,7 +523,11 @@ function stsKartka(q){const sh=q.n?Math.round(100*(q.ns||0)/q.n):0;
   (q.tryk?`<div class="kp-trykr">Повторюється: <b>${esc(q.tryk)}</b></div>`:'')+
   (q.tsyt||[]).slice(0,3).map(c=>`<blockquote class="kp-tsyt">«${esc(c.tekst)}» `+
    `<a href="https://reyestr.court.gov.ua/Review/${encodeURIComponent(c.doc)}" target="_blank" rel="noopener">№ ${esc(c.doc)}</a></blockquote>`).join('')+
-  `<button class="kp-vsi" data-kp-tab="rish">Усі рішення місця ›</button>`}
+  `<button class="kp-vsi" data-kp-tab="rish">Усі рішення місця ›</button>`+
+  `<a class="kp-shr" href="shcho-robyty.html#${SR_KOTVA[q.sim]||'misce'}" target="_blank" rel="noopener">Що робити ›</a>`}
+// розділ «Що робити» для механізму (src/shcho_robyty.py, MEKHANIZMY)
+const SR_KOTVA={'ДОР_ДТП':'dtp','ДОР_залишення_місця':'parkovka','ГП_пиятика':'pyttia','ГП_куріння':'kurinnia',
+ 'ГП_хуліг':'khulihanstvo','АЛК_стихторгівля':'torhivlia','АЛК_торгівля':'torhivlia','МАЙ_крадіжка':'krazhky','МАЙ_шахрайство':'shakhraistvo'};
 function oglHTML(d){
  const {p,pr,evs,probs}=d;
  // список осіб з ознакою — замість огляду (лінзи, 36.41)

@@ -189,6 +189,7 @@ html .tsw button{min-height:32px;display:inline-flex;align-items:center}
 #kplace .kp-trykr{background:rgba(127,127,127,.12);border-radius:6px;padding:5px 8px;margin:6px 0;font-size:13px}
 #kplace .kp-tsyt{margin:6px 0;padding:0 0 0 8px;border-left:2px solid var(--rule);font-size:12.5px;line-height:1.4}
 #kplace .kp-vsi{display:block;width:100%;min-height:44px;margin:8px 0 0;border:1px solid var(--rule);border-radius:8px;background:none;color:inherit;font:inherit;cursor:pointer}
+#kplace .kp-shr{display:inline-block;margin:10px 0 0}
 #kplace .kp-sts{font-size:13px;line-height:1.35;margin:0 0 3px}
 #kplace .kp-mod{margin-top:8px}
 #kplace .kp-pro{margin:4px 0 6px;color:var(--dim)}

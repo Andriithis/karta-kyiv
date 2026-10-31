@@ -25,6 +25,13 @@ def stsena(br, url, s):
                         color_scheme='dark' if s.get('tema') == 'temna' else 'light')
     pg = ct.new_page()
     q = s.get('query', '')
+    if s.get('storinka'):
+        # сторінка звіту, не карта: без очікування KT
+        pg.goto(url.replace('index.html', s['storinka']))
+        time.sleep(s.get('chekaty', 1))
+        os.makedirs(OUT, exist_ok=True)
+        pg.screenshot(path=os.path.join(OUT, s['nazva'] + '.png'), full_page=s.get('cila', False))
+        ct.close(); print(f'   {s["nazva"]}: {w}×{h}'); return
     pg.goto(url + (('?' + q) if q else ''))
     pg.wait_for_function('window.KT&&KT.ready', timeout=120000)
     js = []

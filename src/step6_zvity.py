@@ -106,7 +106,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 # посилання. «Схожі умови» тепер «Ризик» (36.28.4).
 STORINKY = [('doslidzhennya.html', 'Дослідження'), ('stan-mista.html', 'Стан міста'), ('problemy.html', 'Проблеми'),
             ('ryzyk.html', 'Ризик'), (None, 'Вирішені'), (None, 'Коли'), (None, 'Розбори'),
-            ('metodyka.html', 'Методика')]
+            ('metodyka.html', 'Методика'), ('shcho-robyty.html', 'Що робити')]
 
 
 def page(fn, title, lead, body, script=''):
@@ -917,9 +917,18 @@ def build(outdir):
         page('doslidzhennya.html', 'Дослідження', 'Що видно з судових рішень про Київ: скільки й де, які місця '
              'стали проблемами, де ймовірне далі і що вже вирішилося.', zmist(D, n)))
     made.append('doslidzhennya.html')
+    # «Що робити» (36.56, S-З.11): «Заходи» — її розділ «Порушник»; zakhody.html —
+    # переадресація, щоб старі посилання й закладки не обірвались
+    import shcho_robyty as SR
+    open(os.path.join(outdir, 'shcho-robyty.html'), 'w', encoding='utf-8').write(
+        page('shcho-robyty.html', 'Що робити',
+             'Способи вирішувати проблеми й працювати з ризиками — за трикутником, з силою доказів.',
+             SR.storinka(zakhody())))
+    made.append('shcho-robyty.html')
     open(os.path.join(outdir, 'zakhody.html'), 'w', encoding='utf-8').write(
-        page('zakhody.html', 'Заходи щодо правопорушника',
-             'Категорії осіб, хто з ними працює, і норми.', zakhody()))
+        '<!DOCTYPE html><html lang="uk"><head><meta charset="utf-8"><title>Що робити</title>'
+        '<meta http-equiv="refresh" content="0; url=shcho-robyty.html#porushnyk"></head>'
+        '<body><a href="shcho-robyty.html#porushnyk">Що робити → Порушник</a></body></html>')
     made.append('zakhody.html')
     return made
 
