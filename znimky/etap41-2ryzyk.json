@@ -1,0 +1,6 @@
+[
+ {"nazva": "2-ryzyk-istoriia-z11", "vikno": [1366, 768], "vyhliad": "soty", "ryzyk": true, "tsentr": [30.52, 50.45], "zum": 11},
+ {"nazva": "2-ryzyk-istoriia-z13-adresy", "vikno": [1366, 768], "vyhliad": "addr", "ryzyk": true, "tsentr": [30.51, 50.44], "zum": 13},
+ {"nazva": "2-ryzyk-istoriia-z15-vasylkivska", "vikno": [1366, 768], "vyhliad": "addr", "ryzyk": true, "adresa": "вул. Васильківська, 30", "vidkryty": false, "zum": 15},
+ {"nazva": "2-ryzyk-istoriia-telefon", "vikno": [375, 812], "vyhliad": "addr", "ryzyk": true, "tsentr": [30.51, 50.44], "zum": 13}
+]

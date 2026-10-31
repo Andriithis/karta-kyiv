@@ -25,7 +25,7 @@ Rosser та ін. (2017, JQC 33(3):569-594) показали, що мережа 
 Перелік типів і радіусів зафіксовано в NAUKA.md до запуску й після
 результату не міняється.
 
-Після перевірки Е8 (RISHENNYA 36.17, у коді ще ні — перша хвиля): лінії —
+Після перевірки Е8 (RISHENNYA 36.17; у коді з ZAVDANNYA-41, 2.2): лінії —
 історія зі згасанням (24 міс., піврозпад 12 міс.) без середовища, бо модель
 на лініях ніде не краща за історію понад похибку, а для ДТП гірша; точки —
 та сама історія, крім хуліганства (лише середовище, 36.21: лише там краще за
@@ -969,8 +969,17 @@ def main():
                     dm = (per(dm) + per(pBm / slen)) / 2
             else:
                 dvi = dict(на_карті=False, причина=f'замало: суд {int(yA_t1.sum())}, скарг {int(yB_t1.sum())} у вікні 1551')
-        ok = PAI_T >= MIN_PAI
-        why = '' if ok else f'PAI на довжину {PAI_T:.1f} < {MIN_PAI:g}'
+        # Лінії на карті — історія зі згасанням R1_24 (36.17.1, S-Р.2; ZAVDANNYA-41,
+        # 2.2): події 24 місяців з вагою 0,5^(вік/12), без середовища — модель на
+        # лініях ніде не краща за історію понад похибку (Е8). Перевірка та сама:
+        # історія до 12.2025 -> події 2026, PAI на довжину. Модель «разом» лишається
+        # лише у звіті для порівняння.
+        cntk = lambda ms: cnt(key, ms)
+        dR1 = zgasannia(cntk, '2025-12') / slen
+        PAI_R1, hR1 = pai(dR1, y26)
+        dmR1 = zgasannia(cntk, MAPW[-1]) / slen
+        ok = PAI_R1 >= MIN_PAI
+        why = '' if ok else f'PAI на довжину {PAI_R1:.1f} < {MIN_PAI:g}'
         if vyd == 'тема': radiusy[nm] = {d['тип']: d['r'] for d in facs if d['r']}
         # скільки вулиць показувати: найдовший перелік із сітки, на якому
         # частка вулиць, де події справді сталися в перевірочному році, ще не
@@ -995,6 +1004,7 @@ def main():
                  вікно_карти=[MAPW[0], MAPW[-1]],
                  історія_навчання=int(y24.sum()), навчання=int(y25.sum()), перевірка=int(y26.sum()),
                  PAI_разом=round(PAI_T, 2), PAI_історія=round(PAI_H, 2), PAI_середовище=round(PAI_E, 2),
+                 PAI_R1_24=round(PAI_R1, 2), hit_R1_24=round(hR1, 3), метод_ліній='R1_24 — історія зі згасанням',
                  hit_разом=round(hT, 3), hit_історія=round(hH, 3), hit_середовище=round(hE, 3),
                  PAI_інший_район=None if PAI_G is None else round(PAI_G, 2),
                  hit_інший_район=None if hG is None else round(hG, 3),
@@ -1021,21 +1031,24 @@ def main():
         report[key] = e
         rk_by[key] = set(shown.tolist())
         if ok:
-            rk = dm / (dm.max() or 1)
-            # місце серед усіх відрізків міста, верхні N% (7.10)
-            orr = np.argsort(-dm, kind='stable'); pct_c = np.empty(n); pct_c[orr] = 100 * (np.arange(n) + 1) / n
+            rk = dmR1 / (dmR1.max() or 1)
+            # місце серед усіх відрізків міста, верхні N% (7.10); показано — стільки
+            # ж, скільки дає крива точності, але в порядку історії
+            orr = np.argsort(-dmR1, kind='stable'); pct_c = np.empty(n); pct_c[orr] = 100 * (np.arange(n) + 1) / n
+            shown_h = orr[:n_show]
+            # без чинників і без «~M»: у картці лінії їх немає (S-Р.8)
             layers[key] = dict(kind='theme' if vyd == 'тема' else 'mech', theme=th, name=nm,
-                               title='Схожі умови: ' + nm, slug=M.anchor(key), window=e['вікно'],
-                               proakt=mark, hit=round(hT, 3), pai=round(PAI_T, 2), n2=1,
-                               dvi_mirky=bool(dvi and dvi.get('на_карті')),
-                               items=[row(i, rk, n2, street_facts(fT, sT['cols'], i, k0=K0), pct=pct_c, mu=pm)
-                                      for i in shown],
-                               grid=[row(i, rk, n2, None, True) for i in om[:TOPGRID]])
+                               title='Ризик: ' + nm, slug=M.anchor(key),
+                               window='історія 24 міс. зі згасанням (піврозпад 12) → події наступного року',
+                               metod='R1_24', proakt=mark, hit=round(hR1, 3), pai=round(PAI_R1, 2), n2=1,
+                               dvi_mirky=False,
+                               items=[row(i, rk, n2, [], pct=pct_c, mu=None) for i in shown_h],
+                               grid=[row(i, rk, n2, None, True) for i in orr[:TOPGRID]])
         # ---- точки (6) ----
         tp = tp_gotovo if tp_gotovo is not None else model_tochok(key, th, nm)
         if tp is not None: e['точки'] = tp
         log(f'   PAI на довжину: разом {PAI_T:.2f}, історія {PAI_H:.2f}, середовище {PAI_E:.2f}, '
-            f'захід->схід {PAI_G if PAI_G is None else round(PAI_G, 2)}; як рахувалося — разом {star["разом"]}; '
+            f'захід->схід {PAI_G if PAI_G is None else round(PAI_G, 2)}; R1_24 {PAI_R1:.2f} (на карту); як рахувалося — разом {star["разом"]}; '
             f'чинників {len(facs)}; спільних з навчанням на 2025: {e["стійкість"]["спільних_чинників"]} чинників, '
             f'{e["стійкість"]["спільних_вулиць"]} з {n_show} вулиць; ' + ('на карті' if ok else 'СХОВАНО: ' + why))
         for d in facs[:8]:

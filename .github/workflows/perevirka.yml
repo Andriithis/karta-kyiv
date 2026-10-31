@@ -21,6 +21,13 @@ on:
         description: 'Проганяти check_build'
         type: boolean
         default: true
+      ryzyk:
+        description: 'Перенавчити ризик (крок 4, ~2 год) — risk.json і звіт моделі в артефакт, без публікації'
+        type: boolean
+        default: false
+      n_stab:
+        description: 'Прогонів відбору стійкості (100 за методикою)'
+        default: '100'
 
 permissions:
   contents: read
@@ -32,7 +39,7 @@ concurrency:
 jobs:
   perevirka:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 330
     steps:
       - uses: actions/checkout@v4
         with:
@@ -80,6 +87,16 @@ jobs:
           python src/step2b_risks.py
           python src/step2d_borders.py || echo "межі районів пропущено"
 
+      # Перенавчання ризику без публікації (ZAVDANNYA-41, 2.2): нову модель
+      # видно на знімках і в артефакті ще до того, як вона піде на сайт
+      - name: Крок 4 — модель ризику
+        if: ${{ github.event.inputs.ryzyk == 'true' }}
+        env:
+          N_STAB: ${{ github.event.inputs.n_stab || '100' }}
+        run: |
+          pip install --quiet numpy scikit-learn statsmodels
+          python src/step4_engine.py
+
       - name: Збірка карти
         run: |
           pip install --quiet numpy
@@ -109,5 +126,9 @@ jobs:
             vykhid_zbirka.txt
             data/kandydaty.json.gz
             data/problems_report.json.gz
+            data/risk.json
+            data/engine_report.json
+            data/radiusy.json
+            doslidzhennya/ZVIT-KROK7.md
           if-no-files-found: ignore
           retention-days: 14
