@@ -212,10 +212,26 @@ function riskAt(p){ if(!RISK_ON||!map.getLayer('k-risk')) return null;
 function riskTip(o){const s=o.s;
  return `<b>Ризик${o.pt?' · '+esc(s.typ):s.name?' · '+esc(s.name):''}</b>`+riskRows(s,o.pt).map(t=>`<span>${t}</span>`).join('')+
   riskWhence(s,o.pt).map(t=>`<span class="rtw">${esc(t)}</span>`).join('')}
+// «Тут раніше: <ціль, топ-2> · <ознака порушника, якщо ≥30%>» — описово, з
+// подій у 30 м від лінії (50 м від точки) за 24 місяці; модель ризику не
+// міняється: підвиди за ціллю надто малі для прогнозу (36.52 п. 4, S-Р.2)
+function tutRanishe(o){ if(!LZD) return '';
+ const R_=o.pt?50:30, pts=o.pt?[[o.s.la,o.s.lo]]:o.s.g, vid=(M.mon_n||1)-24, E=[];
+ P.forEach(p=>{ if(!p[3]) return;
+  if(!pts.some(q=>{const dx=(q[1]-p[1])*MX_, dy=(q[0]-p[0])*MY_; return dx*dx+dy*dy<=R_*R_})) return;
+  p[4].forEach(e=>{ if(e[5]>=vid&&typeOn(CATTH[e[1]])) E.push(e)})});
+ if(E.length<3) return '';
+ const t={}; E.forEach(e=>(e.ts||[]).forEach(x=>t[x]=(t[x]||0)+1));
+ const top=Object.entries(t).sort((a,b)=>b[1]-a[1]).slice(0,2).map(([x])=>lzNazva(+x));
+ const oz=LZD.oz.map(([b,nm])=>[nm,E.filter(e=>(e.oz||0)&b).length]).filter(([,n])=>n>=.3*E.length).map(([nm])=>nm.toLowerCase());
+ const r=[...top,...oz]; return r.length?`Тут раніше: ${r.join(' · ')}`:''}
 function riskPopup(o,ll){
  const s=o.s;
+ if(!LZD&&typeof zavantazhLinzy==='function') zavantazhLinzy().then(()=>{ if(POPUP&&POPUP._sk===o) riskPopup(o,ll)});
+ const tr=tutRanishe(o);
  let h=`<div class="rpop"><b>${o.pt?esc(s.typ):esc(s.name||'без назви')}</b>`+
-  riskRows(s,o.pt).map(t=>`<div class="sub">${t}</div>`).join('')+riskWhence(s,o.pt).map(t=>`<div class="rmeth">${esc(t)}</div>`).join('');
+  riskRows(s,o.pt).map(t=>`<div class="sub">${t}</div>`).join('')+riskWhence(s,o.pt).map(t=>`<div class="rmeth">${esc(t)}</div>`).join('')+
+  (tr?`<div class="rmeth">${esc(tr)}</div>`:'');
  const k0=o.pt&&s.kinds.filter(x=>typeOn(x.gi))[0]; if(k0) h+=factRows(k0.fx&&k0.fx[0]&&k0.fx[0].length>1?k0.fx:null);
  // Скарги 1551 у 50 м (перехрестя — 30 м): рядок, що розгортає список, —
  // у вікні ризику вкладок немає (RISHENNYA 35.10)
