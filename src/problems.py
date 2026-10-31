@@ -612,7 +612,7 @@ def kandydaty(zapysy, ev, log=print):
         for x in pod:
             h = int(x['time'][:2]) if x.get('time') and x['time'][:2].isdigit() else None
             chas = None if h is None else 'ніч' if h < 6 or h >= 22 else 'ранок' if h < 12 else 'день' if h < 18 else 'вечір'
-            stsen[' · '.join(s for s in ((x.get('mitky') or [None])[0], r.get('typ'), chas) if s)] += 1
+            stsen[' · '.join(s for s in ((x.get('mitky') or [None])[0], (r.get('typ') or {}).get('seredovyshche'), chas) if s)] += 1
         g = r.get('golos') or {}
         out.append(dict(adresy=r.get('adresy', []), lat=r['p'][0], lon=r['p'][1], sim=r['sim'], vyd=r['vyd'],
                         status=r.get('status'), stsenarii=[[k, n] for k, n in stsen.most_common(5) if k],
