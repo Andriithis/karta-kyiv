@@ -501,6 +501,16 @@ def mistsia(ev):
             bl = [(dist(p, q), p) for p in kuty
                   if dist(p, q) <= R_PEREKHRESTIA and any(_ta_sama_vulytsia(a, b) for a in os_p[p] for b in os_p[q])]
             if bl: kudy[q] = min(bl)[1]
+        # Один крок без ланцюжка: будинок ближче кола ДТП до номера, який уже
+        # забрало перехрестя, — те саме місце (Сумська, 1 на розі з
+        # Васильківською, 30 далі 120 м від точки перетину ліній, 31.10)
+        zabrani = [q for q in pts if q in kudy and kudy[q] != q]
+        if zabrani:
+            gz = Pts(zabrani)
+            for q in pts:
+                if q in kudy: continue
+                bl = [(dist(zabrani[j], q), zabrani[j]) for j in gz.near(q[0], q[1], R_KOLO_DTP)]
+                if bl: kudy[q] = kudy[min(bl)[1]]
         r = R_KOLO_DTP if M.simtheme(sim) == 'ДТП' or sim == 'ДОР_ДТП' else R_KOLO
         for p in pts:
             if p in kudy: continue
