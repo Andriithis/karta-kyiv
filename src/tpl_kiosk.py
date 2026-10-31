@@ -75,17 +75,22 @@ body.kiosk .ki-kh{font-size:clamp(14px,1.2vw,24px);opacity:.7}
 body.kiosk .ki-ka{font:700 clamp(20px,1.8vw,36px)/1.2 var(--sans,system-ui);margin:4px 0}
 body.kiosk .ki-ks{font-size:clamp(16px,1.3vw,28px);line-height:1.35}
 body.kiosk .ki-kn{font-size:clamp(16px,1.3vw,28px);margin-top:8px}.ki-kn b{font-size:clamp(28px,2.6vw,56px)}
-body.kiosk .ki-p{position:absolute;left:16px;top:16px;bottom:16px;z-index:5;width:min(360px,28vw);overflow:auto;
+body.kiosk .ki-p{position:absolute;left:16px;top:16px;bottom:16px;z-index:5;width:min(900px,47vw);overflow:auto;
  background:var(--panel,#fff);border-radius:16px;padding:12px;box-shadow:0 2px 12px rgba(0,0,0,.25)}
-body.kiosk .ki-ph{font:700 18px var(--sans,system-ui);margin:10px 4px 6px}
-body.kiosk .ki-p button,body.kiosk .ki-v button,body.kiosk .ki-start{min-height:64px;min-width:64px;font:600 18px var(--sans,system-ui);
+body.kiosk .ki-ph{font:700 24px var(--sans,system-ui);margin:12px 4px 8px}
+/* тури, види й райони — сіткою, щоб усе вміщалось без прокрутки (центральний чат 31.10) */
+body.kiosk .ki-tury,body.kiosk .ki-vydy{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+body.kiosk .ki-rai{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+body.kiosk .ki-p button,body.kiosk .ki-v button,body.kiosk .ki-start{min-height:64px;min-width:64px;font:600 22px var(--sans,system-ui);
  border:1px solid var(--rule,#ccc);border-radius:12px;background:var(--panel,#fff);color:var(--ink);cursor:pointer}
-body.kiosk .ki-p button{display:flex;align-items:center;gap:10px;width:100%;margin:0 0 6px;padding:0 14px;text-align:left}
+body.kiosk .ki-p button{display:flex;align-items:center;gap:10px;width:100%;margin:0;padding:6px 14px;text-align:left;line-height:1.2}
 body.kiosk .ki-p button i{width:16px;height:16px;border-radius:50%;flex:none}
 body.kiosk .ki-p button.ki-off{opacity:.4}
 body.kiosk .ki-v{position:absolute;left:50%;transform:translateX(-50%);top:16px;z-index:5;display:flex;gap:8px}
 body.kiosk .ki-v button{padding:0 22px}
 body.kiosk .ki-start{position:absolute;right:16px;top:16px;z-index:5;padding:0 22px}
-body.kiosk #f3d{width:64px;height:64px;top:96px;font-size:20px}
+body.kiosk #f3d{width:72px;height:72px;top:96px;font-size:22px}
+body.kiosk .maplibregl-ctrl-group button{width:64px;height:64px}
+body.kiosk .maplibregl-ctrl-group button .maplibregl-ctrl-icon{background-size:36px}
 body.kiosk [hidden]{display:none!important}
 """
