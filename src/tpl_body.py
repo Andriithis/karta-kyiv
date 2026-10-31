@@ -18,7 +18,12 @@ BODY = r"""<body data-t="svitla"><div id="wrap"><div id="map"></div>
  </div>
  <div class="advh"><span>Статті</span><button id="advx" aria-label="Закрити">×</button></div>
  <div class="advgrid" id="advgrid"></div>
- <div class="advfoot"><button class="sw" id="fprec" aria-pressed="false"><span>Лише точні адреси</span><span class="tog"></span></button></div>
+ <div class="advfoot"><button class="sw" id="fprec" aria-pressed="false"><span>Лише точні адреси</span><span class="tog"></span></button>
+  <!-- Прохідність — лише тут, на вимогу (S-К.10; з головної панелі прибрано 31.10) -->
+  <div class="grp" id="fctx">
+   <button class="sw" data-ctx="flows" aria-pressed="false"><span>Прохідність</span><span class="tog"></span></button>
+   <button class="sw" data-ctx="facts" aria-pressed="false"><span>Об'єкти довкола</span><span class="tog"></span></button>
+  </div></div>
 </div>
 <aside id="side">
  <label class="search"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="7" cy="7" r="5"/><path d="M11 11l3.5 3.5"/></svg><input id="q" type="search" placeholder="Адреса або вулиця" autocomplete="off" spellcheck="false"></label>
@@ -31,10 +36,6 @@ BODY = r"""<body data-t="svitla"><div id="wrap"><div id="map"></div>
  <div>
   <button class="sw" id="frisk" aria-pressed="false"><span>Прогноз ризику</span><span class="tog"></span></button>
   <div class="chips" id="friskx" hidden></div>
- </div>
- <div class="grp" id="fctx">
-  <button class="sw" data-ctx="flows" aria-pressed="false"><span>Прохідність</span><span class="tog"></span></button>
-  <button class="sw" data-ctx="facts" aria-pressed="false"><span>Об'єкти довкола</span><span class="tog"></span></button>
  </div>
  <div class="grp">
   <button class="sel" id="dbtn"><span>Район</span><span id="dval">усе місто ▾</span></button>
