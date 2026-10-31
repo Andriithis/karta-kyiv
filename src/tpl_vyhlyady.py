@@ -217,7 +217,9 @@ function riskRows(s,pt){
   return `${esc(x.title)}${n?` — серед ${n}% найризикованіших ${pt?'місць':'вулиць'} Києва`:''}`})}
 // «Умови як біля подій» — з моделі ліній; лінії переходять на історію зі
 // згасанням без середовища, тож для ліній рядок прибирається (RISHENNYA 36.17.1)
-function riskWhence(s,pt){const n=Math.max(0,...s.kinds.map(x=>x.n2)), fx=pt?[...new Set(s.kinds.flatMap(x=>(x.fx||[]).map(f=>f[0])))]:[];
+// «Умов як біля подій» немає ні в лінії, ні в точці (S-Р.8; центральний чат 01.11:
+// на точці супермаркету вони ще лишались) — ризик тепер історія, не умови
+function riskWhence(s,pt){const n=Math.max(0,...s.kinds.map(x=>x.n2)), fx=[];
  const out=[]; if(n>0) out.push(`Тут уже були події: ${n} за 2 роки`); if(fx.length) out.push(`Умови як біля подій: ${fx.join(', ')}`);
  return out}
 function riskAt(p){ if(!RISK_ON||!map.getLayer('k-risk')) return null;
@@ -246,7 +248,6 @@ function riskPopup(o,ll){
  let h=`<div class="rpop"><b>${o.pt?esc(s.typ):esc(s.name||'без назви')}</b>`+
   riskRows(s,o.pt).map(t=>`<div class="sub">${t}</div>`).join('')+riskWhence(s,o.pt).map(t=>`<div class="rmeth">${esc(t)}</div>`).join('')+
   (tr?`<div class="rmeth">${esc(tr)}</div>`:'');
- const k0=o.pt&&s.kinds.filter(x=>typeOn(x.gi))[0]; if(k0) h+=factRows(k0.fx&&k0.fx[0]&&k0.fx[0].length>1?k0.fx:null);
  // Скарги 1551 у 50 м (перехрестя — 30 м): рядок, що розгортає список, —
  // у вікні ризику вкладок немає (RISHENNYA 35.10)
  const sk=skRyzyk(o);

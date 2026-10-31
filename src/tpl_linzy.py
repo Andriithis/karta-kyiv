@@ -22,7 +22,7 @@ const TSIL_VYD={berut:'Майно',u_koho:'Майно',zitknennia:'ДТП',na_ko
  sposib:'Наркотики',shcho_prodaiut:'Торгівля'};
 const zavantazhLinzy=()=>LZ_P||(LZ_P=vantazh(DANI.linzy).then(d=>{LZD=d;
  // ознаки й ціль — властивостями самих подій: evOn і картки бачать їх одразу
- d.e.forEach((evs,i)=>{const pe=P[i]&&P[i][4]; if(pe) evs.forEach((x,k)=>{const e=pe[k]; if(e){e.oz=x[0]; e.st=x[1]; e.ts=x[2]}})});
+ d.e.forEach((evs,i)=>{const pe=P[i]&&P[i][4]; if(pe) evs.forEach((x,k)=>{const e=pe[k]; if(e){e.oz=x[0]; e.st=x[1]; e.ts=x[2]; if(x[3]) e.os=x[3]}})});
  if(TSIL_ON===null){const t=d.v.indexOf('berut=телефон'); TSIL_ON=t>=0?t:0}
  if(OZ_ON===null) OZ_ON=new Set(d.oz.map(x=>x[0]).filter(OZ_ZAMOVCH));
  if(lzFiltr()) draw(); else lzPanel();
@@ -145,6 +145,22 @@ function tsilPoVydakh(E){
    Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([x,n])=>`${esc(LZD.v[x].split('=')[1])} ${fmt(n)}`).join(' · ')).join('<br>');
   return `<div class="kp-tv"><b><i class="kp-tc" style="background:${PALA[g%PALA.length]}"></i>${esc(shortOf(+g))} · ${fmt(es.length)}</b>`+
    `<span>${ryad||'—'}</span></div>`}).join('')}
+// ---- КАРТКА ОСОБИ над фабулою (36.41, S-К.26; поля — src/osoba.py) ----
+// Лише прямо написане в рішенні; порожнє — «— у рішенні не вказано». Рішення,
+// які нічний прохід ще не перечитав за новим правилом, картки не мають.
+const OS_RYADKY=[['Судимості',o=>o.sudymosti===0?'не судимий':o.sudymosti?'раніше судимий':null],
+ ['Іспитовий / звільнення',o=>[o.ispytovyi?'вчинив під час іспитового строку':'',o.zvilnenyi?'звільнений з місць позбавлення волі':''].filter(Boolean).join('; ')||null],
+ ['Робота',o=>o.robota===undefined?null:{'ні':'не працює','так':'працює'}[o.robota]||o.robota],
+ ["Сім'я",o=>o.simja===undefined&&!o.utrymantsi?null:[o.simja||'',o.utrymantsi?'має утриманців':''].filter(Boolean).join(', ')],
+ ['Освіта',o=>o.osvita||null],
+ ['Нарколог / психіатр',o=>o.narkolog===undefined&&o.psykhiatr===undefined?null:
+  [o.narkolog===1?'на обліку в нарколога':o.narkolog===0?'у нарколога не на обліку':'',o.psykhiatr===1?'на обліку в психіатра':o.psykhiatr===0?'у психіатра не на обліку':''].filter(Boolean).join('; ')],
+ ['Інше',o=>[o.bez_zhytla?'без постійного житла':'',o.viiskovyi?'військовослужбовець':'',o.vpo?'ВПО':'',o.inozemets?'іноземець':'',o.kharakterystyka?'характеризується '+o.kharakterystyka:''].filter(Boolean).join(', ')||null],
+ ['Суд призначив',o=>o.pryznacheno||null]];
+function kartkaOsoby(e){const o=e&&e.os; if(!o) return '';
+ return `<div class="kp-osk">`+OS_RYADKY.map(([n,f])=>{const v=f(o);
+  return `<b>${esc(n)}</b><span>${v?esc(v):'— у рішенні не вказано'}</span>`}).join('')+
+  (o.vartist||o.povernuto?`<b>Ціль</b><span>${[o.vartist?'шкода '+fmt(o.vartist)+' грн':'',o.povernuto?'повернуто власнику':''].filter(Boolean).join(', ')}</span>`:'')+`</div>`}
 // ---- СПИСОК ОСІБ (MVP, п. 5): одне рішення з ознакою — один рядок ----
 function osobyHTML(d){
  const E=d.evs.filter(r=>EVR(r).oz);

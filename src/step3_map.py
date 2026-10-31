@@ -457,8 +457,12 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
         # із сирої фабули, до вирізань показу («повторно протягом року» буває в
         # частині, яку показ скорочує)
         syra = (tk or {}).get('fab') or f
+        # поля особи й цілі з повного тексту — з нічного проходу (osoba.py),
+        # у старих рядках їх ще немає: картка особи тоді не показується
+        try: os_ = json.loads((tk or {}).get('osoba') or '{}')
+        except ValueError: os_ = {}
         lz = (LZ.oznaky(syra, TK.kodeks(cat), cat), LZ.stat(syra),
-              LZ.tsil_kody(PD.theme(cat), L.SIMGROUP.get(cat, ''), syra))
+              LZ.tsil_kody(PD.theme(cat), L.SIMGROUP.get(cat, ''), syra), os_)
         f = TK.pokaz(f, TK.kodeks(cat))
         # Панель показує дату й час самої події з проходу: дата рішення буває
         # на місяць пізніше («2026-04-22 · 23:00» при події 21.03.2026). Нема
@@ -541,7 +545,8 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
         # лінзи — окремо від точок (окремий файл на вимогу, 36.22), у тому самому
         # порядку подій; за id точки, бо відбір району обрізає P
         LZ_OF[id(P[-1])] = [[e_[17][0], {'ч': 1, 'ж': 2}.get(e_[17][1], 0),
-                             [TSIL_IX.setdefault(c, len(TSIL_IX)) for c in e_[17][2]]] for e_ in ev_sorted]
+                             [TSIL_IX.setdefault(c, len(TSIL_IX)) for c in e_[17][2]]]
+                            + ([e_[17][3]] if len(e_[17]) > 3 and e_[17][3] else []) for e_ in ev_sorted]
         # DOCS — те, що показує панель: справа, дата події (або рішення),
         # година, номер справи, папери справи, фабула; сьоме поле 1 — дата
         # рішення, бо дати події в описі немає.

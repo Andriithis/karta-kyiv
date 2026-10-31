@@ -569,12 +569,13 @@ function oglHTML(d){
 function rishHTML(d,cs){
  if(cs===undefined) return '<div class="kp-empty">завантажую…</div>';
  if(cs===null) return '<div class="kp-empty">Перелік рішень лежить окремим файлом поруч, а браузер не дає сторінці з диска його читати. Відкрийте карту з сайту або через PODYVYTYSYA.bat.</div>';
- const it=d.evs.map(r=>[r.join('-'),(cs[r[0]]||[])[r[1]]]).filter(x=>x[1]);
+ const it=d.evs.map(r=>[r.join('-'),(cs[r[0]]||[])[r[1]],r]).filter(x=>x[1]);
  if(!it.length) return '<div class="kp-empty">За поточним фільтром рішень немає.</div>';
- return it.map(([k,c])=>{const open=PLACE.open===k;
+ return it.map(([k,c,r])=>{const open=PLACE.open===k;
   return `<div class="kp-dec${open?' open':''}" data-dec="${k}" role="button" tabindex="0" aria-expanded="${open}">
    <div class="l1"><b>${esc(fmtDate(c[1]))}</b>${c[6]?'<span class="h">рішення</span>':c[2]>=0?`<span class="h">${String(c[2]).padStart(2,'0')}:00</span>`:''}</div>
    <div class="l2">${esc(M.cats[c[0]])}</div>
+   ${open&&typeof kartkaOsoby==='function'?kartkaOsoby(EVR(r)):''}
    <div class="l3">${esc(c[5]||'опису в рішенні немає')}</div>
    ${open?`<div class="l4">${c[3]?`справа ${esc(c[3])} · `:''}${(c[4]||[]).map((h,j)=>`<a href="${docUrl(h)}" target="_blank" rel="noopener">${(c[4].length>1?'рішення '+(j+1):'відкрити рішення')} ↗</a>`).join(' · ')}</div>`:''}
   </div>`}).join('')}
@@ -1587,7 +1588,7 @@ function simPlace(v,i){
 function simWhence(v,it){
  const n=it[3]|0, fx=(it[4]||[]).map(f=>f[0]), out=[];
  if(n>0) out.push(`Тут уже були події: ${n} за 2 роки`);
- if(fx.length) out.push(`Умови як біля подій: ${fx.join(', ')}`);
+ // «Умов як біля подій» немає (S-Р.8, 01.11)
  if(!out.length) out.push('Подій тут за 2 роки не було');
  return out}
 function simLine(v,it,quiet,i){
@@ -1600,7 +1601,6 @@ function simPopup(f,ll){
  let h=`<div class="rpop"><b>${esc(it[1])}</b><span class="sub">${esc(simLine(v,it,q,i))}</span>`;
  if(v.n2) h+=simWhence(v,it).map(t=>`<div class="rmeth">${esc(t)}</div>`).join('');
  // Чинники цієї вулиці — головне у вікні, тому стоять першими, до методики.
- h+=factRows(it[4]);
  if(!v.n2&&!(it[4]&&it[4].length))
   h+='';
  // звичайним текстом, не класом rwhy: той набраний великими, як заголовок

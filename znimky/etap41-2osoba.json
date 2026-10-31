@@ -1,0 +1,6 @@
+[
+ {"nazva": "2-ryzyk-tochka-kartka", "vikno": [1366, 768], "vyhliad": "addr", "ryzyk": true, "tsentr": [30.49, 50.44], "zum": 15,
+  "js": "(async()=>{await new Promise(r=>setTimeout(r,2500)); const c=KT.map.getCanvas(); const f=KT.map.queryRenderedFeatures({layers:['k-riskpt']})[0]; if(f){const p=KT.map.project(f.geometry.coordinates); c.dispatchEvent(new MouseEvent('click',{clientX:p.x+c.getBoundingClientRect().left,clientY:p.y+c.getBoundingClientRect().top,bubbles:true}))}})()"},
+ {"nazva": "2-osoba-rishennia", "vikno": [1366, 768], "vyhliad": "addr", "adresa": "пл. Вокзальна, 1", "zum": 17,
+  "js": "(async()=>{await new Promise(r=>setTimeout(r,1500)); const t=document.querySelector('#kplace [data-kp-tab=\"rish\"]'); if(t) t.click(); await new Promise(r=>setTimeout(r,2500)); const d=document.querySelector('#kplace .kp-dec'); if(d) d.click()})()"}
+]
