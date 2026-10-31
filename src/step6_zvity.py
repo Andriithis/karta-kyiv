@@ -105,6 +105,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 # та сама навігація вгорі всіх сторінок; ненаписаний розділ — сірим, без
 # посилання. «Схожі умови» тепер «Ризик» (36.28.4).
 STORINKY = [('doslidzhennya.html', 'Дослідження'), ('stan-mista.html', 'Стан міста'), ('problemy.html', 'Проблеми'),
+            ('trykutnyk.html', 'Трикутник'),
             ('ryzyk.html', 'Ризик'), (None, 'Вирішені'), (None, 'Коли'), (None, 'Розбори'),
             ('metodyka.html', 'Методика'), ('shcho-robyty.html', 'Що робити')]
 
@@ -925,6 +926,13 @@ def build(outdir):
              'Способи вирішувати проблеми й працювати з ризиками — за трикутником, з силою доказів.',
              SR.storinka(zakhody())))
     made.append('shcho-robyty.html')
+    # «Дослідження» за трикутником (36.43, етап 5): ціль, порушник, район
+    import trykutnyk_zvit as TZ
+    open(os.path.join(outdir, 'trykutnyk.html'), 'w', encoding='utf-8').write(
+        page('trykutnyk.html', 'Трикутник: місце, порушник, ціль',
+             'Що повторюється — за всіма видами; над кожною таблицею — висновок.',
+             TZ.storinka(D, num, pct, lambda t: L.THEMES.get(t, t))))
+    made.append('trykutnyk.html')
     # Огляд міста — чернетка (36.44, ZAVDANNYA-40 6.1): поза меню, до «так» Андрія
     open(os.path.join(outdir, 'ohliad-chernetka.html'), 'w', encoding='utf-8').write(
         page('ohliad-chernetka.html', 'Київ за рішеннями судів',
@@ -1047,6 +1055,8 @@ def zmist(D, n):
           [f'<b>{num(mists)}</b> {pl(mists, "місце", "місця", "місць")} · {num(ch["linii"])} {pl(ch["linii"], "лінія", "лінії", "ліній")} · '
            f'{num(ch["dorozhnikh"])} {pl(ch["dorozhnikh"], "ділянка", "ділянки", "ділянок")} доріг',
            'Зміст за районами, сторінка на кожну — для друку'], None),
+         ('trykutnyk.html', 'Що повторюється', 'Трикутник',
+          ['Ціль, порушник і район — за всіма видами', 'Над кожною таблицею — висновок і як використати'], None),
          ('ryzyk.html', 'Де події ймовірні далі', 'Ризик',
           ['Вулиці за історією подій; хуліганство — за середовищем', 'Перевірено на роках, яких модель не бачила'], None),
          (None, 'Що спрацювало', 'Вирішені проблеми', ['Місця, де події зникли, і що там змінилося'], 'після перевірки кандидатів'),

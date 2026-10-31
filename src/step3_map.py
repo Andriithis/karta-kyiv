@@ -599,7 +599,9 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
     LAST_META = meta
     LAST_DOCS = DOCS
     if not district:
-        LAST_KARTA = dict(P=P, labels=labels, meta=meta, risks=risks, FACT=FACT, ER=ER, DOCS=DOCS)
+        LAST_KARTA = dict(P=P, labels=labels, meta=meta, risks=risks, FACT=FACT, ER=ER, DOCS=DOCS,
+                          # трикутник для «Дослідження» (етап 5): ознаки й ціль кожної події
+                          LZ=[LZ_OF.get(id(p), []) for p in P], TSIL_V=list(TSIL_IX))
 
     dst = out or OUT
     os.makedirs(os.path.dirname(dst) or '.', exist_ok=True)
