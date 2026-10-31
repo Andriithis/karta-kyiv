@@ -1,7 +1,7 @@
 [
- {"nazva": "4a-ryzyk-smuga-vasylkivska-z15-svitla", "vikno": [1366, 768], "vyhliad": "addr", "ryzyk": true, "adresa": "Васильківська, 30", "vidkryty": false, "zum": 15},
- {"nazva": "4a-ryzyk-smuga-vasylkivska-z15-temna", "vikno": [1366, 768], "tema": "temna", "vyhliad": "addr", "ryzyk": true, "adresa": "Васильківська, 30", "vidkryty": false, "zum": 15},
- {"nazva": "4a-ryzyk-smuga-vasylkivska-telefon", "vikno": [375, 812], "vyhliad": "addr", "ryzyk": true, "adresa": "Васильківська, 30", "vidkryty": false, "zum": 15},
+ {"nazva": "4a-ryzyk-smuga-vasylkivska-z15-svitla", "vikno": [1366, 768], "vyhliad": "addr", "ryzyk": true, "adresa": "вул. Васильківська, 30", "vidkryty": false, "zum": 15},
+ {"nazva": "4a-ryzyk-smuga-vasylkivska-z15-temna", "vikno": [1366, 768], "tema": "temna", "vyhliad": "addr", "ryzyk": true, "adresa": "вул. Васильківська, 30", "vidkryty": false, "zum": 15},
+ {"nazva": "4a-ryzyk-smuga-vasylkivska-telefon", "vikno": [375, 812], "vyhliad": "addr", "ryzyk": true, "adresa": "вул. Васильківська, 30", "vidkryty": false, "zum": 15},
  {"nazva": "4a-ryzyk-soty-z13-linii-problem", "vikno": [1366, 768], "vyhliad": "soty", "ryzyk": true, "tsentr": [30.51, 50.44], "zum": 13},
  {"nazva": "4a-ryzyk-z11-ohliad", "vikno": [1366, 768], "vyhliad": "soty", "ryzyk": true, "tsentr": [30.52, 50.45], "zum": 11}
 ]

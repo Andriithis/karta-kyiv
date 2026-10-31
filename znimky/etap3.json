@@ -1,6 +1,6 @@
 [
- {"nazva": "etap3-vasylkivska-30-pk", "vikno": [1366, 768], "vyhliad": "addr", "adresa": "Васильківська, 30", "zum": 17},
- {"nazva": "etap3-vasylkivska-30-telefon", "vikno": [375, 812], "vyhliad": "addr", "adresa": "Васильківська, 30", "zum": 17},
+ {"nazva": "etap3-vasylkivska-30-pk", "vikno": [1366, 768], "vyhliad": "addr", "adresa": "вул. Васильківська, 30", "zum": 17},
+ {"nazva": "etap3-vasylkivska-30-telefon", "vikno": [375, 812], "vyhliad": "addr", "adresa": "вул. Васильківська, 30", "zum": 17},
  {"nazva": "etap3-lyuteranska-3-pk", "vikno": [1366, 768], "vyhliad": "addr", "adresa": "Лютеранська, 3", "zum": 17},
  {"nazva": "etap3-problemy-z12", "vikno": [1366, 768], "vyhliad": "addr", "tsentr": [30.51, 50.43], "zum": 12.5}
 ]
