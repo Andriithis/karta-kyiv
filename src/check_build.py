@@ -620,7 +620,10 @@ def main(save=False):
                         if os.path.isfile(f)) if os.path.isdir(os.path.join(ROOT, 'site', 'dani')) else ''
         sait_ += open(sp_, encoding='utf-8').read() if os.path.exists(sp_) else ''
         pilot_ = [z for z in an_ if any('Сумськ' in a and 'Васильків' in ' '.join(z['adresy']) for a in z['adresy'])]
-        bez_ = [z['adresy'][:1] for z in an_ if z.get('stsenarij') and z['stsenarij'] not in sait_]
+        # лапки й апострофи в даних сайту екрановані (JSON, HTML) — звіряємо самі літери
+        nrm_ = lambda s: re.sub(r'[\W_]+', '', s)
+        sait_ = nrm_(sait_)
+        bez_ = [z['adresy'][:1] for z in an_ if z.get('stsenarij') and nrm_(z['stsenarij']) not in sait_]
         print(f'   діє {len(an_)}; у звіті {len(an_) - len(ne_)}; місць не з аналізу {len(stari_)}; '
               f'на сайті без сценарію {len(bez_)}; пілот Васильківська / Сумська: {"так" if pilot_ else "НІ"}')
         if ne_ or stari_ or bez_ or not pilot_:
