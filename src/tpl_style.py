@@ -150,6 +150,7 @@ html .tsw button{min-height:32px;display:inline-flex;align-items:center}
  border:1px solid var(--rule);border-radius:8px;padding:5px 10px;margin:6px 0 2px;font:12.5px var(--sans);color:var(--ink)}
 .lz-n{font-style:normal;font-variant-numeric:tabular-nums;color:var(--dim);margin-left:6px}
 .lz-sel[hidden],.lz-dd[hidden]{display:none}
+#kplace .kp-tv{margin:0 0 4px}#kplace .kp-tv b{display:block;font-weight:600;font-size:12.5px}#kplace .kp-tv span i{font-style:normal;opacity:.7}#kplace .kp-tc{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:1px}
 .lz-f{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0 2px}.lz-f .lz-sel{border:1px solid var(--rule);border-radius:9px;padding:6px 8px;min-height:32px}.lz-f .lz-sel.lz-on{border-color:var(--ink);font-weight:600}
 .lz-dd{border:1px solid var(--rule);border-radius:8px;overflow:auto;max-height:46vh;margin:4px 0;background:var(--panel)}
 .lz-dd .lz-h{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);background:var(--sunk);padding:5px 10px}
@@ -182,6 +183,12 @@ html .tsw button{min-height:32px;display:inline-flex;align-items:center}
 .vybir .vz{position:absolute;left:8px;top:14px;width:16px;height:6px}
 .vybir .vz-p{border-top:3px dashed var(--ink,#111)}
 .vybir .vz-r{background:#d42a2a;opacity:.4;border-radius:3px}
+#kplace .kp-pa{border:1.5px dashed var(--ink);border-radius:8px;padding:8px 10px;margin:0 0 8px}#kplace .kp-tryk{font-weight:400;opacity:.75;margin-left:4px}
+#kplace .kp-stsv{font-size:16px;line-height:1.35;font-weight:600;margin:4px 0 6px}
+#kplace .kp-bar{height:6px;border-radius:3px;background:rgba(127,127,127,.2);margin:2px 0 6px}#kplace .kp-bar i{display:block;height:100%;border-radius:3px;background:var(--ink)}
+#kplace .kp-trykr{background:rgba(127,127,127,.12);border-radius:6px;padding:5px 8px;margin:6px 0;font-size:13px}
+#kplace .kp-tsyt{margin:6px 0;padding:0 0 0 8px;border-left:2px solid var(--rule);font-size:12.5px;line-height:1.4}
+#kplace .kp-vsi{display:block;width:100%;min-height:44px;margin:8px 0 0;border:1px solid var(--rule);border-radius:8px;background:none;color:inherit;font:inherit;cursor:pointer}
 #kplace .kp-sts{font-size:13px;line-height:1.35;margin:0 0 3px}
 #kplace .kp-mod{margin-top:8px}
 #kplace .kp-pro{margin:4px 0 6px;color:var(--dim)}

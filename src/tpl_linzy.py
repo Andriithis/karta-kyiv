@@ -128,12 +128,23 @@ function triHTML(d){
   else{const c={}; z.forEach(e=>LZD.oz.forEach(([b])=>{if(e.oz&b) c[b]=(c[b]||0)+1}));
    por=`<button class="kp-lnk" data-kp-os="1">${fmt(z.length)} з ${fmt(n)} з ознакою</button>`+
     LZD.oz.filter(([b])=>c[b]).map(([b,nm])=>` · ${esc(nm.toLowerCase())} ${fmt(c[b])}`).join('')}
-  const t={}; E.forEach(e=>(e.ts||[]).forEach(x=>t[x]=(t[x]||0)+1));
-  const top=Object.entries(t).sort((a,b)=>b[1]-a[1]).slice(0,3);
-  tsl=top.length?top.map(([x,k])=>`${esc(lzNazva(+x))} ${fmt(k)}`).join(' · '):'—'}
+  tsl=tsilPoVydakh(E)}
  return `<div class="kp-tri"><b>Місце</b><span>${misce}</span>
   <b>Порушник <a class="kp-i" href="doslidzhennya.html" target="_blank" rel="noopener" title="Що видно про правопорушника">ⓘ</a></b><span>${por}</span>
   <b>Ціль</b><span>${tsl}</span></div>`}
+// Ціль — по кожному виду окремим підблоком (36.52, 36.53, S-К.26): змішаний
+// рядок «зіткнення з авто 45 · у людини 38 · телефон 27» на пл. Вокзальній, 1
+// складав різні види в один перелік. Підпис поля — з linzy.TSIL_NAZVA.
+function tsilPoVydakh(E){
+ const po={}; E.forEach(e=>{const g=CATTH[e[1]]; (po[g]=po[g]||[]).push(e)});
+ const vydy=Object.entries(po).sort((a,b)=>b[1].length-a[1].length);
+ if(!vydy.length) return '—';
+ return vydy.map(([g,es])=>{const pole={};
+  es.forEach(e=>(e.ts||[]).forEach(x=>{const [k]=LZD.v[x].split('='); (pole[k]=pole[k]||{})[x]=(pole[k][x]||0)+1}));
+  const ryad=Object.entries(pole).map(([k,c])=>`<i>${esc((LZD.tn[k]||k).toLowerCase())}:</i> `+
+   Object.entries(c).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([x,n])=>`${esc(LZD.v[x].split('=')[1])} ${fmt(n)}`).join(' · ')).join('<br>');
+  return `<div class="kp-tv"><b><i class="kp-tc" style="background:${PALA[g%PALA.length]}"></i>${esc(shortOf(+g))} · ${fmt(es.length)}</b>`+
+   `<span>${ryad||'—'}</span></div>`}).join('')}
 // ---- СПИСОК ОСІБ (MVP, п. 5): одне рішення з ознакою — один рядок ----
 function osobyHTML(d){
  const E=d.evs.filter(r=>EVR(r).oz);

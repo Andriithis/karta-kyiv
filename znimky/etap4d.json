@@ -1,0 +1,8 @@
+[
+ {"nazva": "4d-kartka-adresy-vasylkivska-30-svitla", "vikno": [1366, 768], "vyhliad": "addr", "adresa": "Васильківська, 30", "zum": 17},
+ {"nazva": "4d-kartka-adresy-vasylkivska-30-temna", "vikno": [1366, 768], "tema": "temna", "vyhliad": "addr", "adresa": "Васильківська, 30", "zum": 17},
+ {"nazva": "4d-kartka-problemy-vasylkivska-30", "vikno": [1366, 768], "vyhliad": "addr", "adresa": "Васильківська, 30", "zum": 17, "js": "(async()=>{await new Promise(r=>setTimeout(r,1500)); const b=document.querySelector('#kplace [data-kp-prob]'); if(b) b.click()})()"},
+ {"nazva": "4d-kartka-problemy-vasylkivska-30-telefon", "vikno": [375, 812], "vyhliad": "addr", "adresa": "Васильківська, 30", "zum": 17, "js": "(async()=>{await new Promise(r=>setTimeout(r,1500)); const b=document.querySelector('#kplace [data-kp-prob]'); if(b) b.click()})()"},
+ {"nazva": "4d-kartka-pl-vokzalna-1-svitla", "vikno": [1366, 768], "vyhliad": "addr", "adresa": "пл. Вокзальна, 1", "zum": 17},
+ {"nazva": "4d-kartka-pl-vokzalna-1-telefon", "vikno": [375, 812], "tema": "temna", "vyhliad": "addr", "adresa": "пл. Вокзальна, 1", "zum": 17}
+]

@@ -512,17 +512,30 @@ function probMore(pr){
 // «сценарій — 12 з 16» і сторона трикутника, що повторюється (S-К.24, 36.37)
 const stsRiadok=q=>`<div class="kp-sts">${esc(q.stsenarij)} — ${fmt(q.ns||0)} з ${fmt(q.n)}</div>`+
  (q.tryk||q.kv?`<div class="tt">${q.tryk?'повторюється: '+esc(q.tryk):''}${q.tryk&&q.kv?' · ':''}${q.kv?q.kv+' '+pl(q.kv,'квартал','квартали','кварталів'):''}</div>`:'');
+// Картка проблеми аналізу (S-К.24, макет «Трикутник у картках»): сценарій
+// великим, частка сценарію смужкою, квартали й стан, сторона трикутника, що
+// повторюється, 2–3 короткі цитати з номером рішення; «хто може змінити» немає
+function stsKartka(q){const sh=q.n?Math.round(100*(q.ns||0)/q.n):0;
+ return `<div class="kp-stsv">${esc(q.stsenarij)}</div>`+
+  `<div class="tt">${fmt(q.ns||0)} з ${fmt(q.n)} ${pl(q.n,'події','подій','подій')} місця — за цим сценарієм</div>`+
+  `<div class="kp-bar"><i style="width:${sh}%"></i></div>`+
+  `<div class="tt">${q.kv?q.kv+' '+pl(q.kv,'квартал','квартали','кварталів')+' з подіями · ':''}Діє · розборів ще немає</div>`+
+  (q.tryk?`<div class="kp-trykr">Повторюється: <b>${esc(q.tryk)}</b></div>`:'')+
+  (q.tsyt||[]).slice(0,3).map(c=>`<blockquote class="kp-tsyt">«${esc(c.tekst)}» `+
+   `<a href="https://reyestr.court.gov.ua/Review/${encodeURIComponent(c.doc)}" target="_blank" rel="noopener">№ ${esc(c.doc)}</a></blockquote>`).join('')+
+  `<button class="kp-vsi" data-kp-tab="rish">Усі рішення місця ›</button>`}
 function oglHTML(d){
  const {p,pr,evs,probs}=d;
  // список осіб з ознакою — замість огляду (лінзи, 36.41)
  if(!pr&&PLACE.osoby) return osobyHTML(d);
- // три сторони — Місце, Порушник, Ціль — завжди поруч (лінзи, MVP п. 4)
- let h=pr?'':triHTML(d);
+ // Макет «Трикутник у картках» (36.53): нагорі — проблеми аналізу рамкою,
+ // далі три сторони — Місце, Порушник, Ціль
+ let h='';
  if(pr){
   // «Проблема · вид» — уже в шапці картки; тут удруге не повторюємо (33, В5)
   // Проблема аналізу фабул (36.37, S-К.24): рядок сценарію «… — N з M»;
   // повна картка — за макетом, етап 4
-  h+=`<div class="kp-pc"><div class="kp-pct">${esc(pr.mech)}</div>`+(pr.stsenarij?stsRiadok(pr):
+  h+=`<div class="kp-pc"><div class="kp-pct">${esc(pr.mech)}</div>`+(pr.stsenarij?stsKartka(pr):
    `<div class="tt">${pr.n} ${pl(pr.n,'однорідна подія','однорідні події','однорідних подій')} за ${pr.years.length} ${pl(pr.years.length,'рік','роки','років')} (${pr.years.join(', ')})</div>`)+`${probMore(pr)}</div>`;
  } else {
   // Проблеми адреси — блоками: вид, сценарій, «40 з 307»; клік — окрема
@@ -535,9 +548,14 @@ function oglHTML(d){
    :(()=>{const labs=new Set((q.arts||[]).map(a=>a[0])); return p[4].filter(e=>labs.has(M.cats[e[1]])).length})();
   const de=q=>q.riven==='лінія'?'на вулиці':q.riven==='ділянка'?'на ділянці':'у місці';
   h+=probs.map((q,j)=>{const t=tut(q);
+   if(q.stsenarij) return `<div class="kp-pc kp-pa" role="button" tabindex="0" data-kp-prob="${j}"><div class="kp-pch">◆ Проблема · ${esc(q.theme)}`+
+    (q.tryk?` <span class="kp-tryk">повторюється ${esc(q.tryk)}</span>`:'')+`</div>`+
+    `<div class="kp-sts">${esc(q.stsenarij)}</div><div class="tt">${fmt(q.ns||0)} з ${fmt(q.n)} ${esc(lc(q.mech))} · `+
+    `${q.kv?q.kv+' '+pl(q.kv,'квартал','квартали','кварталів')+' · ':''}діє ›</div></div>`;
    return `<div class="kp-pc" role="button" tabindex="0" data-kp-prob="${j}"><div class="kp-pch">Проблема · ${esc(q.theme)}</div>`+
-   `<div class="kp-pct">${esc(q.mech)}</div>`+(q.stsenarij?stsRiadok(q):'')+`<div class="tt">${fmt(t)} з ${fmt(vsi)} ${pl(vsi,'події','подій','подій')} адреси`+
+   `<div class="kp-pct">${esc(q.mech)}</div><div class="tt">${fmt(t)} з ${fmt(vsi)} ${pl(vsi,'події','подій','подій')} адреси`+
    (q.n>t?` · ${fmt(q.n)} ${de(q)}`:'')+`</div></div>`}).join('');
+  h+=triHTML(d);
  }
  h+=placeArts(p,evs)+placeHist(p,evs);
  // Ризик — тим самим правилом, що й у картці соти (S-К.15): лінії в 50 м
