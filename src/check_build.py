@@ -84,6 +84,7 @@ TESTY = {
     'nazva_torhivli': '4м. Механізм торгівлі — «торгівля алкоголем і тютюном», старої назви на сайті немає',
     'histerezys_pravyla': '4л. Гістерезис не тримає проблему, чиї події пішли через правила',
     'bez_nomera': '4й. Події з точністю «вулиця» — 0 у точках будинків і перехресть',
+    'analityk_na_karti': '4ж2. Перелік аналізу фабул на карті: усі місця «діє» в звіті й на сайті зі сценарієм; Васильківська, 30 / Сумська',
     'ryzyk_soty': '4к2. Соти не в «Адресах» і не перефарбовуються «Ризиком»: шару сот ризику немає, видимість сот — лише вигляд «Соти»',
     'bez_naselennia': '4к. Шару «Населення» на карті немає: ні перемикача, ні шару, ні файлу',
     'vaga': '4и. Вага першого завантаження: ≤3 МБ розпаковано (жовта), ≤5 МБ і ≤1 МБ мережею (червона)',
@@ -600,6 +601,27 @@ def main(save=False):
         print(f'   проблем з рядком «Натовп» {len(z_nt)}; число не за 2 роки: {len(ne_)}')
         if ne_:
             print(f'   ПОМИЛКА «Натовп» рахує не 2 роки: {ne_[:5]}'); return 1
+    print('4ж2. Перелік аналізу фабул на карті (36.37, 36.50, S-ПР.1)')
+    # Місця — з problemy_analityk.json; запобіжник — пілот Васильківська, 30 /
+    # Сумська (лівий поворот) зі своїм рядком сценарію
+    ap_ = os.path.join(DATA, 'problemy_analityk.json')
+    an_ = [z for z in (json.load(open(ap_, encoding='utf-8')) if os.path.exists(ap_) else []) if z.get('stan') == 'діє']
+    if not an_:
+        print('   переліку аналізу ще немає — місця з воріт 36.36')
+    elif os.path.exists(rpp):
+        per_ = json.load(gzip.open(rpp, 'rt', encoding='utf-8')).get('perelik', [])
+        id_ = {r.get('analityk') for r in per_ if r.get('analityk')}
+        ne_ = [z['adresy'][:1] for z in an_ if z['id'] not in id_]
+        stari_ = [r['adresy'][:1] for r in per_ if r['riven'] == 'точка' and not r.get('analityk')]
+        sait_ = ''.join(open(f, encoding='utf-8').read() for f in glob.glob(os.path.join(ROOT, 'site', 'dani', '*'))
+                        if os.path.isfile(f)) if os.path.isdir(os.path.join(ROOT, 'site', 'dani')) else ''
+        sait_ += open(sp_, encoding='utf-8').read() if os.path.exists(sp_) else ''
+        pilot_ = [z for z in an_ if any('Сумськ' in a and 'Васильків' in ' '.join(z['adresy']) for a in z['adresy'])]
+        bez_ = [z['adresy'][:1] for z in an_ if z.get('stsenarij') and z['stsenarij'] not in sait_]
+        print(f'   діє {len(an_)}; у звіті {len(an_) - len(ne_)}; місць не з аналізу {len(stari_)}; '
+              f'на сайті без сценарію {len(bez_)}; пілот Васильківська / Сумська: {"так" if pilot_ else "НІ"}')
+        if ne_ or stari_ or bez_ or not pilot_:
+            print(f'   ПОМИЛКА перелік аналізу не на карті: {ne_[:3]} {stari_[:3]} {bez_[:3]}'); return 1
     print('4ж. Кандидати для аналізу фабул (36.37): data/kandydaty.json.gz є, непорожній, ≤20 МБ, ДТП з mitky')
     kp_ = os.path.join(DATA, 'kandydaty.json.gz')
     if not os.path.exists(kp_):

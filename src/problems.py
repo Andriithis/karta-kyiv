@@ -589,10 +589,15 @@ def z_analityka(log=print):
     out = []
     for z in zap:
         if z.get('stan') != 'діє': continue
-        out.append(dict(riven='точка', sim=z.get('sim') or z.get('vyd'), vyd=z.get('vyd'), mekhanizm=z.get('mekhanizm'),
+        # аналітик пише в mekhanizm код механізму сита («ГП_пиятика»), а карта
+        # показує назву — без цього в картці стояв би код
+        sim = z.get('mekhanizm') or z.get('sim') or z.get('vyd')
+        out.append(dict(riven='точка', sim=sim, vyd=M.simtheme(sim) or z.get('vyd'), mekhanizm=M.simname(sim),
                         status='хронічна', p=[z['lat'], z['lon']], adresy=z.get('adresy', []), docs=z.get('docs', []),
                         podii=z.get('n_usikh', 0), za_2roky=z.get('n_stsenariju', 0), za_4kv=z.get('n_stsenariju', 0),
-                        stsenarij=z.get('stsenarij'), analityk=z.get('id'), rozbory=z.get('rozbory', [])))
+                        stsenarij=z.get('stsenarij'), n_stsenariju=z.get('n_stsenariju', 0), kvartaly=z.get('kvartaly'),
+                        trykutnyk=z.get('trykutnyk'), tsytaty=z.get('tsytaty', []), stan=z.get('stan'),
+                        analityk=z.get('id'), rozbory=z.get('rozbory', [])))
     log(f'   перелік аналізу фабул: {len(zap)} записів, діє {len(out)}')
     return out
 
@@ -1324,7 +1329,9 @@ def run(V=None, log=print, FACT=None):
     except Exception as e:                       # файл для аналізу — не привід зупиняти карту
         log(f'   кандидати для аналізу не записано: {e}')
     an = z_analityka(log)
-    if an: problemy = an
+    # Місця — лише з аналізу фабул; лінії й ділянки вулиць аналітик ще не
+    # читає, тож вони лишаються з програми (VIDPOVID-40 30.10 07:10, 36.50)
+    if an: problemy = an + [r for r in problemy if r['riven'] in ('лінія', 'ділянка')]
     gz = collections.Counter((r['vyd'], r['golos']['stan']) for r in problemy if r.get('golos'))
     rep = dict(
         # без дати складання: дві збірки на тих самих даних — той самий файл (S-Р.11)

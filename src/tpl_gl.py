@@ -508,6 +508,9 @@ function probMore(pr){
    :`мовчать — ${g.skarg||0} ${pl(g.skarg||0,'скарга','скарги','скарг')} 1551 за рік`;
   h+=`<div class="tt">Голос мешканців: ${t}</div>`}
  return h}
+// «сценарій — 12 з 16» і сторона трикутника, що повторюється (S-К.24, 36.37)
+const stsRiadok=q=>`<div class="kp-sts">${esc(q.stsenarij)} — ${fmt(q.ns||0)} з ${fmt(q.n)}</div>`+
+ (q.tryk||q.kv?`<div class="tt">${q.tryk?'повторюється: '+esc(q.tryk):''}${q.tryk&&q.kv?' · ':''}${q.kv?q.kv+' '+pl(q.kv,'квартал','квартали','кварталів'):''}</div>`:'');
 function oglHTML(d){
  const {p,pr,evs,probs}=d;
  // список осіб з ознакою — замість огляду (лінзи, 36.41)
@@ -516,8 +519,10 @@ function oglHTML(d){
  let h=pr?'':triHTML(d);
  if(pr){
   // «Проблема · вид» — уже в шапці картки; тут удруге не повторюємо (33, В5)
-  h+=`<div class="kp-pc"><div class="kp-pct">${esc(pr.mech)}</div>
-   <div class="tt">${pr.n} ${pl(pr.n,'однорідна подія','однорідні події','однорідних подій')} за ${pr.years.length} ${pl(pr.years.length,'рік','роки','років')} (${pr.years.join(', ')})</div>${probMore(pr)}</div>`;
+  // Проблема аналізу фабул (36.37, S-К.24): рядок сценарію «… — N з M»;
+  // повна картка — за макетом, етап 4
+  h+=`<div class="kp-pc"><div class="kp-pct">${esc(pr.mech)}</div>`+(pr.stsenarij?stsRiadok(pr):
+   `<div class="tt">${pr.n} ${pl(pr.n,'однорідна подія','однорідні події','однорідних подій')} за ${pr.years.length} ${pl(pr.years.length,'рік','роки','років')} (${pr.years.join(', ')})</div>`)+`${probMore(pr)}</div>`;
  } else {
   // Проблеми адреси — блоками: вид, сценарій, «40 з 307»; клік — окрема
   // картка проблеми з лише її подіями (S-К.12)
@@ -530,7 +535,7 @@ function oglHTML(d){
   const de=q=>q.riven==='лінія'?'на вулиці':q.riven==='ділянка'?'на ділянці':'у місці';
   h+=probs.map((q,j)=>{const t=tut(q);
    return `<div class="kp-pc" role="button" tabindex="0" data-kp-prob="${j}"><div class="kp-pch">Проблема · ${esc(q.theme)}</div>`+
-   `<div class="kp-pct">${esc(q.mech)}</div><div class="tt">${fmt(t)} з ${fmt(vsi)} ${pl(vsi,'події','подій','подій')} адреси`+
+   `<div class="kp-pct">${esc(q.mech)}</div>`+(q.stsenarij?stsRiadok(q):'')+`<div class="tt">${fmt(t)} з ${fmt(vsi)} ${pl(vsi,'події','подій','подій')} адреси`+
    (q.n>t?` · ${fmt(q.n)} ${de(q)}`:'')+`</div></div>`}).join('');
  }
  h+=placeArts(p,evs)+placeHist(p,evs);

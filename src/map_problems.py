@@ -134,7 +134,10 @@ def novi_kandydaty(P, addr_district, DOCIDX=None):
                         status=r.get('status'), ev=[list(x) for x in refs],
                         mekhanizm=r.get('mekhanizm'),
                         rozbyvka=[[x['mekhanizm'], x['podii'], x['status']] for x in r.get('rozbyvka', [])],
-                        vidrizok=vd.get('nazva'), geom=vd.get('geom')))
+                        vidrizok=vd.get('nazva'), geom=vd.get('geom'),
+                        # аналіз фабул (36.37): рядок сценарію «… — N з M»
+                        stsenarij=r.get('stsenarij'), ns=r.get('n_stsenariju'), kv=r.get('kvartaly'),
+                        tryk=r.get('trykutnyk')))
     print(f'   проблем В1: {len(_PR.get("perelik", []))}, на точках карти: {len(out)}'
           + (f'; подій карти знайдено не всі — у {nepovni}' if nepovni else ''))
     if bez:
@@ -297,7 +300,7 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
             # («фіксує поліція»), розбивка за механізмами виду, події
             # проблеми на карті (ev) і відрізок лінії (geom)
             **({k: c[k] for k in ('riven', 'adresy', 'golos', 'vidrizok', 'status', 'ev',
-                                  'rozbyvka', 'geom') if c.get(k)})))
+                                  'rozbyvka', 'geom', 'stsenarij', 'ns', 'kv', 'tryk') if c.get(k)})))
 
     for pi, p in enumerate(P):
         probs = probs_by_pi.get(pi, [])
