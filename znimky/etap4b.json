@@ -1,0 +1,10 @@
+[
+ {"nazva": "4b-3d-z11-svitla", "vikno": [1366, 768], "vyhliad": "stovp", "tsentr": [30.52, 50.45], "zum": 11},
+ {"nazva": "4b-3d-z13-svitla", "vikno": [1366, 768], "vyhliad": "stovp", "tsentr": [30.52, 50.45], "zum": 13},
+ {"nazva": "4b-3d-z15-svitla", "vikno": [1366, 768], "vyhliad": "stovp", "tsentr": [30.52, 50.445], "zum": 15},
+ {"nazva": "4b-3d-z11-temna", "vikno": [1366, 768], "tema": "temna", "vyhliad": "stovp", "tsentr": [30.52, 50.45], "zum": 11},
+ {"nazva": "4b-3d-z13-temna", "vikno": [1366, 768], "tema": "temna", "vyhliad": "stovp", "tsentr": [30.52, 50.45], "zum": 13},
+ {"nazva": "4b-3d-z15-temna", "vikno": [1366, 768], "tema": "temna", "vyhliad": "stovp", "tsentr": [30.52, 50.445], "zum": 15},
+ {"nazva": "4b-3d-z13-telefon", "vikno": [375, 812], "vyhliad": "stovp", "tsentr": [30.52, 50.45], "zum": 13},
+ {"nazva": "4b-soty-z13-knopka", "vikno": [1366, 768], "vyhliad": "soty", "tsentr": [30.52, 50.45], "zum": 13}
+]

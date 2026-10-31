@@ -58,10 +58,14 @@ function svitlishe(c){const m=/^#?([0-9a-f]{6})$/i.exec(c||''); if(!m) return c;
  return '#'+[v>>16,(v>>8)&255,v&255].map(f).map(x=>x.toString(16).padStart(2,'0')).join('')}
 const HEX_FADE={L:[[0,1],[12.3,1],[12.8,0]],S:[[12.0,0],[12.4,1],[14.3,1],[14.7,0]],X:[[14.3,0],[14.7,1]]};
 const fadeBy=(id,v)=>['interpolate',['linear'],['zoom'],...HEX_FADE[id].flatMap(([z,f])=>[z,f?v:0])];
-// Стовпчики — одна сота 330 м на всіх масштабах (33, В6; макет
-// MAKET-STOVPCHYKY): розмір у метрах від масштабу не залежить, як у kepler.gl
-// і deck.gl. Розпад на 130 і 30 м давав «привидів» і голки; соти (2D) — як були.
-const COL_G='L';
+// 3D — ті самі комірки, що соти на цьому зумі (36.55, макет «3D», верхній ряд):
+// наблизив — стовпчики менші й їх більше. Видима лише одна група k-col-*:
+// попередню очищуємо при переході порога, інакше лишаються «привиди».
+// Колір — як у сот (36.56, S-К.6); висота нормована в межах групи (hexData).
+const colG=(z=map.getZoom())=>z<12.55?'L':z<14.5?'S':'X';
+let COL_SHOWN=null;
+// нахил від зуму: огляд ~55°, з наближенням плавно до ~20°
+const pitch3d=(z=map.getZoom())=>Math.round(55-35*Math.min(1,Math.max(0,(z-11)/5)));
 function hexReady(){
  const before=map.getLayer('k-addr-shadow')?'k-addr-shadow':undefined;
  for(const G of HEXG){const id=G.id;
@@ -75,8 +79,7 @@ function hexReady(){
    // проблема — контур чорнила, тонший на огляді міста (Андрій 06.10)
    map.addLayer({id:'k-hexp-'+id,type:'line',source:'k-hex-'+id,filter:['==',['get','pr'],1],
     paint:{'line-width':['interpolate',['linear'],['zoom'],10,.6,12,.9,13,1.3],'line-opacity':fadeBy(id,1)}},before);
-   // Стовпчики — один колір (стопка видів шарами вводила в оману, 7.3); не
-   // «осідають» (рішення Андрія 06.10): лишаються стовпчиками на всіх масштабах.
+   // Стовпчики — колір комірки, як у сот (36.56: «один колір» 7.3 скасовано)
    map.addLayer({id:'k-col-'+id,type:'fill-extrusion',source:'k-col-'+id,paint:{
     'fill-extrusion-color':['case',['boolean',['feature-state','sel'],false],['get','cl'],['get','c']],
     'fill-extrusion-height':['get','h'],
@@ -103,11 +106,12 @@ function drawHex(st){
  const soty=MODE==='soty', stovp=MODE==='stovp';
  for(const G of HEXG){
   map.getSource('k-hex-'+G.id).setData(soty?hexData(G,false):{type:'FeatureCollection',features:[]});
-  map.getSource('k-col-'+G.id).setData(stovp&&G.id===COL_G?hexData(G,true):{type:'FeatureCollection',features:[]});
+  map.getSource('k-col-'+G.id).setData(stovp&&G.id===colG()?hexData(G,true):{type:'FeatureCollection',features:[]});
   for(const l of ['k-hex-','k-hexl-']) layerVis(l+G.id,soty);
   // контур соти-проблеми — не в лінзах «Порушник» і «Ціль» (36.41: «Проблеми» сховані)
   layerVis('k-hexp-'+G.id,soty&&!lzActive());
-  layerVis('k-col-'+G.id,stovp)}
+  layerVis('k-col-'+G.id,stovp&&G.id===colG())}
+ COL_SHOWN=stovp?colG():null;
 }
 // ==== АДРЕСИ (7.5–7.6) ====
 // Крапка кольору свого найчисленнішого виду, радіус 0,8 + 0,25·√n на z10 →
@@ -287,12 +291,12 @@ function openCell(kind,ad,hex,ll){
  CELL={kind,ad,tab:'ogl',open:-1,page:1,hex,ll};
  // у стовпчиках контуру на землі немає — вибраний стовпчик світліший (33, В6)
  if(hex&&MODE==='stovp'){const k=hexAt(hex[1]/MY_,hex[0]/MX_,hex[2])[0];
-  CELL.colSel=k; map.setFeatureState({source:'k-col-'+COL_G,id:k},{sel:true})}
+  CELL.colSel=k; CELL.colG=colG(); map.setFeatureState({source:'k-col-'+CELL.colG,id:k},{sel:true})}
  else if(hex) map.getSource('k-hexsel').setData({type:'FeatureCollection',features:[{type:'Feature',
   geometry:{type:'Polygon',coordinates:hexPoly(hex[0],hex[1],hex[2])},properties:{}}]});
  renderCell(); if(hex) nadShtorkoyu(hex[1]/MY_,hex[0]/MX_)}
 function closeCell(){
- if(CELL&&CELL.colSel!==undefined&&map.getSource('k-col-'+COL_G)) map.setFeatureState({source:'k-col-'+COL_G,id:CELL.colSel},{sel:false});
+ if(CELL&&CELL.colSel!==undefined&&map.getSource('k-col-'+CELL.colG)) map.setFeatureState({source:'k-col-'+CELL.colG,id:CELL.colSel},{sel:false});
  CELL=null; if(map.getSource('k-hexsel')) map.getSource('k-hexsel').setData({type:'FeatureCollection',features:[]});
  const el=placeEl(); if(!PLACE){el.hidden=true; el.classList.remove('kp-cell','kp-tall'); document.body.classList.remove('kp-open')}}
 let CELL_DOCS={key:'',cs:undefined};
@@ -406,36 +410,51 @@ function zPosylannia(){
   const bt=el.querySelector('[data-plink]');
   bt.onclick=()=>{const pr=placeData().pr;
    kopiyuvaty(`m=${p[0].toFixed(5)},${p[1].toFixed(5)}`+(pr?','+encodeURIComponent(pr.mech):''),bt)}}}
-// ==== ВИГЛЯДИ: «Соти · Стовпчики · Кільця · Адреси» (RISHENNYA 35.9) ====
+// ==== ВИГЛЯДИ: «Соти · Кільця · Адреси» + «3D» у сотах (36.55) ====
 // «◆ Проблеми» — окремий перемикач «лише проблеми». За замовчуванням — соти;
-// вибір пам'ятає браузер. Стовпчики — з нахилом 55°, решта — без нахилу.
+// вибір пам'ятає браузер. 3D (усередині MODE 'stovp') — кнопка над картою
+// лише в сотах; нахил — від зуму, вимкнули — 0°.
 function setView(v){
  const was=MODE; MODE=v; try{localStorage.setItem('karta-vyhlyad',v)}catch(e){}
- document.querySelectorAll('#fcat [data-m]').forEach(x=>swSet(x,x.dataset.m===v));
- if(v==='stovp'&&was!=='stovp') map.easeTo({pitch:55,duration:700});
+ document.querySelectorAll('#fcat [data-m]').forEach(x=>swSet(x,x.dataset.m===v||(v==='stovp'&&x.dataset.m==='soty')));
+ d3Btn();
+ if(v==='stovp'&&was!=='stovp') map.easeTo({pitch:pitch3d(),duration:700});
  if(v!=='stovp'&&was==='stovp') map.easeTo({pitch:0,duration:700});
  // Зміна вигляду скидає вибір і контури попереднього (33, В4): шестикутник
  // вибраної соти висів у «Кільцях» поруч із кільцем
  if(v!==was){ if(CELL) closeCell(); if(POPUP) POPUP.remove(); bezPosylannia();
   if(map.getSource('k-hexsel')) map.getSource('k-hexsel').setData({type:'FeatureCollection',features:[]})}
  draw()}
-{const VIEWS=[['soty','Соти'],['stovp','Стовпчики'],['rings','Кільця'],['addr','Адреси']];
+// Кругла кнопка «3D»/«2D» справа вгорі, ≥44 px; видно лише в сотах
+function d3Btn(){let b=$('#f3d');
+ if(!b){b=document.createElement('button'); b.id='f3d'; b.type='button';
+  b.onclick=()=>setView(MODE==='stovp'?'soty':'stovp'); map.getContainer().appendChild(b)}
+ b.hidden=!(MODE==='soty'||MODE==='stovp'); b.textContent=MODE==='stovp'?'2D':'3D';
+ b.setAttribute('aria-pressed',String(MODE==='stovp'))}
+// Перетнули поріг зуму — стара група стовпчиків порожніє, виділення з неї
+// знімається; нахил — за новим зумом
+map.on('zoom',()=>{ if(MODE!=='stovp'||colG()===COL_SHOWN) return;
+ if(CELL&&CELL.colSel!==undefined) closeCell();
+ if(LASTST) drawHex(LASTST)});
+map.on('zoomend',()=>{ if(MODE==='stovp'&&Math.abs(map.getPitch()-pitch3d())>2) map.easeTo({pitch:pitch3d(),duration:300})});
+{const VIEWS=[['soty','Соти'],['rings','Кільця'],['addr','Адреси']];
  let v=null; try{v=localStorage.getItem('karta-vyhlyad')}catch(e){}
  const seg=$('#fcat');
  seg.innerHTML=VIEWS.map(([k,n])=>`<button data-m="${k}" title="${n}" aria-pressed="false">${n}</button>`).join('');
  seg.onclick=e=>{const b=e.target.closest('[data-m]'); if(b) setView(b.dataset.m)};
- MODE=VIEWS.some(x=>x[0]===v)?v:'soty';
- seg.querySelectorAll('[data-m]').forEach(x=>swSet(x,x.dataset.m===MODE));
+ MODE=VIEWS.some(x=>x[0]===v)||v==='stovp'?v:'soty';
+ seg.querySelectorAll('[data-m]').forEach(x=>swSet(x,x.dataset.m===MODE||(MODE==='stovp'&&x.dataset.m==='soty')));
+ d3Btn();
  const fp=$('#fprob'); fp.hidden=false; swSet(fp,false);
  fp.onclick=e=>{ONLYP=!ONLYP; swSet(fp,ONLYP); draw()};
- if(MODE==='stovp') map.once('load',()=>map.easeTo({pitch:55,duration:0}));}
+ if(MODE==='stovp') map.once('load',()=>map.easeTo({pitch:pitch3d(),duration:0}));}
 // ---- клік і наведення по сотах і стовпчиках ----
 function hexHit(p){ if(MODE!=='soty'&&MODE!=='stovp') return null;
  const ids=[]; for(const G of HEXG) ids.push((MODE==='soty'?'k-hex-':'k-col-')+G.id);
  const f=map.queryRenderedFeatures(p,{layers:ids.filter(id=>map.getLayer(id))});
  if(!f.length) return null;
  // з кількох сіток — та, що зараз видніша
- const z=map.getZoom(), id=MODE==='stovp'?COL_G:z<12.55?'L':z<14.5?'S':'X', g=f.find(x=>x.layer.id.endsWith(id))||f[0];
+ const id=colG(), g=f.find(x=>x.layer.id.endsWith(id))||f[0];
  const G=HEXG.find(x=>g.layer.id.endsWith(x.id)), b=HEXB[G.id].get(g.properties.k);
  return b?{G,b}:null}
 map.on('click',e=>{ if(CLICK_TAKEN||iconAt(e.point)) return;

@@ -171,6 +171,9 @@ html .tsw button{min-height:32px;display:inline-flex;align-items:center}
 #kplace .kp-pc[data-kp-prob]:hover,#kplace .kp-pc[data-kp-prob]:focus-visible{background:var(--rule)}
 #kplace .kp-pch{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim)}
 #kplace .kp-pct{font-size:14px;font-weight:600;margin:1px 0 3px}
+/* кнопка «3D»/«2D» у сотах (36.55) */
+#f3d{position:absolute;top:110px;right:10px;z-index:3;width:44px;height:44px;border-radius:50%;border:1px solid rgba(127,127,127,.35);background:var(--panel,#fff);color:var(--ink,#111);font:600 14px/1 system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.2);cursor:pointer}
+#f3d[aria-pressed="true"]{background:var(--ink,#111);color:var(--panel,#fff)}
 /* вибір «Проблема / Ризик» під пальцем (36.51) */
 .vybir button{display:block;width:100%;min-height:44px;text-align:left;border:0;background:none;padding:6px 8px 6px 30px;position:relative;cursor:pointer;font:inherit;color:inherit}
 .vybir button:hover{background:rgba(127,127,127,.12)}

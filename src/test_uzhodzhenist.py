@@ -123,6 +123,21 @@ def main(n=300, seed=36, znimky=True):
         res['bad'] += [f'блок проблеми: {b}' for b in bloky['bad']]
         res['n']['blokiv'] = bloky['n']
         t_perevirky = time.time() - t1
+        # 3D за логікою сот (36.55, S-К.4, test:vyhliady_3d): вигляди — три;
+        # кнопка «3D» лише в сотах; на кожному зумі з даними — рівно один шар k-col-*
+        d3 = pg.evaluate(r'''async()=>{const bad=[], vy=[...document.querySelectorAll('#fcat [data-m]')].map(b=>b.dataset.m);
+          if(vy.join()!=='soty,rings,addr') bad.push('вигляди: '+vy.join());
+          const b3=()=>document.querySelector('#f3d');
+          KT.setView('addr'); if(b3()&&!b3().hidden) bad.push('кнопка 3D в адресах');
+          KT.setView('soty'); if(!b3()||b3().hidden) bad.push('немає кнопки 3D у сотах');
+          KT.setView('stovp');
+          for(const z of [11,13,15.5]){KT.map.jumpTo({center:[30.52,50.45],zoom:z});
+            await new Promise(r=>{KT.map.once('idle',r); setTimeout(r,4000)});
+            const vis=['L','S','X'].filter(id=>KT.map.getLayer('k-col-'+id)&&KT.map.getLayoutProperty('k-col-'+id,'visibility')!=='none'
+              &&KT.map.querySourceFeatures('k-col-'+id).length);
+            if(vis.length!==1) bad.push('z'+z+': шарів стовпчиків '+vis.length)}
+          KT.setView('soty'); return bad}''')
+        res['bad'] += [f'3D: {b}' for b in d3]
         if znimky:
             os.makedirs(ZNIMKY, exist_ok=True)
             pg.evaluate('KT.closeCell(); KT.setView("soty"); KT.map.jumpTo({center:[30.52,50.45],zoom:11})')
