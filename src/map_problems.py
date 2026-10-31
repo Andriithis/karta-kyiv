@@ -137,7 +137,10 @@ def novi_kandydaty(P, addr_district, DOCIDX=None):
                         vidrizok=vd.get('nazva'), geom=vd.get('geom'),
                         # аналіз фабул (36.37): рядок сценарію «… — N з M»
                         stsenarij=r.get('stsenarij'), ns=r.get('n_stsenariju'), kv=r.get('kvartaly'),
-                        tryk=r.get('trykutnyk'), tsyt=r.get('tsytaty')))
+                        tryk=r.get('trykutnyk'), tsyt=r.get('tsytaty'),
+                        # дві проблеми аналізу одного механізму можуть стати на ту саму
+                        # точку карти (Хрещатик, 21 і 22) — без id одна затирала другу
+                        aid=r.get('analityk')))
     print(f'   проблем В1: {len(_PR.get("perelik", []))}, на точках карти: {len(out)}'
           + (f'; подій карти знайдено не всі — у {nepovni}' if nepovni else ''))
     if bez:
@@ -214,7 +217,7 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
     def try_take(c):
         cap = CAP_THEME.get(c['th'], CAP_DEFAULT)
         if used_theme[c['th']] >= cap: return False
-        key = (c['pi'], c['sim'])
+        key = (c['pi'], c['sim'], c.get('aid'))
         if key in chosen: return False
         chosen[key] = c; used_theme[c['th']] += 1
         return True
@@ -229,7 +232,7 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
     for c in candidates:
         if NOVYI_VIDBIR:
             # Р7: квот немає — у переліку все, що пройшло ворота
-            chosen[(c['pi'], c['sim'])] = c; continue
+            chosen[(c['pi'], c['sim'], c.get('aid'))] = c; continue
         if got >= CITYWIDE: break
         if try_take(c): got += 1
 
@@ -242,13 +245,13 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
         pool = [c for c in candidates if c['district'] == d]
         if NOVYI_VIDBIR:
             # Р7: районний перелік — те саме визначення, без пом'якшення й квот
-            for c in pool: chosen_loc[(c['pi'], c['sim'])] = c
+            for c in pool: chosen_loc[(c['pi'], c['sim'], c.get('aid'))] = c
             continue
         used_d, got = collections.Counter(), 0
         for pass_ in (0, 1):
             for c in pool:
                 if got >= DISTRICT_TOP: break
-                key = (c['pi'], c['sim'])
+                key = (c['pi'], c['sim'], c.get('aid'))
                 if key in chosen_loc: continue
                 if pass_ == 0 and used_d[c['th']] >= CAP_D_THEME.get(c['th'], CAP_D_DEF):
                     continue
@@ -287,7 +290,7 @@ def select(P, meta, labels, ck, ykeys, sim_of, gi_of_theme,
             analysis = dict(pc=risk_pc, hit=round(100*d.get('hit_середовище', 0)),
                              factors=[[n_, round(float(w), 3)] for n_, w in d.get('фактори', []) if w > 0][:8],
                              train=d.get('навчання', 0), test=d.get('перевірка', 0))
-        key = (c['pi'], c['sim'])
+        key = (c['pi'], c['sim'], c.get('aid'))
         probs_by_pi[c['pi']].append(dict(
             thi=gi_of_theme.get(th, -1),   # індекс теми — щоб картка ховалась разом із фільтром
             sim=c['sim'], theme=L.THEMES.get(th, th), mech=c.get('mekhanizm') or M.simname(c['sim']),
