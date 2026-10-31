@@ -435,9 +435,14 @@ def podii(V, log):
 # найгустішої точки: 60 м для ДТП (перехрестя ширше за будинок), 40 м для решти.
 R_KOLO_DTP = 60
 R_KOLO = 40
-# Перехрестя: адреса-перехрестя забирає номери обох своїх вулиць ближче 80 м —
-# суд пише те саме місце то перехрестям, то будинком на розі.
-R_PEREKHRESTIA = 80
+# Перехрестя: адреса-перехрестя забирає номери обох своїх вулиць — суд пише те
+# саме місце то перехрестям, то будинком на розі. 80 м із завдання мало: точка
+# будинку OSM — центр будівлі, і Васильківська, 30 на розі з Сумською стоїть
+# далі за 80 м від точки перетину ліній (перевірка 31.10) — беремо 120 м.
+R_PEREKHRESTIA = 120
+# Площа — об'єкт (ринок, вокзал): усі номери однієї площі ближче R_PLOSHCHA —
+# одне місце (пл. Севастопольська, 1 і 5 — 78 м, коло ДТП 60 м їх розділяло)
+R_PLOSHCHA = 300
 _PEREKHR = re.compile(r'^перехрестя\s+(.+?)\s+і\s+(.+)$', re.I)
 
 
@@ -471,6 +476,14 @@ def mistsia(ev):
         os_p = {p: _osnovy_adresy(adr_p[p]) for p in pts}
         g = Pts(pts)
         kudy = {}
+        for p in pts:
+            a = str(adr_p[p] or '')
+            if p in kudy or not a.startswith('пл. ') or len(os_p[p]) != 1: continue
+            kudy[p] = p
+            for j in g.near(p[0], p[1], R_PLOSHCHA):
+                q = pts[j]
+                if q not in kudy and str(adr_p[q] or '').startswith('пл. ') and os_p[q] and os_p[q][0] == os_p[p][0]:
+                    kudy[q] = p
         for p in pts:
             if p in kudy or len(os_p[p]) != 2: continue
             kudy[p] = p
