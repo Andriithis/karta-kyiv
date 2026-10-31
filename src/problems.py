@@ -491,13 +491,16 @@ def mistsia(ev):
         # пиятика на Сумській, 1 і крадіжка на Васильківській, 28 — різні місця
         # на тому самому розі
         dorozhnii = M.simtheme(sim) in ('ДТП', 'ДОР') or sim.startswith('ДОР_')
-        for p in (pts if dorozhnii else ()):
-            if p in kudy or len(os_p[p]) != 2: continue
-            kudy[p] = p
-            for j in g.near(p[0], p[1], R_PEREKHRESTIA):
-                q = pts[j]
-                if q in kudy: continue
-                if any(_ta_sama_vulytsia(a, b) for a in os_p[p] for b in os_p[q]): kudy[q] = p
+        # Номер іде до НАЙБЛИЖЧОГО перехрестя на своїй вулиці, а не до першого
+        # за порядком: інакше кут Сумської забирав Васильківську, 29/22 — ріг
+        # пров. Коломийського, окреме місце пілоту (перевірка 31.10)
+        kuty = [p for p in (pts if dorozhnii else ()) if p not in kudy and len(os_p[p]) == 2]
+        for p in kuty: kudy[p] = p
+        for q in pts:
+            if q in kudy: continue
+            bl = [(dist(p, q), p) for p in kuty
+                  if dist(p, q) <= R_PEREKHRESTIA and any(_ta_sama_vulytsia(a, b) for a in os_p[p] for b in os_p[q])]
+            if bl: kudy[q] = min(bl)[1]
         r = R_KOLO_DTP if M.simtheme(sim) == 'ДТП' or sim == 'ДОР_ДТП' else R_KOLO
         for p in pts:
             if p in kudy: continue
