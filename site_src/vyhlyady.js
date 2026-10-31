@@ -454,7 +454,14 @@ function d3Btn(){let b=$('#f3d');
  if(!b){b=document.createElement('button'); b.id='f3d'; b.type='button';
   b.onclick=()=>setView(MODE==='stovp'?'soty':'stovp'); map.getContainer().appendChild(b)}
  b.hidden=!(MODE==='soty'||MODE==='stovp'); b.textContent=MODE==='stovp'?'2D':'3D';
- b.setAttribute('aria-pressed',String(MODE==='stovp'))}
+ b.setAttribute('aria-pressed',String(MODE==='stovp')); d3Mistse()}
+// На ПК панель стоїть справа вгорі й закривала кнопку (знімки 01.11) — кнопка
+// стає ліворуч від панелі; на телефоні панель знизу, тож кнопка — справа вгорі
+function d3Mistse(){const b=$('#f3d'), s=$('#side'); if(!b||document.body.classList.contains('kiosk')) return;
+ const r=s&&s.offsetParent?s.getBoundingClientRect():null, kart=map.getContainer().getBoundingClientRect();
+ b.style.right=(r&&r.top<kart.top+120&&r.left>kart.left+200)?(kart.right-r.left+10)+'px':'';
+ b.style.top=(r&&r.top<kart.top+120&&r.left>kart.left+200)?'14px':''}
+window.addEventListener('resize',()=>d3Mistse());
 // Перетнули поріг зуму — стара група стовпчиків порожніє, виділення з неї
 // знімається; нахил — за новим зумом
 // вибраний стовпчик старої групи осів — виділення знімається
