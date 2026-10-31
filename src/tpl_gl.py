@@ -369,9 +369,10 @@ function addrReady(){
   // огляді міста читалась як дорога (Андрій 26.10).
   map.addSource('k-probl',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
   map.addLayer({id:'k-probl-h',type:'line',source:'k-probl',layout:{'line-cap':'round','line-join':'round'},
-   paint:{'line-width':5.5,'line-opacity':.9}});
+   paint:{'line-width':8,'line-opacity':.9}});
+  // 3 px пунктиром 7/4 на облямівці 8 px — читається поверх смуги ризику (36.51)
   map.addLayer({id:'k-probl',type:'line',source:'k-probl',layout:{'line-cap':'butt','line-join':'round'},
-   paint:{'line-width':2.5,'line-dasharray':[2.4,1.6]}});
+   paint:{'line-width':3,'line-dasharray':[7/3,4/3]}});
   map.addSource('k-addr',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
   // Тінь — другий шар кола, розмитий і трохи зсунутий донизу, під основним.
   // У Leaflet це filter:drop-shadow на полотні; у GL фільтрів полотна немає,
@@ -759,7 +760,22 @@ function liniiaAt(pt){
 // картці адреси (Андрій 26.10: раніше клік відкривав соту поруч)
 function openProblem(i,j){ openAt(i); if(!PLACE) return; PLACE.prob=true; PLACE.pi=j; PLACE.tab='ogl'; PLACE.open=-1; renderPlace()}
 map.on('click',e=>{ if(CLICK_TAKEN||iconAt(e.point)||addrAt(e.point)) return;
- const l=liniiaAt(e.point); if(l){CLICK_TAKEN=true; openProblem(l.properties.i,l.properties.j)}});
+ const l=liniiaAt(e.point); if(!l) return; CLICK_TAKEN=true;
+ const rk=riskAt(e.point);
+ if(rk) return vybirPopup(l,rk,e.lngLat);
+ openProblem(l.properties.i,l.properties.j)});
+// Під пальцем і проблема, і ризик — вибір двома рядками-кнопками (36.51,
+// S-К.12): раніше клік забирала проблема, і до картки ризику не доходило
+function vybirPopup(l,rk,ll){
+ const q=probsOf(P[l.properties.i])[l.properties.j]||{}, rr=riskRows(rk.s,rk.pt)[0]||'';
+ const h=`<div class="vybir"><button data-v="p"><i class="vz vz-p"></i><b>Проблема · ${esc(q.theme||'')}</b>`+
+  `<span>${esc(q.stsenarij?q.stsenarij+' — '+(q.ns||0)+' з '+q.n:(q.mech||''))}</span></button>`+
+  `<button data-v="r"><i class="vz vz-r"></i><b>Ризик${rk.s.name?' · '+esc(rk.s.name):''}</b><span>${rr}</span></button></div>`;
+ if(POPUP) POPUP.remove();
+ const w=document.createElement('div'); w.innerHTML=h;
+ POPUP=new maplibregl.Popup({maxWidth:'300px',focusAfterOpen:false,closeOnClick:false}).setLngLat(ll).setDOMContent(w).addTo(map);
+ w.querySelector('[data-v="p"]').onclick=()=>{POPUP.remove(); openProblem(l.properties.i,l.properties.j)};
+ w.querySelector('[data-v="r"]').onclick=()=>{POPUP.remove(); riskPopup(rk,ll)}}
 map.on('mousemove',e=>{ if(liniiaAt(e.point)) map.getCanvas().style.cursor='pointer'});
 // Клік уже відкрив вікно чи повів до кільця — загальний обробник (ctxEvents)
 // його не чіпає. Питати карту «що під курсором» там уже пізно: вікно
@@ -923,9 +939,9 @@ function addrPaint(){
  // контури проблем — не в лінзах «Порушник» і «Ціль» (36.41: «Проблеми» сховані)
  const opPr=lzActive()?0:op1;
  if(map.getLayer('k-addr-pr')) map.setPaintProperty('k-addr-pr','circle-stroke-opacity',opPr);
- // Лінія-проблема — там само, де контури проблем у кільцях і адресах: на сотах
- // і стовпчиках проблему вже позначає обведена сота
- for(const l of ['k-probl','k-probl-h']) if(map.getLayer(l)) layerVis(l,BASE_READY&&!hexy&&!lzActive());
+ // Лінія-проблема — у всіх виглядах, і на сотах теж (36.51): поверх ризику
+ // вона мусить бути видна, де б людина не дивилась
+ for(const l of ['k-probl','k-probl-h']) if(map.getLayer(l)) layerVis(l,BASE_READY&&!lzActive());
 }
 // Що видно в цьому кадрі: [[вузол з x, y], непрозорість]. Та сама логіка,
 // що й була: рівень за зумом, перетікання до наступного — лише під час зуму.

@@ -161,30 +161,30 @@ function riskData(){
  return {lines,pts}}
 function riskReady(){
  if(!map.getSource('k-risk')){
-  const before=map.getLayer('k-rings')?'k-rings':undefined;
+  // Ризик — під лініями-проблемами (36.51): проблема завжди видна поверх смуги
+  const before=map.getLayer('k-probl-h')?'k-probl-h':map.getLayer('k-rings')?'k-rings':undefined;
   map.addSource('k-risk',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
   map.addSource('k-riskpt',{type:'geojson',data:{type:'FeatureCollection',features:[]}});
-  // На огляді лінії тонші й без облямівки, щоб не закривати соти й кільця (36.46)
-  const W=(a,b)=>['interpolate',['linear'],['zoom'],10,['+',.6,['*',.8,['get','r']]],11,['+',a[0],['*',a[1],['get','r']]],15,['+',b[0],['*',b[1],['get','r']]]];
-  const OP=['interpolate',['linear'],['zoom'],10,['+',.25,['*',.5,['get','r']]],12.5,['+',.35,['*',.6,['get','r']]]];
-  map.addLayer({id:'k-riskh',type:'line',source:'k-risk',minzoom:11.8,layout:{'line-cap':'round'},
-   paint:{'line-width':['+',2,W([1.2,2],[2.5,4])],'line-opacity':['interpolate',['linear'],['zoom'],11.8,0,12.5,.85]}},before);
-  map.addLayer({id:'k-risk',type:'line',source:'k-risk',layout:{'line-cap':'round'},
-   paint:{'line-width':W([1.2,2],[2.5,4]),'line-opacity':OP}},before);
+  // М'яка смуга під вулицею без облямівки (36.51, варіант А): Андрію ризик не
+  // має бути ляпистим і заважати проблемам. Ширина й прозорість — за рангом:
+  // на z15 10–18 px і 0,20–0,42, на огляді — тонко, як було
+  const W=['interpolate',['linear'],['zoom'],10,['+',.6,['*',.8,['get','r']]],12.5,['+',2.5,['*',3,['get','r']]],15,['+',10,['*',8,['get','r']]],18,['+',16,['*',12,['get','r']]]];
+  const OP=['interpolate',['linear'],['zoom'],10,['+',.25,['*',.4,['get','r']]],13,['+',.2,['*',.22,['get','r']]]];
+  map.addLayer({id:'k-risk',type:'line',source:'k-risk',layout:{'line-cap':'round','line-join':'round'},
+   paint:{'line-width':W,'line-opacity':OP}},before);
   map.addLayer({id:'k-riskpt',type:'circle',source:'k-riskpt',
-   paint:{'circle-radius':['interpolate',['linear'],['zoom'],10,1.5,12.5,3.5],'circle-stroke-width':['interpolate',['linear'],['zoom'],11.8,0,12.5,1.5],
+   paint:{'circle-radius':['interpolate',['linear'],['zoom'],10,1.5,15,['+',6,['*',4,['get','r']]]],'circle-blur':.3,
     'circle-opacity':OP}},before);
  }
  const c=RISK_C[THEME]||RISK_C.svitla, h=cssv('--halo')||'#fff';
- map.setPaintProperty('k-risk','line-color',c); map.setPaintProperty('k-riskh','line-color',h);
- map.setPaintProperty('k-riskpt','circle-color',c); map.setPaintProperty('k-riskpt','circle-stroke-color',h);
+ map.setPaintProperty('k-risk','line-color',c); map.setPaintProperty('k-riskpt','circle-color',c);
  riskDraw();
 }
 function riskDraw(){
  if(!map.getSource('k-risk')) return;
  const d=RISK_ON?riskData():{lines:{type:'FeatureCollection',features:[]},pts:{type:'FeatureCollection',features:[]}};
  map.getSource('k-risk').setData(d.lines); map.getSource('k-riskpt').setData(d.pts);
- for(const id of ['k-risk','k-riskh','k-riskpt']) layerVis(id,RISK_ON);
+ for(const id of ['k-risk','k-riskpt']) layerVis(id,RISK_ON);
 }
 // «серед N% найризикованіших вулиць Києва · очікується ~M подій за рік» —
 // N — місце серед УСІХ відрізків міста, вгору до цілого (< 1 → «1%»); M —
