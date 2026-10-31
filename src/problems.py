@@ -428,25 +428,63 @@ def podii(V, log):
     return out
 
 
+# Межі місця для сита й проблем (36.47, S-ПР.16, Е24). Ланцюжок 30 м
+# розсипав одне місце на кілька («перехрестя», «Велика Васильківська, 30»,
+# «Сумська, 1» — три пари сита на одному повороті), а довший ланцюжок
+# зливав би цілі проспекти (Е24: DBSCAN). Тому — компактне коло навколо
+# найгустішої точки: 60 м для ДТП (перехрестя ширше за будинок), 40 м для решти.
+R_KOLO_DTP = 60
+R_KOLO = 40
+# Перехрестя: адреса-перехрестя забирає номери обох своїх вулиць ближче 80 м —
+# суд пише те саме місце то перехрестям, то будинком на розі.
+R_PEREKHRESTIA = 80
+_PEREKHR = re.compile(r'^перехрестя\s+(.+?)\s+і\s+(.+)$', re.I)
+
+
+def _osnovy_adresy(adr):
+    """основи слів вулиці адреси «вул. Сумська, 1» -> {'сумськ'}; для
+    перехрестя — дві множини"""
+    import perekhrestia as PX
+    m = _PEREKHR.match(adr or '')
+    if m: return [PX.osnovy(m.group(1)), PX.osnovy(m.group(2))]
+    st_ = str(adr or '').rpartition(', ')[0]
+    return [PX.osnovy(st_)] if st_ else []
+
+
+def _ta_sama_vulytsia(a, b):
+    return bool(a and b and (a <= b or b <= a))
+
+
 def mistsia(ev):
-    """(механізм) -> адреси в 30 м склеєні в одне місце. Union-find по
-    точках адрес одного механізму."""
+    """(механізм) -> місце: спершу перехрестя забирають номери обох вулиць у
+    80 м, далі жадібні кола (60 м ДТП, 40 м решта) від найгустішої точки."""
     by = collections.defaultdict(list)
     for i, e in enumerate(ev): by[e['sim']].append(i)
     place = {}
     for sim, ids in by.items():
-        pts = sorted({ev[i]['p'] for i in ids})
-        pi = {p: k for k, p in enumerate(pts)}
-        par = list(range(len(pts)))
-        def f(x):
-            while par[x] != x: par[x] = par[par[x]]; x = par[x]
-            return x
+        n_p = collections.Counter(ev[i]['p'] for i in ids)
+        adr_p = {}
+        for i in ids: adr_p.setdefault(ev[i]['p'], ev[i].get('adr'))
+        # найгустіша точка першою; при рівності — за координатами, щоб дві
+        # збірки на тих самих даних дали ті самі місця (S-Р.11)
+        pts = sorted(n_p, key=lambda p: (-n_p[p], p))
+        os_p = {p: _osnovy_adresy(adr_p[p]) for p in pts}
         g = Pts(pts)
-        for k, p in enumerate(pts):
-            for j in g.near(p[0], p[1], R_MISCE):
-                a, b = f(k), f(j)
-                if a != b: par[a] = b
-        for i in ids: place[i] = (sim, 'т', pts[f(pi[ev[i]['p']])])
+        kudy = {}
+        for p in pts:
+            if p in kudy or len(os_p[p]) != 2: continue
+            kudy[p] = p
+            for j in g.near(p[0], p[1], R_PEREKHRESTIA):
+                q = pts[j]
+                if q in kudy: continue
+                if any(_ta_sama_vulytsia(a, b) for a in os_p[p] for b in os_p[q]): kudy[q] = p
+        r = R_KOLO_DTP if M.simtheme(sim) == 'ДТП' or sim == 'ДОР_ДТП' else R_KOLO
+        for p in pts:
+            if p in kudy: continue
+            kudy[p] = p
+            for j in g.near(p[0], p[1], r):
+                if pts[j] not in kudy: kudy[pts[j]] = p
+        for i in ids: place[i] = (sim, 'т', kudy[ev[i]['p']])
     return place
 
 
@@ -567,8 +605,18 @@ def kandydaty(zapysy, ev, log=print):
             if e['sim'] == 'ДОР_ДТП' or M.simtheme(e['sim']) == 'ДТП':
                 x['mitky'] = [m for m, rx in MITKY if rx.search(e['fab0'])]
             pod.append(x)
+        # Сценарій сита (ZAVDANNYA-40, етап 2.2): маневр × тип місця × час доби —
+        # підказка аналітику, де шукати одну картину; скарги 1551 того самого
+        # місця — окремо, у сценарій не входять
+        stsen = collections.Counter()
+        for x in pod:
+            h = int(x['time'][:2]) if x.get('time') and x['time'][:2].isdigit() else None
+            chas = None if h is None else 'ніч' if h < 6 or h >= 22 else 'ранок' if h < 12 else 'день' if h < 18 else 'вечір'
+            stsen[' · '.join(s for s in ((x.get('mitky') or [None])[0], r.get('typ'), chas) if s)] += 1
+        g = r.get('golos') or {}
         out.append(dict(adresy=r.get('adresy', []), lat=r['p'][0], lon=r['p'][1], sim=r['sim'], vyd=r['vyd'],
-                        status=r.get('status'), podii=pod))
+                        status=r.get('status'), stsenarii=[[k, n] for k, n in stsen.most_common(5) if k],
+                        skargy_1551=g.get('skarg') if 'skarg' in g else g.get('stan'), podii=pod))
     with open(KANDYDATY, 'wb') as raw, gzip.GzipFile(filename='', mode='wb', fileobj=raw, mtime=0) as gz:
         gz.write(json.dumps(out, ensure_ascii=False, separators=(',', ':')).encode('utf-8'))
     log(f'   кандидати для аналізу (36.37): {len(out):,} пар, {sum(len(x["podii"]) for x in out):,} подій '
