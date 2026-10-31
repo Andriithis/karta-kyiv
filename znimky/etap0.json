@@ -1,0 +1,18 @@
+[
+ {"nazva": "0-3d-z16-pk", "vikno": [1366, 768], "vyhliad": "stovp", "tsentr": [30.523, 50.45], "zum": 16},
+ {"nazva": "0-3d-z16-telefon", "vikno": [375, 812], "vyhliad": "stovp", "tsentr": [30.523, 50.45], "zum": 16},
+ {"nazva": "0-3d-telefon-shchypok", "vikno": [375, 812], "vyhliad": "soty", "tsentr": [30.523, 50.45], "zum": 12,
+  "kroky": [
+   {"js": "document.querySelector('#f3d').click()", "chekaty": 2, "nazva": "1-uvimkneno"},
+   {"shchypok": [187, 400, 60, 260], "chekaty": 2, "nazva": "2-nablyzheno"},
+   {"shchypok": [187, 400, 60, 260], "chekaty": 2, "nazva": "3-shche"},
+   {"shchypok": [187, 400, 260, 60], "chekaty": 2, "nazva": "4-viddaleno"},
+   {"js": "document.querySelector('#f3d').click()", "chekaty": 2, "nazva": "5-vymkneno"}]},
+ {"nazva": "0-3d-telefon-video", "vikno": [375, 812], "vyhliad": "stovp", "tsentr": [30.523, 50.45], "zum": 12, "video": 14,
+  "js": "(async()=>{await new Promise(r=>setTimeout(r,1500)); KT.map.easeTo({zoom:16,duration:8000})})()"},
+ {"nazva": "0-kiosk-pk-video", "vikno": [1920, 1080], "query": "kiosk=1", "video": 30},
+ {"nazva": "0-kiosk-telefon-video", "vikno": [375, 812], "query": "kiosk=1", "video": 25},
+ {"nazva": "0-kiosk-pk-zupynka", "vikno": [1920, 1080], "query": "kiosk=1", "chekaty": 14},
+ {"nazva": "0-panel-telefon-svitla", "vikno": [375, 812], "vyhliad": "soty", "tsentr": [30.523, 50.45], "zum": 11},
+ {"nazva": "0-panel-telefon-temna", "vikno": [375, 812], "tema": "temna", "vyhliad": "soty", "tsentr": [30.523, 50.45], "zum": 11}
+]

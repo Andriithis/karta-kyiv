@@ -20,9 +20,11 @@ OUT = os.path.join(ROOT, 'vykhid', 'znimky-perevirka')
 def stsena(br, url, s):
     w, h = s.get('vikno', [1366, 768])
     tel = w < 768
+    # відео (ZAVDANNYA-41): переходи 3D і тури видно лише в русі
+    vid = {'record_video_dir': os.path.join(OUT, '_video'), 'record_video_size': {'width': w, 'height': h}} if s.get('video') else {}
     ct = br.new_context(viewport={'width': w, 'height': h}, is_mobile=tel, has_touch=tel,
-                        device_scale_factor=2 if tel else 1,
-                        color_scheme='dark' if s.get('tema') == 'temna' else 'light')
+                        device_scale_factor=2 if tel and not vid else 1,
+                        color_scheme='dark' if s.get('tema') == 'temna' else 'light', **vid)
     pg = ct.new_page()
     q = s.get('query', '')
     if s.get('storinka'):
@@ -51,10 +53,37 @@ def stsena(br, url, s):
     pg.evaluate('new Promise(r=>{KT.map.once("idle",r); setTimeout(r,6000)})')
     time.sleep(s.get('chekaty', 1))
     os.makedirs(OUT, exist_ok=True)
+    # кроки: дія -> пауза -> знімок (послідовність станів однієї сторінки)
+    for k in s.get('kroky', []):
+        if k.get('js'):
+            try: pg.evaluate(k['js'])
+            except Exception as e: print(f'   {s["nazva"]}/{k.get("nazva")}: JS не виконано — {e}')
+        if k.get('shchypok'): shchypok(pg, *k['shchypok'])
+        time.sleep(k.get('chekaty', 2))
+        if k.get('nazva'): pg.screenshot(path=os.path.join(OUT, s['nazva'] + '-' + k['nazva'] + '.png'))
+    if s.get('video'):
+        time.sleep(s['video'])
+        v = pg.video.path() if pg.video else None
+        ct.close()
+        if v and os.path.exists(v):
+            os.replace(v, os.path.join(OUT, s['nazva'] + '.webm')); print(f'   {s["nazva"]}: відео {s["video"]} с')
+        return
     f = os.path.join(OUT, s['nazva'] + '.png')
     pg.screenshot(path=f)
     ct.close()
     print(f'   {s["nazva"]}: {w}×{h} -> {os.path.relpath(f, ROOT)}')
+
+
+def shchypok(pg, x, y, vid, do, krokiv=12):
+    """Щипок двома пальцями (CDP): відстань між пальцями від vid до do px —
+    перевірка 3D на телефоні (Андрій: «наближення пальцями все ламає»)"""
+    cdp = pg.context.new_cdp_session(pg)
+    def tochky(d): return [{'x': x - d / 2, 'y': y, 'id': 1}, {'x': x + d / 2, 'y': y, 'id': 2}]
+    cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': tochky(vid)})
+    for i in range(1, krokiv + 1):
+        cdp.send('Input.dispatchTouchEvent', {'type': 'touchMove', 'touchPoints': tochky(vid + (do - vid) * i / krokiv)})
+        time.sleep(.04)
+    cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
 
 
 def main(fail):
