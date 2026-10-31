@@ -87,7 +87,8 @@ TESTY = {
     'analityk_na_karti': '4ж2. Перелік аналізу фабул на карті: усі місця «діє» в звіті й на сайті зі сценарієм; Васильківська, 30 / Сумська',
     'shary_ryzyku': '4к3. Ризик — смуга без облямівки під лінією-проблемою; клік по обох — вибір',
     'siryi_shar': '7. Фільтр «Ціль: телефон» — соти без подій з ціллю сірі й видимі, без числа (test_uzhodzhenist)',
-    'vyhliady_3d': '7. Вигляди — три, «3D» лише в сотах, на кожному зумі один шар стовпчиків (test_uzhodzhenist)',
+    'odne_chyslo': '4ж3. Число подій одне: meta карти = «Стан міста» = «Дослідження» = огляд міста',
+    'vyhliady_3d': '7. Вигляди — три, «3D» лише в сотах; поза смугою ±0,4 біля порогів — один шар стовпчиків, у смузі — два (test_uzhodzhenist)',
     'panel_sklad': '4к4. На головній панелі — лише пошук, вигляди, «Проблеми», види, «Ризик», район, посилання; «Прохідність» — у «Розширено»',
     'ryzyk_soty': '4к2. Соти не в «Адресах» і не перефарбовуються «Ризиком»: шару сот ризику немає, видимість сот — лише вигляд «Соти»',
     'bez_naselennia': '4к. Шару «Населення» на карті немає: ні перемикача, ні шару, ні файлу',
@@ -629,6 +630,22 @@ def main(save=False):
               f'на сайті без сценарію {len(bez_)}; пілот Васильківська / Сумська: {"так" if pilot_ else "НІ"}')
         if ne_ or stari_ or bez_ or not pilot_:
             print(f'   ПОМИЛКА перелік аналізу не на карті: {ne_[:3]} {stari_[:3]} {bez_[:3]}'); return 1
+    print('4ж3. Одне число подій скрізь (ZAVDANNYA-41, 0.4)')
+    if os.path.exists(sp_):
+        import map_dani as MD_
+        n_ = ((MD_.chytaty(sp_, 'meta') or {}).get('meta') or {}).get('podii_vsogo')
+        chysla_ = {}
+        for f_, rx_ in (('stan-mista.html', r'подій на карті</div><div class="big">([\d\s  ]+)<'),
+                        ('doslidzhennya.html', r'<b>([\d\s  ]+)</b> под'),
+                        ('ohliad-chernetka.html', r'половину всіх ([\d\s  ]+) подій')):
+            fp_ = os.path.join(ROOT, 'site', f_)
+            if os.path.exists(fp_):
+                m_ = re.search(rx_, open(fp_, encoding='utf-8').read())
+                chysla_[f_] = int(re.sub(r'\D', '', m_.group(1))) if m_ else None
+        rizni_ = {k: v for k, v in chysla_.items() if v != n_}
+        print(f'   meta {n_}; ' + ', '.join(f'{k} {v}' for k, v in chysla_.items()))
+        if n_ is None or rizni_:
+            print(f'   ПОМИЛКА число подій розходиться: {rizni_}'); return 1
     print('4ж. Кандидати для аналізу фабул (36.37): data/kandydaty.json.gz є, непорожній, ≤20 МБ, ДТП з mitky')
     kp_ = os.path.join(DATA, 'kandydaty.json.gz')
     if not os.path.exists(kp_):

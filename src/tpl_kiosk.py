@@ -13,7 +13,7 @@ JS_KIOSK = r"""// ==== КІОСК (?kiosk=1) ====
 if(new URLSearchParams(location.search).has('kiosk')){(async()=>{
  document.body.classList.add('kiosk');
  const TURY=DANI.tury?await vantazh(DANI.tury):[];
- const vsogo=P.reduce((a,p)=>a+(p[3]?p[4].length:0),0);
+ const vsogo=M.podii_vsogo??P.reduce((a,p)=>a+(p[3]?p[4].length:0),0);
  const el=(h)=>{const d=document.createElement('div'); d.innerHTML=h.trim(); return d.firstChild};
  const root=map.getContainer().parentElement;
  const zast=el(`<div class="ki-zast"><div class="ki-t">Карта правопорушень Києва</div>

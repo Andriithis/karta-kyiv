@@ -583,6 +583,9 @@ def zbirka(c, rows, extra, TKD, fab, case_docs, arts, ev_year, district=None, ou
     import atrybutsiia
     meta['atr'] = atrybutsiia.HTML
     meta['mon_n'] = 1 + max((e[5] for p in P for e in p[4]), default=0)
+    # Одне число подій для кіоску, огляду й звітів (ZAVDANNYA-41, 0.4): події на
+    # точних адресах — те саме, що «Стан міста»; браузер більше не рахує сам
+    meta['podii_vsogo'] = sum(len(p[4]) for p in P if p[3])
 
 
     # ---- шари контексту: потоки, ризик, чинники (map_layers) ----

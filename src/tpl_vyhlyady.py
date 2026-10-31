@@ -48,23 +48,35 @@ function binHex(st){
   HEXB[G.id]=B}
 }
 function hexData(G,cols){
- const B=HEXB[G.id], mx=Math.max(1,...[...B.values()].map(b=>b.n));
+ const B=HEXB[G.id];
  const ns=[...B.values()].map(b=>b.n).sort((a,b)=>a-b), med=ns.length?ns[ns.length>>1]:0;
+ // Висота 3D — від 95-го перцентиля групи, а не від найбільшої комірки міста:
+ // одна комірка вокзалу робила решту стовпчиків «шайбами» (ZAVDANNYA-41, 0.1)
+ const mx=Math.max(1,ns.length?ns[Math.min(ns.length-1,Math.floor(ns.length*.95))]:1);
  return {type:'FeatureCollection',features:[...B.values()].filter(b=>!cols||b.n>=med).map(b=>({type:'Feature',
   geometry:{type:'Polygon',coordinates:hexPoly(b.cx,b.cy,G.R,cols?.62:1)},
   // cl — світліший колір вибраного стовпчика, поки відкрита картка (33, В6)
-  properties:{k:b.k,c:kolirV(b.gi),cl:svitlishe(kolirV(b.gi)),gi:b.gi,a:b.a,pr:b.pr,n:b.n,h:G.R*7*Math.sqrt(b.n/mx)}}))}}
+  properties:{k:b.k,c:kolirV(b.gi),cl:svitlishe(kolirV(b.gi)),gi:b.gi,a:b.a,pr:b.pr,n:b.n,h:G.R*7*(.12+.88*Math.sqrt(Math.min(1,b.n/mx)))}}))}}
 function svitlishe(c){const m=/^#?([0-9a-f]{6})$/i.exec(c||''); if(!m) return c;
  const v=parseInt(m[1],16), f=x=>Math.round(x+(255-x)*.45);
  return '#'+[v>>16,(v>>8)&255,v&255].map(f).map(x=>x.toString(16).padStart(2,'0')).join('')}
 const HEX_FADE={L:[[0,1],[12.3,1],[12.8,0]],S:[[12.0,0],[12.4,1],[14.3,1],[14.7,0]],X:[[14.3,0],[14.7,1]]};
 const fadeBy=(id,v)=>['interpolate',['linear'],['zoom'],...HEX_FADE[id].flatMap(([z,f])=>[z,f?v:0])];
 // 3D — ті самі комірки, що соти на цьому зумі (36.55, макет «3D», верхній ряд):
-// наблизив — стовпчики менші й їх більше. Видима лише одна група k-col-*:
-// попередню очищуємо при переході порога, інакше лишаються «привиди».
+// наблизив — стовпчики менші й їх більше. Між групами — осідання й виростання,
+// прив'язане до зуму, а не до часу (ZAVDANNYA-41, етап 1; Андрій: «великі
+// стовпчики одразу міняються на малі»): у смузі ±0,4 навколо порогу стара група
+// плавно опускається до 0, нова виростає від 0. Поза смугою шар групи не
+// малюється зовсім (minzoom/maxzoom) — рівно один шар, без привидів.
 // Колір — як у сот (36.56, S-К.6); висота нормована в межах групи (hexData).
-const colG=(z=map.getZoom())=>z<12.55?'L':z<14.5?'S':'X';
-let COL_SHOWN=null;
+const COL_POROHY=[12.3,14.5], COL_SMUHA=.4;
+const colG=(z=map.getZoom())=>z<COL_POROHY[0]?'L':z<COL_POROHY[1]?'S':'X';
+// [minzoom, maxzoom) шару й висота за зумом — від повної до 0 у смузі
+const COL_ZUM={L:[0,COL_POROHY[0]+COL_SMUHA],S:[COL_POROHY[0]-COL_SMUHA,COL_POROHY[1]+COL_SMUHA],X:[COL_POROHY[1]-COL_SMUHA,24]};
+function colVysota(id){const [a,b]=COL_ZUM[id], h=['get','h'], st=[];
+ if(a>0) st.push(a,0,a+2*COL_SMUHA,h); else st.push(0,h);
+ if(b<24) st.push(b-2*COL_SMUHA,h,b,0);
+ return st.length>2?['interpolate',['linear'],['zoom'],...st]:h}
 // нахил від зуму: огляд ~55°, з наближенням плавно до ~20°
 const pitch3d=(z=map.getZoom())=>Math.round(55-35*Math.min(1,Math.max(0,(z-11)/5)));
 function hexReady(){
@@ -81,9 +93,9 @@ function hexReady(){
    map.addLayer({id:'k-hexp-'+id,type:'line',source:'k-hex-'+id,filter:['==',['get','pr'],1],
     paint:{'line-width':['interpolate',['linear'],['zoom'],10,.6,12,.9,13,1.3],'line-opacity':fadeBy(id,1)}},before);
    // Стовпчики — колір комірки, як у сот (36.56: «один колір» 7.3 скасовано)
-   map.addLayer({id:'k-col-'+id,type:'fill-extrusion',source:'k-col-'+id,paint:{
+   map.addLayer({id:'k-col-'+id,type:'fill-extrusion',source:'k-col-'+id,minzoom:COL_ZUM[id][0],maxzoom:COL_ZUM[id][1],paint:{
     'fill-extrusion-color':['case',['boolean',['feature-state','sel'],false],['get','cl'],['get','c']],
-    'fill-extrusion-height':['get','h'],
+    'fill-extrusion-height':colVysota(id),
     'fill-extrusion-opacity':.8}},before);
   }}
  if(!map.getSource('k-hexsel')){
@@ -107,12 +119,13 @@ function drawHex(st){
  const soty=MODE==='soty', stovp=MODE==='stovp';
  for(const G of HEXG){
   map.getSource('k-hex-'+G.id).setData(soty?hexData(G,false):{type:'FeatureCollection',features:[]});
-  map.getSource('k-col-'+G.id).setData(stovp&&G.id===colG()?hexData(G,true):{type:'FeatureCollection',features:[]});
+  // у 3D дані всіх трьох груп одразу: перехід — лише вираз висоти за зумом,
+  // без setData під час щипка (на телефоні це й ламало 3D)
+  map.getSource('k-col-'+G.id).setData(stovp?hexData(G,true):{type:'FeatureCollection',features:[]});
   for(const l of ['k-hex-','k-hexl-']) layerVis(l+G.id,soty);
   // контур соти-проблеми — не в лінзах «Порушник» і «Ціль» (36.41: «Проблеми» сховані)
   layerVis('k-hexp-'+G.id,soty&&!lzActive());
-  layerVis('k-col-'+G.id,stovp&&G.id===colG())}
- COL_SHOWN=stovp?colG():null;
+  layerVis('k-col-'+G.id,stovp)}
 }
 // ==== АДРЕСИ (7.5–7.6) ====
 // Крапка кольору свого найчисленнішого виду, радіус 0,8 + 0,25·√n на z10 →
@@ -451,9 +464,8 @@ function d3Btn(){let b=$('#f3d');
  b.setAttribute('aria-pressed',String(MODE==='stovp'))}
 // Перетнули поріг зуму — стара група стовпчиків порожніє, виділення з неї
 // знімається; нахил — за новим зумом
-map.on('zoom',()=>{ if(MODE!=='stovp'||colG()===COL_SHOWN) return;
- if(CELL&&CELL.colSel!==undefined) closeCell();
- if(LASTST) drawHex(LASTST)});
+// вибраний стовпчик старої групи осів — виділення знімається
+map.on('zoomend',()=>{ if(MODE==='stovp'&&CELL&&CELL.colSel!==undefined&&CELL.colG!==colG()) closeCell()});
 map.on('zoomend',()=>{ if(MODE==='stovp'&&Math.abs(map.getPitch()-pitch3d())>2) map.easeTo({pitch:pitch3d(),duration:300})});
 {const VIEWS=[['soty','Соти'],['rings','Кільця'],['addr','Адреси']];
  let v=null; try{v=localStorage.getItem('karta-vyhlyad')}catch(e){}

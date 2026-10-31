@@ -131,11 +131,13 @@ def main(n=300, seed=36, znimky=True):
           KT.setView('addr'); if(b3()&&!b3().hidden) bad.push('кнопка 3D в адресах');
           KT.setView('soty'); if(!b3()||b3().hidden) bad.push('немає кнопки 3D у сотах');
           KT.setView('stovp');
-          for(const z of [11,13,15.5]){KT.map.jumpTo({center:[30.52,50.45],zoom:z});
+          // поза смугою ±0,4 навколо порогів 12,3 і 14,5 — рівно один шар з даними,
+          // у смузі — два (осідання й виростання, ZAVDANNYA-41 етап 1)
+          for(const [z,treba] of [[11,1],[12.3,2],[13.3,1],[14.5,2],[15.5,1]]){KT.map.jumpTo({center:[30.52,50.45],zoom:z});
             await new Promise(r=>{KT.map.once('idle',r); setTimeout(r,4000)});
-            const vis=['L','S','X'].filter(id=>KT.map.getLayer('k-col-'+id)&&KT.map.getLayoutProperty('k-col-'+id,'visibility')!=='none'
-              &&KT.map.querySourceFeatures('k-col-'+id).length);
-            if(vis.length!==1) bad.push('z'+z+': шарів стовпчиків '+vis.length)}
+            const vis=['L','S','X'].filter(id=>{const l=KT.map.getLayer('k-col-'+id); return l&&KT.map.getLayoutProperty('k-col-'+id,'visibility')!=='none'
+              &&z>=(l.minzoom||0)&&z<(l.maxzoom||24)&&KT.map.querySourceFeatures('k-col-'+id).length});
+            if(vis.length!==treba) bad.push('z'+z+': шарів стовпчиків '+vis.length+' замість '+treba)}
           KT.setView('soty'); return bad}''')
         res['bad'] += [f'3D: {b}' for b in d3]
         # Сірий шар (S-К.25, 36.59, test:siryi_shar): з фільтром «Ціль: телефон»

@@ -1,0 +1,10 @@
+[
+ {"nazva": "1-3d-perehid-video-pk", "vikno": [1366, 768], "vyhliad": "stovp", "tsentr": [30.523, 50.45], "zum": 11.5, "video": 12,
+  "js": "(async()=>{await new Promise(r=>setTimeout(r,1000)); KT.map.easeTo({zoom:15.5,duration:9000,easing:t=>t})})()"},
+ {"nazva": "1-3d-perehid-video-telefon", "vikno": [375, 812], "vyhliad": "stovp", "tsentr": [30.523, 50.45], "zum": 11.5, "video": 12,
+  "js": "(async()=>{await new Promise(r=>setTimeout(r,1000)); KT.map.easeTo({zoom:15.5,duration:9000,easing:t=>t})})()"},
+ {"nazva": "1-3d-z12-3-smuha", "vikno": [1366, 768], "vyhliad": "stovp", "tsentr": [30.523, 50.45], "zum": 12.3},
+ {"nazva": "1-3d-z15", "vikno": [1366, 768], "vyhliad": "stovp", "tsentr": [30.523, 50.45], "zum": 15},
+ {"nazva": "1-3d-z16", "vikno": [1366, 768], "vyhliad": "stovp", "tsentr": [30.523, 50.45], "zum": 16},
+ {"nazva": "1-3d-z16-telefon", "vikno": [375, 812], "vyhliad": "stovp", "tsentr": [30.523, 50.45], "zum": 16}
+]
