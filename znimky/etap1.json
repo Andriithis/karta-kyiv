@@ -1,0 +1,9 @@
+[
+ {"nazva": "ryzyk-z11-soty-svitla", "vikno": [1366, 768], "vyhliad": "soty", "ryzyk": true, "tsentr": [30.52, 50.45], "zum": 11},
+ {"nazva": "ryzyk-z11-soty-temna", "vikno": [1366, 768], "tema": "temna", "vyhliad": "soty", "ryzyk": true, "tsentr": [30.52, 50.45], "zum": 11},
+ {"nazva": "ryzyk-z12-adresy", "vikno": [1366, 768], "vyhliad": "addr", "ryzyk": true, "tsentr": [30.51, 50.44], "zum": 12},
+ {"nazva": "ryzyk-z14-adresy", "vikno": [1366, 768], "vyhliad": "addr", "ryzyk": true, "tsentr": [30.49, 50.395], "zum": 14.5},
+ {"nazva": "ryzyk-z13-kiltsia", "vikno": [1366, 768], "vyhliad": "rings", "ryzyk": true, "tsentr": [30.51, 50.44], "zum": 13},
+ {"nazva": "bez-ryzyku-z12-adresy", "vikno": [1366, 768], "vyhliad": "addr", "ryzyk": false, "tsentr": [30.51, 50.44], "zum": 12},
+ {"nazva": "ryzyk-telefon-z12", "vikno": [375, 812], "vyhliad": "addr", "ryzyk": true, "tsentr": [30.51, 50.44], "zum": 12}
+]

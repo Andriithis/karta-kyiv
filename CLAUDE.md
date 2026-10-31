@@ -102,7 +102,17 @@ METODYKA.md. Якщо рішення просить щось "позначити
 
 ## Як перевіряти зміни в карті
 
-Локально, без GitHub:
+**Основний шлях — GitHub Actions** (36.49, S-Н.12): на ПК Андрія мало пам'яті,
+локальна збірка йде годинами. Workflow «Перевірка збірки» збирає карту,
+проганяє `check_build` і робить знімки за сценами `znimky/*.json`; знімки —
+артефакт «perevirka» (`gh run download <id> -n perevirka`). Сайт не публікує.
+
+```
+gh workflow run "Перевірка збірки" -f stseny=znimky/etap1.json
+gh workflow run "Перевірка збірки" -f stseny=znimky/etap1.json -f ref=<старий коміт>
+```
+
+Локально (лише якщо пам'яті досить):
 
 ```
 py -3 src\step3_map.py      (або 3-MAP.bat)

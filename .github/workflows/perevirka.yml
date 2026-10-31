@@ -1,0 +1,111 @@
+name: Перевірка збірки
+
+# Перевірка змін у карті без публікації (RISHENNYA 36.49, 31.10): на ПК
+# Андрія 0,5 ГБ вільної пам'яті, локальна збірка йде годинами. Тут — та сама
+# збірка, що в «Оновленні карти», але без свіжого дампу ЄДРСР і без
+# перенавчання: `check_build` і знімки Playwright за сценами `znimky/*.json`.
+# Результат — артефакт «perevirka» (знімки й журнал). У main нічого не
+# комітиться, сайт не публікується. Запуск лише вручну:
+#   gh workflow run "Перевірка збірки" -f stseny=znimky/etap1.json -f ref=main
+
+on:
+  workflow_dispatch:
+    inputs:
+      stseny:
+        description: 'Сцени знімків — JSON-файли через пробіл (порожньо — без знімків)'
+        default: ''
+      ref:
+        description: 'Гілка чи коміт'
+        default: 'main'
+      check_build:
+        description: 'Проганяти check_build'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: karta-perevirka
+  cancel-in-progress: true
+
+jobs:
+  perevirka:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Знімки «до» — на старому коміті, де ще немає скрипта знімків і сцен:
+      # беремо їх з main
+      - name: Скрипт знімків і сцени з main
+        run: |
+          git fetch --depth=1 origin main
+          git checkout FETCH_HEAD -- src/znimky.py znimky || echo "скрипта знімків у main немає"
+          git reset -q
+
+      - name: Знімок OSM з гілки osm
+        run: |
+          if git fetch --depth=1 origin osm && git checkout FETCH_HEAD -- osm; then
+            git reset -q
+            gunzip -c osm/osm_kyiv_city.json.gz > data/osm_kyiv_city.json
+            gunzip -c osm/osm_risks_raw.json.gz > data/osm_risks_raw.json
+          else
+            echo "::warning::знімка OSM немає"
+          fi
+
+      - name: Дані 1551 для збірки
+        run: |
+          if git fetch --depth=1 origin analiz-1551 && git checkout FETCH_HEAD -- data/1551; then
+            git reset -q -- data/1551
+          else
+            echo "1551 недоступний"
+          fi
+
+      # Без дампу: база — зі знімка events.csv.gz, як у «Оновленні карти» з
+      # галочкою «без свіжого дампу»; перевіряємо код, а не нові документи
+      - name: База зі знімка, геокодування, установи, межі
+        env:
+          BEZ_DAMPU: '1'
+          MAX_DOCS: '0'
+        run: |
+          python src/step1_download.py
+          python src/step2_geocode.py
+          python src/step2b_risks.py
+          python src/step2d_borders.py || echo "межі районів пропущено"
+
+      - name: Збірка карти
+        run: |
+          pip install --quiet numpy
+          python src/step3_map.py 2>&1 | tee vykhid_zbirka.txt
+          python src/step5_site.py
+
+      - name: Playwright
+        run: pip install --quiet playwright && python -m playwright install --with-deps chromium > /dev/null
+
+      - name: check_build
+        if: ${{ github.event.inputs.check_build == 'true' }}
+        run: python src/check_build.py 2>&1 | tee vykhid_check.txt; exit ${PIPESTATUS[0]}
+
+      - name: Знімки
+        if: ${{ always() && github.event.inputs.stseny != '' }}
+        run: python src/znimky.py ${{ github.event.inputs.stseny }}
+
+      - name: Артефакт
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perevirka
+          path: |
+            vykhid/znimky-perevirka
+            vykhid/znimky
+            vykhid_check.txt
+            vykhid_zbirka.txt
+          if-no-files-found: ignore
+          retention-days: 14
