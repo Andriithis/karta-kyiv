@@ -15,6 +15,7 @@ JS_KIOSK = r"""// ==== КІОСК (?kiosk=1) ====
 if(new URLSearchParams(location.search).has('kiosk')){(async()=>{
  document.body.classList.add('kiosk'); TUR_KIOSK=true; turKnopka();
  const TURY=DANI.tury?await vantazh(DANI.tury):[]; if(!TURY_D) TURY_D=TURY;
+ if(!TUR_KOLODA&&DANI.koloda) TUR_KOLODA=await vantazh(DANI.koloda);
  const vsogo=M.podii_vsogo??P.reduce((a,p)=>a+(p[3]?p[4].length:0),0);
  const root=map.getContainer().parentElement;
  const zast=turEl(`<div class="ki-zast"><div class="ki-t">Карта правопорушень Києва</div>

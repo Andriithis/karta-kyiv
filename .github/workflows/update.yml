@@ -186,6 +186,10 @@ jobs:
           python src/doslid_1551.py || echo "дослідження 1551 не вдалося — дивіться журнал"
 
       - name: Крок 3 — збірка карти
+        # фото Mapillary для зупинок туру (ZAVDANNYA-41, 3.4): токен лише в GitHub
+        # Secret, у файли не йде; без нього зупинки без фото
+        env:
+          MAPILLARY_TOKEN: ${{ secrets.MAPILLARY_TOKEN }}
         run: |
           # numpy — нульовий рівень Р8 у відборі проблем (problems.py)
           pip install --quiet numpy

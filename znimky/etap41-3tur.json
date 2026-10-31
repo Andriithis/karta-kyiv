@@ -1,0 +1,13 @@
+[
+ {"nazva": "3-tur-video-pk-1920", "vikno": [1920, 1080], "vyhliad": "soty", "tsentr": [30.52, 50.45], "zum": 11, "video": 60,
+  "js": "(async()=>{await new Promise(r=>setTimeout(r,1000)); document.querySelector('#ftur').click()})()"},
+ {"nazva": "3-tur-video-telefon", "vikno": [375, 812], "vyhliad": "soty", "tsentr": [30.52, 50.45], "zum": 11, "video": 45,
+  "js": "(async()=>{await new Promise(r=>setTimeout(r,1000)); document.querySelector('#ftur').click()})()"},
+ {"nazva": "3-tur-kroky-pk", "vikno": [1920, 1080], "vyhliad": "soty", "tsentr": [30.52, 50.45], "zum": 11,
+  "js": "document.querySelector('#ftur').click()",
+  "kroky": [{"chekaty": 7, "nazva": "1"}, {"chekaty": 8.5, "nazva": "2"}, {"chekaty": 8.5, "nazva": "3"}, {"chekaty": 8.5, "nazva": "4"}, {"chekaty": 8.5, "nazva": "5"}]},
+ {"nazva": "3-tur-kroky-telefon", "vikno": [375, 812], "vyhliad": "soty", "tsentr": [30.52, 50.45], "zum": 11,
+  "js": "document.querySelector('#ftur').click()",
+  "kroky": [{"chekaty": 7, "nazva": "1"}, {"chekaty": 8.5, "nazva": "2"}, {"chekaty": 8.5, "nazva": "3"}]},
+ {"nazva": "3-kiosk-video-1920", "vikno": [1920, 1080], "query": "kiosk=1", "video": 45}
+]

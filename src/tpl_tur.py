@@ -59,13 +59,44 @@ const turIde=()=>!!TUR_STAN;
 var TUR_KIOSK=false;
 for(const ev of ['pointerdown','wheel','keydown']) window.addEventListener(ev,e=>{
  if(!TUR_STAN||TUR_KIOSK) return;
- if(e.target&&e.target.closest&&e.target.closest('#ftur')) return;
+ if(e.target&&e.target.closest&&e.target.closest('#ftur,#fzvuk')) return;
  turStop(true)},true);
+// ---- колода (етап 3): щоразу 8–10 зупинок, випадково, але з ритмом ----
+// цифра → 2–3 місця → історія → «що робити» → …; не більше двох однакових
+// видів поспіль; та сама зупинка в одному турі не повторюється
+function kolodaTur(K,n=8+Math.floor(Math.random()*3)){
+ const po={}; K.forEach(z=>(po[z.typ]=po[z.typ]||[]).push(z));
+ for(const k in po) po[k].sort(()=>Math.random()-.5);
+ const ryt=['chyslo','misce','misce','fabula','shcho','misce','chyslo','misce','fabula','shcho','misce','misce'];
+ const out=[], buly=new Set(); let i=0, z=0;
+ while(out.length<n&&z<60){z++; const t=ryt[i%ryt.length]; i++;
+  const st=out.slice(-2); if(st.length===2&&st.every(x=>x.typ===t)) continue;
+  const x=(po[t]||[]).find(q=>!buly.has(q.id)); if(!x) continue;
+  buly.add(x.id); out.push(x)}
+ return out}
+// ---- звук (етап 3): тиха фонова музика синтезом Web Audio — без файлу й мережі,
+// ліцензія — наш код; за замовчуванням вимкнено, кнопка «звук» ----
+let ZVUK=null;
+function zvukPerem(){ if(ZVUK){ZVUK.stop(); ZVUK=null; return false}
+ const A=new (window.AudioContext||window.webkitAudioContext)(), g=A.createGain(); g.gain.value=0; g.connect(A.destination);
+ g.gain.linearRampToValueAtTime(.05,A.currentTime+3);
+ // спокійний акорд, що повільно змінюється (м'які синусоїди)
+ const akordy=[[220,277.2,329.6],[196,246.9,293.7],[174.6,220,261.6],[196,246.9,329.6]], os=[];
+ for(let k=0;k<3;k++){const o=A.createOscillator(), og=A.createGain(); o.type='sine'; og.gain.value=.33; o.connect(og).connect(g); o.start(); os.push(o)}
+ let j=0; const krok=()=>{const a=akordy[j++%akordy.length]; os.forEach((o,k)=>o.frequency.setTargetAtTime(a[k],A.currentTime,1.2))};
+ krok(); const tm=setInterval(krok,8000);
+ ZVUK={stop(){clearInterval(tm); g.gain.setTargetAtTime(0,A.currentTime,.4); setTimeout(()=>A.close(),1500)}};
+ return true}
 // ---- кнопка «Тур» зліва внизу, над атрибуцією (справа вгорі — панель і «3D») ----
 function turKnopka(){let b=document.getElementById('ftur');
  if(!b){b=document.createElement('button'); b.id='ftur'; b.type='button';
   b.onclick=()=>{ if(TUR_STAN) return turStop(true); turPusk(turZupynky(),{nazva:''})};
-  map.getContainer().parentElement.appendChild(b)}
+  map.getContainer().parentElement.appendChild(b);
+  // «звук» — поруч з кнопкою туру; видно під час туру й у кіоску
+  const s=document.createElement('button'); s.id='fzvuk'; s.type='button'; s.textContent='звук'; s.setAttribute('aria-pressed','false');
+  s.onclick=e=>{e.stopPropagation(); s.setAttribute('aria-pressed',String(zvukPerem()))};
+  map.getContainer().parentElement.appendChild(s)}
+ const sz=document.getElementById('fzvuk'); if(sz) sz.hidden=!TUR_STAN&&!document.body.classList.contains('kiosk');
  const ide=!!TUR_STAN; b.textContent=ide?'■':'▶'; b.setAttribute('aria-label',ide?'Зупинити тур':'Тур');
  b.title=ide?'Зупинити тур':'Тур'; b.setAttribute('aria-pressed',String(ide));
  b.hidden=document.body.classList.contains('kiosk')}
@@ -97,6 +128,11 @@ CSS_TUR = r"""
  background:var(--panel,#fff);color:var(--ink,#111);font:600 18px/1 system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.2);cursor:pointer}
 #ftur[aria-pressed="true"]{background:var(--ink,#111);color:var(--panel,#fff)}
 #ftur[hidden]{display:none}
+#fzvuk{position:absolute;left:66px;bottom:40px;z-index:4;min-height:36px;padding:0 12px;border-radius:18px;border:1px solid rgba(127,127,127,.35);
+ background:var(--panel,#fff);color:var(--ink,#111);font:600 13px system-ui,sans-serif;cursor:pointer}
+#fzvuk[aria-pressed="true"]{background:var(--ink,#111);color:var(--panel,#fff)}
+#fzvuk[hidden]{display:none}
+body.kiosk #fzvuk{left:auto;right:16px;top:180px;bottom:auto;min-height:64px;padding:0 22px;font-size:20px;border-radius:32px}
 body.kiosk .tur-k{width:min(1100px,70vw);padding:22px 30px;border-radius:18px}
 body.kiosk .tur-kh{font-size:clamp(16px,1.2vw,24px)}body.kiosk .tur-kz{font-size:clamp(22px,2vw,40px)}
 body.kiosk .tur-kt{font-size:clamp(18px,1.4vw,30px)}body.kiosk .tur-kn{font-size:clamp(18px,1.4vw,28px)}

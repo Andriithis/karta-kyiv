@@ -98,6 +98,8 @@ jobs:
           python src/step4_engine.py
 
       - name: Збірка карти
+        env:
+          MAPILLARY_TOKEN: ${{ secrets.MAPILLARY_TOKEN }}
         run: |
           pip install --quiet numpy
           python src/step3_map.py 2>&1 | tee vykhid_zbirka.txt
