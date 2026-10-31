@@ -1,0 +1,6 @@
+[
+ {"nazva": "ryzyk-soty-z11-bez", "vikno": [1366, 768], "vyhliad": "soty", "ryzyk": false, "tsentr": [30.52, 50.45], "zum": 11},
+ {"nazva": "ryzyk-soty-z11-z-ryzykom", "vikno": [1366, 768], "vyhliad": "soty", "ryzyk": true, "tsentr": [30.52, 50.45], "zum": 11},
+ {"nazva": "ryzyk-soty-z13-z-ryzykom", "vikno": [1366, 768], "vyhliad": "soty", "ryzyk": true, "tsentr": [30.52, 50.45], "zum": 13},
+ {"nazva": "ryzyk-soty-z11-z-ryzykom-temna", "vikno": [1366, 768], "tema": "temna", "vyhliad": "soty", "ryzyk": true, "tsentr": [30.52, 50.45], "zum": 11}
+]
