@@ -120,6 +120,16 @@ jobs:
         if: ${{ always() && github.event.inputs.stseny != '' }}
         run: python src/znimky.py ${{ github.event.inputs.stseny }}
 
+      # Відео Playwright (VP8 без стиснення) — десятки МБ на хвилину; для
+      # перегляду центральним чатом і репо — VP9 до 1280 px (ZAVDANNYA-41, 3.6)
+      - name: Стиснути відео
+        if: ${{ always() && github.event.inputs.stseny != '' }}
+        run: |
+          for f in vykhid/znimky-perevirka/*.webm; do
+            [ -f "$f" ] || continue
+            ffmpeg -loglevel error -y -i "$f" -vf "scale='min(1280,iw)':-2" -c:v libvpx-vp9 -crf 42 -b:v 0 -row-mt 1 -an "${f%.webm}.vp9.webm"               && mv "${f%.webm}.vp9.webm" "$f" && echo "$f: $(du -h "$f" | cut -f1)"
+          done
+
       - name: Артефакт
         if: always()
         uses: actions/upload-artifact@v4
