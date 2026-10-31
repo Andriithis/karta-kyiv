@@ -1382,7 +1382,7 @@ function drawRisks(){
  for(const [k] of FLOWS){layerVis('k-flow-'+k,fOn.includes(k)); map.setPaintProperty('k-flow-'+k,'line-color',ink)}
  map.setFilter('k-flow-ic',['in',['get','f'],['literal',fOn]]); layerVis('k-flow-ic',fOn.length>0);
  dim=dim||fOn.length>0;
- dim=dim||RISK_ON;
+ // «Ризик» не міняє ні сот, ні кілець, ні адрес (Андрій 31.10, S-К.28): лише лінії поверх
  RING_A=dim?RING_DIM:RING_OP;
  addrPaint(); if(typeof riskDraw==='function'&&map.getSource('k-risk')){riskDraw(); if(LASTST) drawHex(LASTST)}
  map.triggerRepaint();

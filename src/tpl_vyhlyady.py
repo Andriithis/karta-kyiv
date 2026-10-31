@@ -48,11 +48,10 @@ function binHex(st){
 function hexData(G,cols){
  const B=HEXB[G.id], mx=Math.max(1,...[...B.values()].map(b=>b.n));
  const ns=[...B.values()].map(b=>b.n).sort((a,b)=>a-b), med=ns.length?ns[ns.length>>1]:0;
- const dim=RISK_ON?.35:1;
  return {type:'FeatureCollection',features:[...B.values()].filter(b=>!cols||b.n>=med).map(b=>({type:'Feature',
   geometry:{type:'Polygon',coordinates:hexPoly(b.cx,b.cy,G.R,cols?.62:1)},
   // cl — світліший колір вибраного стовпчика, поки відкрита картка (33, В6)
-  properties:{k:b.k,c:PALA[b.gi%PALA.length],cl:svitlishe(PALA[b.gi%PALA.length]),gi:b.gi,a:b.a*dim,pr:b.pr,n:b.n,h:G.R*7*Math.sqrt(b.n/mx)}}))}}
+  properties:{k:b.k,c:PALA[b.gi%PALA.length],cl:svitlishe(PALA[b.gi%PALA.length]),gi:b.gi,a:b.a,pr:b.pr,n:b.n,h:G.R*7*Math.sqrt(b.n/mx)}}))}}
 function svitlishe(c){const m=/^#?([0-9a-f]{6})$/i.exec(c||''); if(!m) return c;
  const v=parseInt(m[1],16), f=x=>Math.round(x+(255-x)*.45);
  return '#'+[v>>16,(v>>8)&255,v&255].map(f).map(x=>x.toString(16).padStart(2,'0')).join('')}

@@ -674,6 +674,10 @@ def main(save=False):
             vad_.append(f'видимість сот не лише від вигляду: {vis_[:3]}')
         if re.search(r"setPaintProperty\('k-hex[^;]*RISK|RISK[^;]*setPaintProperty\('k-hex", t_):
             vad_.append('«Ризик» перефарбовує соти')
+        # Андрій 31.10: соти блякли під «Ризиком» (dim=RISK_ON?.35:1) — і так не можна
+        hd_ = t_[t_.find('function hexData('):t_.find('function svitlishe(')]
+        if 'RISK_ON' in hd_ or 'dim=dim||RISK_ON' in t_:
+            vad_.append('«Ризик» міняє прозорість сот чи кілець')
         if vad_:
             print('   ПОМИЛКА ' + '; '.join(vad_)); return 1
         print(f'   шару сот ризику немає; видимість сот — від вигляду ({len(vis_)} викликів)')
