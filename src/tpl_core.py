@@ -41,7 +41,7 @@ $('#fasub').insertAdjacentHTML('beforeend',Object.keys(RISKOF).map(gi=>
 const SHORT={'Громадський порядок':'Порядок','Алкоголь і торгівля':'Торгівля',
  'Наркотики':'Наркотики','Насильство проти особи':'Насильство','Майнові':'Майно',
  'ДТП':'ДТП','Порушення на дорозі':'Порушення на дорозі'};
-const shortOf=gi=>SHORT[M.groups[gi][0]]||M.groups[gi][0];
+const shortOf=gi=>gi==null||gi<0?'без ознаки':SHORT[M.groups[gi][0]]||M.groups[gi][0];
 const artOn=i=>{const b=document.querySelector(`[data-a="${i}"]`);return !!(b&&b.checked)};
 const setArt=(i,v)=>{const b=document.querySelector(`[data-a="${i}"]`);if(b)b.checked=v};
 const typeOn=gi=>M.groups[gi][1].some(artOn);
@@ -376,6 +376,9 @@ window.__downloadPassport=downloadPassport;
 // видно, куди перехил (В2). Проблема колір не перебиває — вона лише контур (S-К.7).
 // g — події за видами (масив чи об'єкт gi -> n), mg/mn — події міста за видами
 // й усього за тим самим фільтром.
+// Сірий шар фільтрів «Порушник» і «Ціль» (S-К.25, 36.59): місце, де за
+// фільтром немає жодної події з ознакою, — блідо-сіре, не сховане (вид -1)
+const kolirV=g=>g==null||g<0?(THEME==='temna'?'#5b5f66':'#c3c6cc'):PALA[g%PALA.length];
 function kolirMisca(g,mg,mn){
  let best=null,bn=0,n=0;
  for(let gi=0;gi<M.groups.length;gi++){const v=g[gi]||0; n+=v; if(v>bn){bn=v;best=gi}}
@@ -414,11 +417,13 @@ function computeVis(){
   // про інший напрямок лишається, він корисний.
   const visProbs=ownProbs.filter(pr=>pr.thi===undefined||pr.thi<0||GVIS.has(pr.thi));
   if(CF>=0&&!visProbs.length) continue;
-  let n=0;const cnt={};
-  // лінза (36.41) — лише тут, для карти; картки адреси й соти від неї не залежать
-  for(const e of p[4]) if(evOn(e,C,A,Y,H)&&lzOn(e)){
-   n++;const t_=CATTH[e[1]];cnt[t_]=(cnt[t_]||0)+1}
-  if(!n) continue;
+  let n=0,ng=0;const cnt={};
+  // фільтри «Порушник» і «Ціль» (36.53) — лише тут, для карти; картки адреси й
+  // соти від них не залежать. Подія без ознаки не рахується й не фарбує, але
+  // місце лишається блідо-сірим (S-К.25, 36.59): числа — лише яскраві
+  for(const e of p[4]) if(evOn(e,C,A,Y,H)){ if(lzOn(e)){
+   n++;const t_=CATTH[e[1]];cnt[t_]=(cnt[t_]||0)+1} else ng++}
+  if(!n){ if(ng) vis.push(Object.assign([p,0,null,false,{},null],{sire:ng})); continue}
   // Напрямок адреси-проблеми — Володимирська лишається майновою, хоч би які
   // галочки знімали. Колір — тим самим правилом, що й сота (kolirMisca):
   // вид проблеми, лише якщо його події є за фільтром, з роком і часом доби.
@@ -431,7 +436,7 @@ function computeVis(){
  // ромбів кілець, що позначають саму проблему.
  const MG=new Array(M.groups.length).fill(0);
  for(const v of vis) for(const g in v[4]) MG[g]+=v[4][g];
- for(const v of vis){v[6]=v[2]; v[2]=kolirMisca(v[4],MG,tot)}
+ for(const v of vis){v[6]=v[2]; v[2]=v.sire?-1:kolirMisca(v[4],MG,tot)}
  vis.sort((a,b)=>b[1]-a[1]);
  // Чисел панель більше не показує (RISHENNYA, розд. 18) — ні подій, ні адрес,
  // ні проблем. tot і vis лишаються в результаті: з них кільце у вікні й

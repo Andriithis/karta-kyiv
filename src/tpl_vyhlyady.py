@@ -38,8 +38,10 @@ function binHex(st){
   // якого тут більше, ніж у середньому по місту; проблема — лише контуром.
   const bs=[...B.values()].sort((a,b)=>a.n-b.n), L_=bs.length;
   bs.forEach((b,i)=>{
-   b.gi=kolirMisca(b.g,st.MG,st.tot); const rank=L_>1?i/(L_-1):1;
+   b.gi=b.n?kolirMisca(b.g,st.MG,st.tot):-1; const rank=L_>1?i/(L_-1):1;
    b.a=isDark()?Math.min(.7,.12+.7*rank*rank):Math.min(.6,.05+.6*rank*rank);
+   // сота лише з сірими подіями фільтра — блідо-сіра, не схована (S-К.25)
+   if(!b.n) b.a=isDark()?.22:.28;
    // контур проблеми на майже прозорій соті виглядав би порожнім
    if(b.pr) b.a=Math.max(b.a,.45);
    b.rank=rank});
@@ -51,7 +53,7 @@ function hexData(G,cols){
  return {type:'FeatureCollection',features:[...B.values()].filter(b=>!cols||b.n>=med).map(b=>({type:'Feature',
   geometry:{type:'Polygon',coordinates:hexPoly(b.cx,b.cy,G.R,cols?.62:1)},
   // cl — світліший колір вибраного стовпчика, поки відкрита картка (33, В6)
-  properties:{k:b.k,c:PALA[b.gi%PALA.length],cl:svitlishe(PALA[b.gi%PALA.length]),gi:b.gi,a:b.a,pr:b.pr,n:b.n,h:G.R*7*Math.sqrt(b.n/mx)}}))}}
+  properties:{k:b.k,c:kolirV(b.gi),cl:svitlishe(kolirV(b.gi)),gi:b.gi,a:b.a,pr:b.pr,n:b.n,h:G.R*7*Math.sqrt(b.n/mx)}}))}}
 function svitlishe(c){const m=/^#?([0-9a-f]{6})$/i.exec(c||''); if(!m) return c;
  const v=parseInt(m[1],16), f=x=>Math.round(x+(255-x)*.45);
  return '#'+[v>>16,(v>>8)&255,v&255].map(f).map(x=>x.toString(16).padStart(2,'0')).join('')}

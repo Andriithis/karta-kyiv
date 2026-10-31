@@ -414,7 +414,7 @@ function draw(){
   type:'Feature',geometry:{type:'Point',coordinates:[p[1],p[0]]},
   // колір — те саме правило, що в соти й картки (S-К.6, 36.34, kolirMisca);
   // проблему ще й позначає контур (7.7)
-  properties:{i:PIDX.get(p),c:PALA[th%PALA.length],n,r0:r0Of(n,mx),
+  properties:{i:PIDX.get(p),c:kolirV(th),n,r0:r0Of(n,mx),
    pr:probsOf(p).some(q=>q.thi===undefined||q.thi<0||st.GVIS.has(q.thi))?1:0,
    k:(probsOf(p).length?1e6:0)-n}}))});
  // Відрізки ліній-проблем — там, де видно ромби проблем. i і j — точка й
@@ -860,16 +860,17 @@ let NP=[], PT=[], PTN=[], PROBK=[];
 // кільце стає в їхній центр, а не в центр кластера з дерева: дерево рахує
 // центр за всіма адресами міста, і кільце з подіями Подолу могло стояти
 // за межею Подолу, під затемненням.
-let SX=[], SY=[];
+let SX=[], SY=[], GR=[];   // GR — сірі події фільтрів за вузлами (S-К.25)
 function ringSums(st){
  const vm=new Map(st.vis.map(v=>[v[0],v])), mx=st.vis.length?st.vis[0][1]:1;
  SUM=[];TOT=[];ACT=[];ONE=[];NP=[];PT=[];PTN=[];PROBK=[];SX=[];SY=[];
- for(let i=0;i<=NL;i++){const n=nOf(i); SUM.push(new Int32Array(n*NG)); TOT.push(new Int32Array(n)); ACT.push(new Int32Array(n)); ONE.push(new Int32Array(n).fill(-1));
+ GR=[];
+ for(let i=0;i<=NL;i++){const n=nOf(i); SUM.push(new Int32Array(n*NG)); TOT.push(new Int32Array(n)); ACT.push(new Int32Array(n)); ONE.push(new Int32Array(n).fill(-1)); GR.push(new Int32Array(n));
   NP.push(new Int32Array(n)); PT.push(new Int32Array(n).fill(-1)); PTN.push(new Int32Array(n));
   SX.push(new Float64Array(n)); SY.push(new Float64Array(n))}
  NMAX=[];
  LEAFV=LEAF.map((pi,k)=>{const v=vm.get(P[pi]); if(!v) return null;
-  TOT[NL][k]=v[1]; ACT[NL][k]=1; ONE[NL][k]=k; SX[NL][k]=P[pi][1]; SY[NL][k]=P[pi][0];
+  TOT[NL][k]=v[1]; GR[NL][k]=v.sire||0; ACT[NL][k]=1; ONE[NL][k]=k; SX[NL][k]=P[pi][1]; SY[NL][k]=P[pi][0];
   for(const g in v[4]) SUM[NL][k*NG+(+g)]=v[4][g];
   // Проблеми — тим самим правилом, що й у computeVis і у вікні адреси:
   // проблема за прихованим видом для цього вигляду не проблема.
@@ -882,8 +883,9 @@ function ringSums(st){
   // (n_max рахується нижче, після сум)
   const np=NP[i],pq=PT[i],pn=PTN[i],pnp=NP[i-1],ppq=PT[i-1],ppn=PTN[i-1];
   const n=nOf(i);
-  for(let j=0;j<n;j++){ if(!t[j]) continue; const p=parOf(i,j);
-   pt[p]+=t[j]; pa[p]+=a[j]; if(po[p]<0) po[p]=o[j];
+  const gr=GR[i], pgr=GR[i-1];
+  for(let j=0;j<n;j++){ if(!t[j]&&!gr[j]) continue; const p=parOf(i,j);
+   pt[p]+=t[j]; pgr[p]+=gr[j]; pa[p]+=a[j]; if(po[p]<0) po[p]=o[j];
    SX[i-1][p]+=SX[i][j]; SY[i-1][p]+=SY[i][j];
    if(np[j]){pnp[p]+=np[j]; if(pn[j]>ppn[p]){ppn[p]=pn[j]; ppq[p]=pq[j]}}
    for(let g=0;g<NG;g++) ps[p*NG+g]+=s[j*NG+g]}}
@@ -904,7 +906,7 @@ const fmtN=v=>v>=10000?Math.round(v/1000)+'k':v>=1000?(v/1000).toFixed(1).replac
 // z14 у рівні тисячі вузлів, і об'єкт на кожен у кожному кадрі з'їдав
 // половину частоти кадрів.
 function nodeAt(i,j,box){
- if(!TOT.length||!TOT[i][j]) return null;
+ if(!TOT.length||(!TOT[i][j]&&!(GR[i]&&GR[i][j]))) return null;
  const one=ACT[i][j]===1, k=one?ONE[i][j]:-1;
  const own=CURD>=0&&!one;
  const lon=one?P[LEAF[k]][1]:own?SX[i][j]/ACT[i][j]:LV[i].c[2*j],
@@ -1130,10 +1132,12 @@ const ringLayer={id:'k-rings', type:'custom', renderingMode:'2d',
   // ---- кільця й крапки ----
   for(const [o,al] of out){ if(o.x<-60||o.y<-60||o.x>W+60||o.y>H+60) continue;
    if(o.dot){const v=LEAFV[o.k]; if(!v) continue; const r=v.r0*zmulAt(z);
-    quad(o.x,o.y,r+2,r,0,1,RING_A*al,Q1,rgb(PALA[v.th%PALA.length]));
+    quad(o.x,o.y,r+2,r,0,1,RING_A*al,Q1,rgb(kolirV(v.th)));
     // окрема адреса з проблемою — обвідка навколо крапки замість ромба (7.4)
     if(v.np&&!lzActive()){const rr=Math.max(5,r)+2.5; quad(o.x,o.y,rr+1.5,rr+.6,rr-.6,3,al,Q1,ink)}
     continue}
+   // лише сірі події (фільтр, S-К.25) — бліда сіра крапка без числа
+   if(!o.n){quad(o.x,o.y,6.5,4.5,0,1,.55*RING_A*al,Q1,rgb(kolirV(-1))); continue}
    // До 5 подій — крапка без числа; найменше кільце з числом — 11 px;
    // внутрішній радіус 0,76 (35.6, макет «Проблема — контуром»).
    const small=o.n<=5, r=small?4.5:Math.max(11,rRing(o.n,o.i)), inner=small?0:r*.76, q=[1,1,1,1,1,1,1,1];

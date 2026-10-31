@@ -138,6 +138,21 @@ def main(n=300, seed=36, znimky=True):
             if(vis.length!==1) bad.push('z'+z+': шарів стовпчиків '+vis.length)}
           KT.setView('soty'); return bad}''')
         res['bad'] += [f'3D: {b}' for b in d3]
+        # Сірий шар (S-К.25, 36.59, test:siryi_shar): з фільтром «Ціль: телефон»
+        # соти без жодної події з ціллю — сірі (gi -1) і видимі, числа — лише яскраві
+        sir = pg.evaluate(r'''async()=>{const bad=[];
+          KT.setView('soty'); KT.map.jumpTo({center:[30.52,50.45],zoom:11});
+          document.querySelector('#fltsil').click(); await new Promise(r=>setTimeout(r,5000));
+          const b=[...document.querySelectorAll('#fldd [data-ts]')].find(x=>x.textContent.includes('телефон'));
+          if(!b) return ['немає пункту «телефон» у фільтрі «Ціль»']; b.click();
+          await new Promise(r=>setTimeout(r,1500));
+          const f=KT.soty('L'), sir=f.filter(x=>x.properties.gi<0), jas=f.filter(x=>x.properties.gi>=0);
+          if(!sir.length) bad.push('немає сірих сот'); if(!jas.length) bad.push('немає яскравих сот');
+          if(sir.some(x=>!(x.properties.a>0)||x.properties.n!==0)) bad.push('сіра сота схована чи з числом');
+          document.querySelector('#fltsil').click(); await new Promise(r=>setTimeout(r,500));
+          const vs=document.querySelector('#fldd [data-vsi]'); if(vs) vs.click();
+          return bad}''')
+        res['bad'] += [f'сірий шар: {b}' for b in sir]
         if znimky:
             os.makedirs(ZNIMKY, exist_ok=True)
             pg.evaluate('KT.closeCell(); KT.setView("soty"); KT.map.jumpTo({center:[30.52,50.45],zoom:11})')
