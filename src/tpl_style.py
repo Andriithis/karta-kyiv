@@ -150,6 +150,7 @@ html .tsw button{min-height:32px;display:inline-flex;align-items:center}
  border:1px solid var(--rule);border-radius:8px;padding:5px 10px;margin:6px 0 2px;font:12.5px var(--sans);color:var(--ink)}
 .lz-n{font-style:normal;font-variant-numeric:tabular-nums;color:var(--dim);margin-left:6px}
 .lz-sel[hidden],.lz-dd[hidden]{display:none}
+.lz-f{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0 2px}.lz-f .lz-sel{border:1px solid var(--rule);border-radius:9px;padding:6px 8px;min-height:32px}.lz-f .lz-sel.lz-on{border-color:var(--ink);font-weight:600}
 .lz-dd{border:1px solid var(--rule);border-radius:8px;overflow:auto;max-height:46vh;margin:4px 0;background:var(--panel)}
 .lz-dd .lz-h{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);background:var(--sunk);padding:5px 10px}
 .lz-it{all:unset;box-sizing:border-box;cursor:pointer;width:100%;display:flex;justify-content:space-between;gap:8px;

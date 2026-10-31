@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Лінзи «Місце · Порушник · Ціль» (36.41; мінімальна версія 28.10 —
+"""Фільтри «Порушник ▾» і «Ціль ▾» — колишні лінзи (36.41, 36.53; MVP 28.10 —
 doslidzhennya/linzy/MVP-28-10.md; макет «Три лінзи карти»).
 
 Лінза керує лише картою: які події яскраві (computeVis рахує тільки їх).
@@ -13,7 +13,7 @@ doslidzhennya/linzy/MVP-28-10.md; макет «Три лінзи карти»).
 JS_LINZY = r"""// ==== ЛІНЗИ (36.41) ====
 // var, а не let: computeVis (tpl_core) питає лінзу ще під час першої
 // перемальовки, до цього місця модуля
-var LINZA='misce', LZD=null, LZ_P=null, OZ_ON=null, TSIL_ON=null;
+var LZD=null, LZ_P=null, OZ_ON=null, TSIL_ON=null;
 // «основні» — усі ознаки, крім «повторно протягом року» (біт 4): там переважно
 // водії без прав, 3,7 тис. подій, і вони затулили б решту
 const OZ_ZAMOVCH=b=>b!==4;
@@ -25,16 +25,19 @@ const zavantazhLinzy=()=>LZ_P||(LZ_P=vantazh(DANI.linzy).then(d=>{LZD=d;
  d.e.forEach((evs,i)=>{const pe=P[i]&&P[i][4]; if(pe) evs.forEach((x,k)=>{const e=pe[k]; if(e){e.oz=x[0]; e.st=x[1]; e.ts=x[2]}})});
  if(TSIL_ON===null){const t=d.v.indexOf('berut=телефон'); TSIL_ON=t>=0?t:0}
  if(OZ_ON===null) OZ_ON=new Set(d.oz.map(x=>x[0]).filter(OZ_ZAMOVCH));
- if(LINZA!=='misce') draw(); else lzPanel();
+ if(lzFiltr()) draw(); else lzPanel();
  if(PLACE) renderPlace()}));
 function ozMaska(){let m=0; if(OZ_ON) OZ_ON.forEach(b=>m|=b); return m}
-// чи подія яскрава в поточній лінзі (лише для карти — computeVis)
+// Лінзи стали двома фільтрами під видами (36.53, макет «Трикутник у
+// картках»): «Порушник ▾» і «Ціль ▾» діють разом — подія яскрава, коли
+// проходить обидва ввімкнені.
+var OZ_F=false, TS_F=false;
 function lzOn(e){
- // до виконання цього місця модуля LINZA ще undefined — це «Місце»
- if(LINZA!=='porush'&&LINZA!=='tsil') return true;
+ if(!OZ_F&&!TS_F) return true;
  if(!LZD) return false;
- if(LINZA==='porush') return !!((e.oz||0)&ozMaska());
- return !!(e.ts&&e.ts.includes(TSIL_ON))}
+ if(OZ_F&&!((e.oz||0)&ozMaska())) return false;
+ if(TS_F&&!(e.ts&&e.ts.includes(TSIL_ON))) return false;
+ return true}
 // Підпис цілі — коротка фраза, що читається без заголовка групи («зіткнення
 // з авто 45», а не «інше авто 45»)
 const LZ_FRAZA={'zitknennia=інше авто':'зіткнення з авто','zitknennia=припарковане авто':'наїзд на припарковане авто',
@@ -44,28 +47,29 @@ const LZ_FRAZA={'zitknennia=інше авто':'зіткнення з авто',
  'na_koho=майно':'пошкодження майна','shcho_prodaiut=тютюн і вейпи':'продаж тютюну й вейпів','shcho_prodaiut=алкоголь':'продаж алкоголю',
  'sposib=закладка':'закладка','sposib=онлайн':'купівля онлайн','sposib=пошта':'поштою'};
 const lzNazva=c=>LZ_FRAZA[LZD.v[c]]||LZD.v[c].split('=')[1];
-// лінза ввімкнена — «Проблеми» сховані повністю: і перемикач, і контури (макет)
-// (оголошення функції, не const: карта питає її ще до цього місця модуля)
-function lzActive(){return LINZA==='porush'||LINZA==='tsil'}
-// ---- ПАНЕЛЬ: перемикач, рядок вибору, шторка ----
-$('#sugg').insertAdjacentHTML('afterend',
- `<div class="lz-seg" id="flinza" role="tablist">${[['misce','Місце'],['porush','Порушник'],['tsil','Ціль']].map(([k,n])=>
-  `<button role="tab" data-lz="${k}" aria-selected="${k==='misce'}">${n}</button>`).join('')}</div>
- <button class="lz-sel" id="flsel" hidden aria-expanded="false"><span id="flselt"></span><span class="lz-n" id="flseln"></span></button>
+// Фільтри не ховають ні «Проблеми», ні «Ризик» (36.53: діють разом із видами й
+// виглядами); функція лишається, бо її питає малювання контурів
+function lzActive(){return false}
+function lzFiltr(){return OZ_F||TS_F}
+// ---- ПАНЕЛЬ: два фільтри під видами, одна шторка ----
+let LZ_DD=null;   // 'porush' | 'tsil' — яку шторку відкрито
+$('#advbtn').insertAdjacentHTML('beforebegin',
+ `<div class="lz-f" id="flf"><button class="lz-sel" id="flpor" aria-expanded="false"><span id="flport">Порушник</span><span class="lz-n" id="flporn">▾</span></button>
+ <button class="lz-sel" id="fltsil" aria-expanded="false"><span id="fltsilt">Ціль</span><span class="lz-n" id="fltsiln">▾</span></button></div>
  <div class="lz-dd" id="fldd" hidden></div>`);
-$('#flinza').onclick=e=>{const b=e.target.closest('[data-lz]'); if(!b) return;
- LINZA=b.dataset.lz; document.querySelectorAll('#flinza [data-lz]').forEach(x=>x.setAttribute('aria-selected',x===b));
- // у лінзах «Проблеми» й «Ризик» сховані (MVP, п. 2)
- const lens=LINZA!=='misce';
- const fp=$('#fprob'); if(fp){ if(lens&&ONLYP){ONLYP=false; swSet(fp,false)} fp.hidden=lens}
- const fr=$('#frisk'); if(fr){ if(lens&&RISK_ON) fr.click(); fr.parentElement.hidden=lens}
- $('#flsel').hidden=!lens; $('#fldd').hidden=true; $('#flsel').setAttribute('aria-expanded','false');
- if(lens) zavantazhLinzy();
- draw()};
-$('#flsel').onclick=()=>{const dd=$('#fldd'); dd.hidden=!dd.hidden; $('#flsel').setAttribute('aria-expanded',!dd.hidden); lzPanel()};
+function lzVidkryty(k){
+ const dd=$('#fldd'), same=LZ_DD===k&&!dd.hidden;
+ LZ_DD=k; dd.hidden=same;
+ $('#flpor').setAttribute('aria-expanded',String(!dd.hidden&&k==='porush'));
+ $('#fltsil').setAttribute('aria-expanded',String(!dd.hidden&&k==='tsil'));
+ zavantazhLinzy().then(lzPanel)}
+$('#flpor').onclick=()=>lzVidkryty('porush');
+$('#fltsil').onclick=()=>lzVidkryty('tsil');
 $('#fldd').onclick=e=>{
- const o=e.target.closest('[data-oz]'); if(o){const b=+o.dataset.oz; OZ_ON.has(b)?OZ_ON.delete(b):OZ_ON.add(b); draw(); return}
- const t=e.target.closest('[data-ts]'); if(t){TSIL_ON=+t.dataset.ts; $('#fldd').hidden=true; $('#flsel').setAttribute('aria-expanded','false'); draw()}};
+ if(e.target.closest('[data-vsi]')){ if(LZ_DD==='porush') OZ_F=false; else TS_F=false;
+  $('#fldd').hidden=true; draw(); return}
+ const o=e.target.closest('[data-oz]'); if(o){const b=+o.dataset.oz; OZ_F=true; OZ_ON.has(b)?OZ_ON.delete(b):OZ_ON.add(b); draw(); return}
+ const t=e.target.closest('[data-ts]'); if(t){TSIL_ON=+t.dataset.ts; TS_F=true; $('#fldd').hidden=true; draw()}};
 // Числа — події (не рішення) за поточним фільтром, кожен пункт окремо
 function lzLich(){
  const C=sel('c'),A=sel('a'),Y=sel('y'),H=hoursSel(), oz={}, ts={}, vyd={}, m=ozMaska();
@@ -73,34 +77,37 @@ function lzLich(){
   for(const e of p[4]){ if(!evOn(e,C,A,Y,H)) continue;
    for(const [b] of LZD.oz) if((e.oz||0)&b) oz[b]=(oz[b]||0)+1;
    if(e.ts) for(const c of e.ts) ts[c]=(ts[c]||0)+1;
-   if(LINZA!=='misce'&&lzOn(e)){const g=CATTH[e[1]]; vyd[g]=(vyd[g]||0)+1}}}
+   if(lzFiltr()&&lzOn(e)){const g=CATTH[e[1]]; vyd[g]=(vyd[g]||0)+1}}}
  return {oz,ts,vyd}}
 function lzPanel(){
- if(!document.getElementById('flinza')) return;     // панель лінз ще не вставлено
- const lens=LINZA==='porush'||LINZA==='tsil';
+ if(!document.getElementById('flf')) return;     // панель фільтрів ще не вставлено
+ const lens=lzFiltr();
+ $('#flpor').classList.toggle('lz-on',OZ_F); $('#fltsil').classList.toggle('lz-on',TS_F);
  document.querySelectorAll('#fa .type').forEach(b=>{let s=b.querySelector('.lz-n');
   if(!lens||!LZD){ if(s) s.remove(); b.classList.remove('lz-blid'); return}
   // span, не i: «i» в кнопці виду — кольорова мітка (tpl_style .type i)
   if(!s){s=document.createElement('span'); s.className='lz-n'; b.appendChild(s)}});
- if(!lens||!LZD){ if(lens){$('#flselt').textContent='…'; $('#flseln').textContent=''} return}
+ if(!LZD){$('#flport').textContent='Порушник'; $('#fltsilt').textContent='Ціль'; return}
  const L=lzLich();
- document.querySelectorAll('#fa .type').forEach(b=>{const n=L.vyd[+b.dataset.g]||0;
+ if(lens) document.querySelectorAll('#fa .type').forEach(b=>{const n=L.vyd[+b.dataset.g]||0;
   b.querySelector('.lz-n').textContent=fmt(n); b.classList.toggle('lz-blid',!n)});
- if(LINZA==='porush'){
-  const zam=LZD.oz.every(([b])=>OZ_ON.has(b)===OZ_ZAMOVCH(b));
-  $('#flselt').textContent='Ознака: '+(zam?'основні':OZ_ON.size?'обрано '+OZ_ON.size:'жодної');
-  $('#flseln').textContent=fmt(Object.values(L.vyd).reduce((a,b)=>a+b,0))+' ▾';
-  const it=([b,nm])=>`<button class="lz-it" data-oz="${b}" aria-pressed="${OZ_ON.has(b)}"><span>${esc(nm+(b===4?' (переважно водії)':''))}</span><i>${fmt(L.oz[b]||0)}</i></button>`;
+ const zam=LZD.oz.every(([b])=>OZ_ON.has(b)===OZ_ZAMOVCH(b));
+ $('#flport').textContent='Порушник'+(OZ_F?': '+(zam?'основні':OZ_ON.size?'обрано '+OZ_ON.size:'жодної'):'');
+ $('#fltsilt').textContent='Ціль'+(TS_F&&LZD.v[TSIL_ON]?': '+lzNazva(TSIL_ON):'');
+ $('#flporn').textContent=(OZ_F?fmt(Object.values(L.oz).length?LZD.oz.filter(([b])=>OZ_ON.has(b)).reduce((a,[b])=>a+(L.oz[b]||0),0):0)+' ':'')+'▾';
+ $('#fltsiln').textContent=(TS_F?fmt(L.ts[TSIL_ON]||0)+' ':'')+'▾';
+ if($('#fldd').hidden) return;
+ const vsi=`<button class="lz-it" data-vsi="1" aria-pressed="${LZ_DD==='porush'?!OZ_F:!TS_F}"><span>усі події</span><i></i></button>`;
+ if(LZ_DD==='porush'){
+  const it=([b,nm])=>`<button class="lz-it" data-oz="${b}" aria-pressed="${OZ_F&&OZ_ON.has(b)}"><span>${esc(nm+(b===4?' (переважно водії)':''))}</span><i>${fmt(L.oz[b]||0)}</i></button>`;
   // групи — як на сторінці «Заходи»: Діти / Дорослі (Андрій 27.10)
   const gr=[...new Set(LZD.oz.map(x=>x[2]))];
-  $('#fldd').innerHTML=gr.map(g=>`<div class="lz-h">${esc(g)}</div>`+LZD.oz.filter(x=>x[2]===g).map(it).join('')).join('');
+  $('#fldd').innerHTML=vsi+gr.map(g=>`<div class="lz-h">${esc(g)}</div>`+LZD.oz.filter(x=>x[2]===g).map(it).join('')).join('');
  } else {
-  const t=TSIL_ON!==null&&LZD.v[TSIL_ON]?lzNazva(TSIL_ON):'—';
-  $('#flselt').textContent='Ціль: '+t; $('#flseln').textContent=fmt(L.ts[TSIL_ON]||0)+' ▾';
   const gr={}; LZD.v.forEach((c,i)=>{const k=c.split('=')[0]; const h=TSIL_VYD[k]+' · '+(LZD.tn[k]||k).toLowerCase();
    (gr[h]=gr[h]||[]).push(i)});
-  $('#fldd').innerHTML=Object.entries(gr).map(([h,ii])=>`<div class="lz-h">${esc(h)}</div>`+
-   ii.sort((a,b)=>(L.ts[b]||0)-(L.ts[a]||0)).map(i=>`<button class="lz-it" data-ts="${i}" aria-pressed="${i===TSIL_ON}"><span>${esc(lzNazva(i))}</span><i>${fmt(L.ts[i]||0)}</i></button>`).join('')).join('');
+  $('#fldd').innerHTML=vsi+Object.entries(gr).map(([h,ii])=>`<div class="lz-h">${esc(h)}</div>`+
+   ii.sort((a,b)=>(L.ts[b]||0)-(L.ts[a]||0)).map(i=>`<button class="lz-it" data-ts="${i}" aria-pressed="${TS_F&&i===TSIL_ON}"><span>${esc(lzNazva(i))}</span><i>${fmt(L.ts[i]||0)}</i></button>`).join('')).join('');
  }}
 // ---- КАРТКА АДРЕСИ: три рядки (MVP, п. 4) ----
 // Ранг адреси за числом подій — серед точних адрес міста

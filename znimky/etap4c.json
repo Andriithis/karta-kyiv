@@ -1,0 +1,5 @@
+[
+ {"nazva": "4c-filtr-tsil-telefon-soty-pk", "vikno": [1366, 768], "vyhliad": "soty", "tsentr": [30.52, 50.45], "zum": 12, "js": "(async()=>{document.querySelector('#fltsil').click(); await new Promise(r=>setTimeout(r,4000)); const b=[...document.querySelectorAll('#fldd [data-ts]')].find(x=>x.textContent.includes('телефон')); if(b) b.click()})()"},
+ {"nazva": "4c-filtr-tsil-shtorka-pk", "vikno": [1366, 768], "vyhliad": "addr", "tsentr": [30.52, 50.45], "zum": 12, "js": "(async()=>{document.querySelector('#fltsil').click(); await new Promise(r=>setTimeout(r,4000))})()"},
+ {"nazva": "4c-filtr-porush-telefon", "vikno": [375, 812], "vyhliad": "addr", "tsentr": [30.52, 50.45], "zum": 12, "js": "(async()=>{document.querySelector('#flpor').click(); await new Promise(r=>setTimeout(r,4000))})()"}
+]
