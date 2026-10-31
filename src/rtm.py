@@ -2,7 +2,7 @@
 """Відбір чинників і радіусів так, як це робить Risk Terrain Modeling.
 
 Caplan, Kennedy & Neudecker (2020); утиліта RTMDx — Caplan, Kennedy & Piza
-(2013). План — PLAN-KROK7.md, розд. 3; методика — NAUKA.md, розд. 3.
+(2013). План — PLAN-KROK7.md, розд. 3; методика — METODYKA.md, ч. III, розд. 3.
 
 1. elastic net Пуассон з перехресною перевіркою відсіює змінні, чиї
    коефіцієнти стискаються до нуля;
