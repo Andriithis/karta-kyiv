@@ -70,7 +70,9 @@ html body[data-t="temna"] .maplibregl-ctrl-group button+button{border-top-color:
 #side .sw{justify-content:space-between}
 #side .more{padding:0}
 #side .modes button{min-height:32px;padding-top:6px}
-#side #fprob{min-height:32px}
+/* «Проблеми» і «Ризик» в одному рядку — рівні половини, одна лінія підписів і перемикачів */
+#side .sw2{display:grid;grid-template-columns:1fr 1fr;column-gap:20px;align-items:center}
+#side .sw2 .sw{min-height:32px;white-space:nowrap}
 #side .search{min-height:36px}
 html .tsw button{min-height:32px;display:inline-flex;align-items:center}
 #adv .sw{min-height:32px;display:flex;align-items:center;justify-content:space-between}

@@ -19,6 +19,8 @@ BODY = r"""<body data-t="svitla"><div id="wrap"><div id="map"></div>
  <div class="advh"><span>Статті</span><button id="advx" aria-label="Закрити">×</button></div>
  <div class="advgrid" id="advgrid"></div>
  <div class="advfoot"><button class="sw" id="fprec" aria-pressed="false"><span>Лише точні адреси</span><span class="tog"></span></button>
+  <!-- «Розбори» — тут, не на головній панелі (36.65); доки розборів немає, перемикач приглушений -->
+  <button class="sw" id="frozb" aria-pressed="false" aria-disabled="true"><span>Розбори</span><span class="tog"></span></button>
   <!-- Прохідність — лише тут, на вимогу (S-К.10; з головної панелі прибрано 31.10) -->
   <div class="grp" id="fctx">
    <button class="sw" data-ctx="flows" aria-pressed="false"><span>Прохідність</span><span class="tog"></span></button>
@@ -33,8 +35,11 @@ BODY = r"""<body data-t="svitla"><div id="wrap"><div id="map"></div>
   <div class="types" id="fa"></div>
   <button class="more" id="advbtn" aria-expanded="false">Розширено ›</button>
  </div>
+ <!-- «Проблеми» і «Ризик» — один рядок, рівні половини, однакові перемикачі
+      (Андрій 31.10, 36.65); ромба й окремої кнопки «◆ Проблеми» немає -->
  <div>
-  <button class="sw" id="frisk" aria-pressed="false"><span>Прогноз ризику</span><span class="tog"></span></button>
+  <div class="sw2"><button class="sw" id="fprob" aria-pressed="false"><span>Проблеми</span><span class="tog"></span></button>
+  <button class="sw" id="frisk" aria-pressed="false"><span>Прогноз ризику</span><span class="tog"></span></button></div>
   <div class="chips" id="friskx" hidden></div>
  </div>
  <div class="grp">

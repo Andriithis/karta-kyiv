@@ -1,0 +1,8 @@
+[
+ {"nazva": "panel-pk-svitla", "vikno": [1366, 768], "vyhliad": "soty", "tsentr": [30.52, 50.45], "zum": 11},
+ {"nazva": "panel-pk-temna", "vikno": [1366, 768], "tema": "temna", "vyhliad": "soty", "tsentr": [30.52, 50.45], "zum": 11},
+ {"nazva": "panel-pk-uvimkneno", "vikno": [1366, 768], "vyhliad": "soty", "ryzyk": true, "tsentr": [30.52, 50.45], "zum": 11, "js": "document.querySelector('#fprob').click()"},
+ {"nazva": "panel-telefon-svitla", "vikno": [375, 812], "vyhliad": "soty", "tsentr": [30.52, 50.45], "zum": 11},
+ {"nazva": "panel-telefon-temna", "vikno": [375, 812], "tema": "temna", "vyhliad": "soty", "tsentr": [30.52, 50.45], "zum": 11},
+ {"nazva": "panel-rozshyreno-pk", "vikno": [1366, 768], "vyhliad": "soty", "tsentr": [30.52, 50.45], "zum": 11, "js": "document.querySelector('#advbtn').click()"}
+]

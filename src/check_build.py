@@ -719,7 +719,12 @@ def main(save=False):
         vad_ = [n for n, ok in (('«Прохідність» на головній панелі', 'data-ctx="flows"' not in side_),
                                 ('«Прохідності» немає в «Розширено»', 'data-ctx="flows"' in adv_),
                                 ('немає пошуку, виглядів, видів, «Ризику» чи району',
-                                 all(s in side_ for s in ('id="q"', 'id="fcat"', 'id="fa"', 'id="frisk"', 'id="dbtn"')))) if not ok]
+                                 all(s in side_ for s in ('id="q"', 'id="fcat"', 'id="fa"', 'id="frisk"', 'id="dbtn"'))),
+                                # 36.65: «Проблеми» й «Ризик» в одному рядку, «Розбори» — у «Розширено»
+                                ('«Проблеми» не в рядку з «Ризиком»', re.search(r'class="sw2">\s*<button class="sw" id="fprob"', side_) is not None
+                                 and 'id="frisk"' in side_[side_.find('class="sw2"'):side_.find('class="sw2"') + 400]),
+                                ('кнопка «◆ Проблеми» лишилась', '◆ Проблеми</button>' not in t_),
+                                ('«Розбори» не в «Розширено»', 'id="frozb"' in adv_)) if not ok]
         if i_ < 0 or vad_:
             print('   ПОМИЛКА ' + '; '.join(vad_ or ['панелі не знайдено'])); return 1
         print('   на панелі — пошук, вигляди, види, «Ризик», район; «Прохідність» — у «Розширено»')
