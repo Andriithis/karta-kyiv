@@ -89,6 +89,8 @@ TESTY = {
     'siryi_shar': '7. Фільтр «Ціль: телефон» — соти без подій з ціллю сірі й видимі, без числа (test_uzhodzhenist)',
     'odne_chyslo': '4ж3. Число подій одне: meta карти = «Стан міста» = «Дослідження» = огляд міста',
     'knopka_tur': '4к5. Кнопка «Тур» і спільний рушій туру є на карті; кіоск ховає кнопку й користується тим самим рушієм',
+    'tokeny': '4т. У сайті немає рядків, схожих на токени (ghp_, github_pat_, sk-, AKIA), і заглушок ОСОБА_ / ІНФОРМАЦІЯ_',
+    'svizhist': '4с. Свіжість: остання частина проходу по текстах ≤2 доби, остання подія ≤21 дня від дампу — інакше жовта збірка',
     'vyhliady_3d': '7. Вигляди — три, «3D» лише в сотах; поза смугою ±0,4 біля порогів — один шар стовпчиків, у смузі — два (test_uzhodzhenist)',
     'panel_sklad': '4к4. На головній панелі — лише пошук, вигляди, «Проблеми», види, «Ризик», район, посилання; «Прохідність» — у «Розширено»',
     'ryzyk_soty': '4к2. Соти не в «Адресах» і не перефарбовуються «Ризиком»: шару сот ризику немає, видимість сот — лише вигляд «Соти»',
@@ -737,6 +739,38 @@ def main(save=False):
         if vad_:
             print('   ПОМИЛКА немає: ' + ', '.join(vad_)); return 1
         print('   кнопка, рушій і зупинка дотиком є; кіоск — на тому самому рушії')
+    print('4т. Токени й заглушки в сайті (S-Б.5, 36.25.5)')
+    # Ключ у файлі сайту — публічний назавжди; заглушка «ОСОБА_» — знак, що
+    # фабула пішла без знеособлення показу (S-П.8)
+    tok_ = re.compile(r'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|ОСОБА_\d|ІНФОРМАЦІЯ_\d')
+    sdir_ = os.path.join(ROOT, 'site')
+    znahidky_ = []
+    if os.path.isdir(sdir_):
+        for kor_, _d, fs_ in os.walk(sdir_):
+            for f_ in fs_:
+                if not f_.endswith(('.html', '.json', '.js', '.css', '.txt')): continue
+                fp_ = os.path.join(kor_, f_)
+                try: s_ = open(fp_, encoding='utf-8', errors='ignore').read()
+                except OSError: continue
+                for m_ in tok_.finditer(s_):
+                    znahidky_.append(f'{os.path.relpath(fp_, sdir_)}: {m_.group(0)[:12]}…')
+        if znahidky_:
+            print('   ПОМИЛКА ' + '; '.join(znahidky_[:8]) + (f' (усього {len(znahidky_)})' if len(znahidky_) > 8 else '')); return 1
+        print('   токенів і заглушок немає')
+    print('4с. Свіжість даних (S-Н.4, 36.20.3) — жовта, не червона')
+    import datetime as dt_
+    teks_ = sorted(glob.glob(os.path.join(DATA, 'teksty', '*.csv.gz')))
+    zhovti_ = []
+    if teks_:
+        d_ = dt_.date.fromisoformat(os.path.basename(teks_[-1])[:10])
+        if (dt_.date.today() - d_).days > 2: zhovti_.append(f'остання частина проходу по текстах — {d_} (понад 2 доби)')
+    if os.path.exists(rpp):
+        s_ = (json.load(gzip.open(rpp, 'rt', encoding='utf-8')).get('versiia') or {}).get('podii_do')
+        if s_ and (dt_.date.today() - dt_.date.fromisoformat(s_[:10])).days > 21 + 60:
+            # подія — до рішення в середньому ~50 днів; «старше 21 дня» рахуємо від дампу
+            zhovti_.append(f'остання подія в даних — {s_} (дамп, схоже, старий)')
+    for z_ in zhovti_: print(f'   ЖОВТА {z_}')
+    if not zhovti_: print('   дані свіжі')
     print('4м. Назва механізму торгівлі — «алкоголем і тютюном» (36.40.2, S-К.27)')
     import labels as LB_
     stara_ = 'порушення правил торгівлі алкоголем'

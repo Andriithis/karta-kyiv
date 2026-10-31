@@ -91,6 +91,58 @@ def storinka(D, num, pct, theme_name):
                   'Частка подій, де суд прямо написав ознаку. Суди пишуть про судимість по-різному — частки між районами не порівнювати.',
                   'Де частка повторних велика, працює не лише місце, а й робота з особою (див. «Що робити», розділ «Порушник»).',
                   'слабко'))
+    # 5.2 за що діти: вид серед подій з неповнолітнім правопорушником проти всіх
+    ditu_v = collections.Counter(th for th, evs in po_vydu.items() for _p, _e, l in evs if l and (l[0] or 0) & 32)
+    vsi_v = {th: len(evs) for th, evs in po_vydu.items()}
+    Nd, Nv = sum(ditu_v.values()), sum(vsi_v.values())
+    if Nd >= 50:
+        rows = ''.join(f'<tr><td>{esc(theme_name(th))}</td><td class="n">{num(n)}</td><td class="n">{pct(n / Nd)}</td>'
+                       f'<td class="n">{pct(vsi_v[th] / Nv)}</td></tr>' for th, n in ditu_v.most_common())
+        top = ditu_v.most_common(1)[0]
+        b.append('<h2 id="dity">За що діти</h2>')
+        b.append(blok(f'Діти-правопорушники найчастіше — {theme_name(top[0]).lower()} ({pct(top[1] / Nd)} їхніх подій)',
+                      f'<div class="tw"><table><tr><th>Вид</th><th>Подій з неповнолітнім</th><th>Частка серед дітей</th><th>Частка серед усіх</th></tr>{rows}</table></div>',
+                      'Порівнюйте два останні стовпці: вид, якого серед дітей помітно більше, ніж серед усіх, — «дитячий».',
+                      'Ювенальна превенція й школи — з тих видів, де частка дітей вища за загальну.', 'слабко'))
+    # 5.4 ціль × час доби — телефони, гроші, велосипеди: коли беруть
+    chas = lambda h: 'ніч (22–6)' if h < 6 or h >= 22 else 'ранок (6–12)' if h < 12 else 'день (12–18)' if h < 18 else 'вечір (18–22)'
+    tsh = collections.defaultdict(collections.Counter)
+    for _p, e, l in po_vydu.get('МАЙ', []):
+        if not l or e[3] is None or e[3] < 0: continue
+        for x in l[2] or []:
+            k, v = V[x].split('=', 1)
+            if k == 'berut': tsh[v][chas(e[3])] += 1
+    tsh = {v: c for v, c in tsh.items() if sum(c.values()) >= 40}
+    if tsh:
+        sl = ['ранок (6–12)', 'день (12–18)', 'вечір (18–22)', 'ніч (22–6)']
+        rows = ''.join(f'<tr><td>{esc(v)}</td>' + ''.join(f'<td class="n">{pct(c[s] / sum(c.values()))}</td>' for s in sl) +
+                       f'<td class="n">{num(sum(c.values()))}</td></tr>' for v, c in sorted(tsh.items(), key=lambda x: -sum(x[1].values())))
+        nich = max(tsh.items(), key=lambda x: x[1]['ніч (22–6)'] / sum(x[1].values()))
+        b.append('<h2 id="tsil-chas">Ціль × час доби</h2>')
+        b.append(blok(f'Найбільше вночі беруть {nich[0]} ({pct(nich[1]["ніч (22–6)"] / sum(nich[1].values()))})',
+                      f'<div class="tw"><table><tr><th>Беруть</th>' + ''.join(f'<th>{esc(s)}</th>' for s in sl) + f'<th>Подій з часом</th></tr>{rows}</table></div>',
+                      'Частки — серед подій, де суд назвав і ціль, і годину.',
+                      'Попередження й присутність — у ті години, коли цю ціль беруть найчастіше.', 'слабко'))
+    # 5.5 Київ і світ: концентрація на адресах (Weisburd 2015 — на вуличних відрізках)
+    adr = sorted((len(p[4]) for p in P if p[3] and p[4]), reverse=True)
+    if adr:
+        n_ = sum(adr); m_ = len(adr)
+        def chastka_adres(dolia):
+            s = k = 0
+            while k < m_ and s < dolia * n_: s += adr[k]; k += 1
+            return k / m_
+        p50, p25 = chastka_adres(.5), chastka_adres(.25)
+        b.append('<h2 id="svit">Київ і світ</h2>')
+        b.append(blok(f'Половина подій — на {pct(p50, 1)} адрес, чверть — на {pct(p25, 1)}',
+                      f'<div class="tw"><table><tr><th></th><th>Київ (адреси)</th><th>Світ (вуличні відрізки, Weisburd 2015)</th></tr>'
+                      f'<tr><td>50% подій</td><td class="n">{pct(p50, 1)}</td><td class="n">~2–6%</td></tr>'
+                      f'<tr><td>25% подій</td><td class="n">{pct(p25, 1)}</td><td class="n">~0,4–1,6%</td></tr></table></div>'
+                      '<p class="muted">Київ рахуємо за адресами з подіями, світ — за всіма відрізками вулиць; у Києві знаменник '
+                      'менший, тож частки не тотожні. Джерело: <a href="https://doi.org/10.1111/1745-9125.12070" target="_blank" '
+                      'rel="noopener">Weisburd, 2015, «The law of crime concentration and the criminology of place»</a>.</p>',
+                      'Як і в інших містах, події стягуються в малу частку місць — працювати є де зосередитись.',
+                      'Почніть з адрес верхньої частки: там більшість подій, і зміна місця дасть найбільше.',
+                      'сильно' if p50 < .1 else 'слабко'))
     # 5.4 район × неповнолітні
     vsi, ditu = collections.Counter(), collections.Counter()
     for evs in po_vydu.values():
