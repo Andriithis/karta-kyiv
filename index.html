@@ -1058,16 +1058,16 @@ let USING_FALLBACK=false;
 // Оголошено тут, до першого setBase: let нижче за виклик — це помилка, а не
 // «ще не визначено», і модуль падав би цілком (той самий урок, що з FICON).
 let STYLE_OK=false;
-// Запасна підкладка — растрові плитки OpenStreetMap, без ключа. Ключ CARTO
-// прибрано разом із запасною картою (36.25.3): ключ у коді сторінки — секрет,
-// який бачить кожен. Плитки OSM — лише на хвилини, поки OpenFreeMap лежить.
-// Кіоск — запасної OSM немає: правила OSMF забороняють її на кіоску (36.128, S-Б.6).
-// Там лишаються наші дані на чистому тлі; воно світле, як підкладка, а не сіре.
-const BEZ_OSM=new URLSearchParams(location.search).has('kiosk');
-function osmStyle(){
- if(BEZ_OSM) return {version:8,sources:{},layers:[{id:'base',type:'background',paint:{'background-color':'#f4f4f2'}}]};
- return {version:8,sources:{base:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-   tileSize:256,maxzoom:19}},layers:[{id:'base',type:'raster',source:'base'}]};
+// Запасна підкладка — чисте тло з нашими шарами, як у кіоску (ZAVDANNYA-232).
+// Растрових плиток OpenStreetMap більше немає ніде: їхній сервер блокує таке
+// використання (26.11 на пробі замість карти були плитки «Access blocked, 403»).
+// Ключ CARTO прибрано ще раніше (36.25.3): ключ у коді сторінки — секрет, який
+// бачить кожен. Тло — колір землі підкладки: у світлій темі світле, а не сіре,
+// у темній — той самий сутінковий, що й основна (DUSK нижче). Поки тло,
+// probaPovernennia тихо повертає OpenFreeMap.
+function chysteTlo(t){
+ return {version:8,sources:{},layers:[{id:'base',type:'background',
+  paint:{'background-color':t==='temna'?'#2b2f36':'#f4f4f2'}}]};
 }
 // ---- ПРАВКИ СТИЛЮ ПІДКЛАДКИ ----
 // Стилі OpenFreeMap підписують «name:latin + name:nonlatin», і в Києві
@@ -1162,9 +1162,9 @@ function carry(prev,next){
 }
 // Стиль віддаємо бібліотеці адресою, а не прочитаним об'єктом: об'єкт MapLibre
 // розбирає лише в наступному кадрі анімації, адресу — одразу, як прийде.
-// Не прийшов вчасно або прийшов з помилкою — растрові плитки OSM. Вчасно — 8 с на ПК;
+// Не прийшов вчасно або прийшов з помилкою — чисте тло (chysteTlo). Вчасно — 8 с на ПК;
 // на телефоні й повільному зв'язку 15 с: 06.11 на телефоні Андрія стиль просто не
-// встиг за 8 с, і карта без потреби стала розмитою запасною (36.136)
+// встиг за 8 с, і карта без потреби стала запасною (36.136)
 const STYLE_MS=(innerWidth<=600||/(^|-)(2g|3g)$/.test((navigator.connection||{}).effectiveType||''))?15000:8000;
 let styleTimer=null;
 function setBase(t){
@@ -1175,15 +1175,19 @@ function setBase(t){
 }
 function fallback(t){
  if(USING_FALLBACK) return;
+ const bulo=STYLE_OK;
  USING_FALLBACK=true; clearTimeout(styleTimer); STYLE_OK=false;
  clearTimeout(plytkyTimer);
- setAttr(BEZ_OSM?OFM_ATTR:'© OpenStreetMap');
- console.warn(BEZ_OSM?'Підкладка OpenFreeMap недоступна, чисте тло':'Підкладка OpenFreeMap недоступна, запасна OSM');
- map.setStyle(osmStyle(),{transformStyle:(prev,next)=>carry(prev,next)});
+ setAttr(OFM_ATTR);
+ console.warn('Підкладка OpenFreeMap недоступна, чисте тло');
+ // Стиль OpenFreeMap так і не завантажився (адреса стилю відмовила одразу) — переносити
+ // нічого, а transformStyle на недовантаженому стилі мовчки лишав карту зовсім без стилю:
+ // ні тла, ні наших шарів (ZAVDANNYA-232). Тоді — новий стиль з нуля, шари додасть onStyleReady.
+ map.setStyle(chysteTlo(t),bulo?{transformStyle:(prev,next)=>carry(prev,next)}:{diff:false});
  probaPovernennia();
 }
-// Повернення на основну (36.136): раніше запасна (а в кіоску — чисте тло) лишалася до
-// оновлення сторінки, і на занятті з поганим зв'язком розмита карта висіла все заняття.
+// Повернення на основну (36.136): раніше запасна лишалася до оновлення сторінки,
+// і на занятті з поганим зв'язком карта без підкладки висіла все заняття.
 // Раз на хвилину тихо питаємо стиль OpenFreeMap, без setStyle — прийшов, і основна
 // повертається тим самим setBase, а carry переносить наші шари, вид і фільтри як були.
 // Не більше 10 спроб за сесію: далі лише зі зміною теми — щоб не смикати мережу годинами.
@@ -1204,11 +1208,11 @@ const map=new maplibregl.Map({container:'map',center:[C0[1],C0[0]],zoom:11,
   maxZoom:19,attributionControl:false});
 // Атрибуція — власним елементом, а не вбудованим. OpenFreeMap кладе свій рядок
 // в опис джерела плиток, і стиль його не перебиває; а нам треба саме «OpenFreeMap
-// © OpenMapTiles, дані © OpenStreetMap», і при запасній — рядок OSM.
+// © OpenMapTiles, дані © OpenStreetMap»; при чистому тлі рядок той самий.
 const attrEl=document.createElement('div');
 attrEl.className='maplibregl-ctrl maplibregl-ctrl-attrib';
 // Рядок — з atrybutsiia.py (M.atr, S-К.20): той самий, що внизу звітів і в
-// заголовку файлів адрес. Запасна підкладка — лише її рядок спереду.
+// заголовку файлів адрес.
 // На телефоні рядок згорнутий до «ⓘ», як у MapLibre (36.26.1).
 function setAttr(t){attrEl.innerHTML='<button class="k-atr-i" aria-label="Джерела даних" title="Джерела даних">ⓘ</button>'+
  '<div class="maplibregl-ctrl-attrib-inner">'+(t===OFM_ATTR?'':esc(t)+' · ')+(M.atr||'')+'</div>'}
